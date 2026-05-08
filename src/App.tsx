@@ -47,11 +47,11 @@ const navLinks = [
 const heroMessages: ChatMessage[] = [
   { author: "agent", text: "Found something you'd probably be into." },
   { author: "agent", text: "Growth intern. Early-stage AI startup. Remote + paid." },
-  { author: "student", text: "Wait this is actually kinda perfect lol" },
-  { author: "agent", text: "Yeah. Your AI newsletter + campus ambassador stuff made it stand out." },
-  { author: "student", text: "Can you help me reply without sounding cringe?" },
-  { author: "agent", text: "Already drafted it. Tweak it or approve before it sends." },
-  { author: "student", text: "Okay wait I love this" },
+  { author: "student", text: "Okay wait this actually looks really good" },
+  { author: "agent", text: "Yeah. Your AI newsletter and campus ambassador stuff made this stand out." },
+  { author: "student", text: "Can you help me reply?" },
+  { author: "agent", text: "Already drafted something. You can edit it or approve before it sends." },
+  { author: "student", text: "Perfect send me the draft" },
 ];
 
 const channels: Channel[] = [
@@ -61,11 +61,11 @@ const channels: Channel[] = [
     color: "#007AFF",
     soft: "#E8F2FF",
     icon: <PlatformLogo platform="imessage" className="size-4" />,
-    emojis: ["text", "paid", "remote", "fit", "lol"],
+    emojis: ["text", "paid", "remote", "fit", "draft"],
     messages: [
-      { author: "agent", text: "Found a startup looking for someone who gets campus growth." },
-      { author: "student", text: "Is it actually a fit or just another random listing?" },
-      { author: "agent", text: "Actually fits. Remote, paid, and your newsletter helps here.", meta: "Delivered" },
+      { author: "agent", text: "Found a startup looking for campus growth help." },
+      { author: "student", text: "Is it actually a fit?" },
+      { author: "agent", text: "Yes. Remote, paid, and your newsletter helps here.", meta: "Delivered" },
     ],
   },
   {
@@ -76,9 +76,9 @@ const channels: Channel[] = [
     icon: <PlatformLogo platform="whatsapp" className="size-4" />,
     emojis: ["paid", "class", "quick", "yes", "new"],
     messages: [
-      { author: "agent", text: "Two paid roles popped up while you were in class." },
-      { author: "student", text: "Send the less boring one." },
-      { author: "agent", text: "This one. Small team, real product work, not coffee runs.", meta: "New" },
+      { author: "agent", text: "Two paid roles opened while you were in class." },
+      { author: "student", text: "Send the stronger one." },
+      { author: "agent", text: "This one has real product work and a small team.", meta: "New" },
     ],
   },
   {
@@ -89,9 +89,9 @@ const channels: Channel[] = [
     icon: <PlatformLogo platform="slack" className="size-4" />,
     emojis: ["#finds", "draft", "ship", "reply", "prep"],
     messages: [
-      { author: "agent", text: "A builder community just posted an internship before it hit LinkedIn." },
-      { author: "student", text: "Can you make my reply sound normal?" },
-      { author: "agent", text: "Yep. Short, specific, and not cringe." },
+      { author: "agent", text: "A builder community posted a growth internship before it hit LinkedIn." },
+      { author: "student", text: "Can you make my reply sound natural?" },
+      { author: "agent", text: "Yes. Short, normal, and easy to send." },
     ],
   },
   {
@@ -103,8 +103,8 @@ const channels: Channel[] = [
     emojis: ["drop", "dm", "build", "fit", "send"],
     messages: [
       { author: "agent", text: "Design engineer internship in a founder Discord." },
-      { author: "student", text: "I have projects but no fancy title." },
-      { author: "agent", text: "That's fine. Your prototypes are the point." },
+      { author: "student", text: "I have projects, but no formal title yet." },
+      { author: "agent", text: "That's fine. Your prototypes are what matter here." },
     ],
   },
   {
@@ -115,30 +115,30 @@ const channels: Channel[] = [
     icon: <PlatformLogo platform="phone" className="size-4" />,
     emojis: ["call", "prep", "calm", "ask", "go"],
     messages: [
-      { author: "agent", text: "Founder call tomorrow. Want a tiny prep sheet?" },
-      { author: "student", text: "Yes please. I get awkward." },
-      { author: "agent", text: "Got you. 3 things to say, 2 questions to ask, zero panic." },
+      { author: "agent", text: "Founder call tomorrow. Want a quick prep sheet?" },
+      { author: "student", text: "Yes please. I get nervous on calls." },
+      { author: "agent", text: "Done. 3 things to say and 2 questions to ask." },
     ],
   },
 ];
 
 const steps = [
   ["Start with what you have", "Use LinkedIn or your projects so InternJobs knows the basics. No giant profile to fill out."],
-  ["Text it like a friend", "Say what you want, what you hate applying for, and what kind of work sounds fun."],
-  ["Get the text", "It keeps looking in the background and texts when something actually fits."],
+  ["Text it naturally", "Say what kind of work you want and what you have already built."],
+  ["Get the text", "InternJobs keeps looking in the background and texts when something actually fits."],
 ];
 
 const signals = [
   ["Found before LinkedIn", "A small team posted it in a community first.", "new"],
   ["Actually fits", "Remote, paid, and close to stuff you've already built.", "now"],
-  ["Reply drafted", "Short, normal, and not try-hard.", "ready"],
+  ["Reply drafted", "Short, normal, and easy to send.", "ready"],
   ["Call prep ready", "What to say, what to ask, and why you fit.", "5 min"],
 ];
 
 const faqs = [
   [
     "Is this another job board?",
-    "No. Please no. InternJobs texts you when something looks worth your time, then helps you reply without the awkward blank-page moment.",
+    "No. InternJobs texts you when something actually looks worth your time, then helps you reply without the awkward blank-page moment.",
   ],
   [
     "Does it apply without me?",
@@ -296,21 +296,20 @@ function HeroSection() {
         <Reveal className="max-w-[36rem]">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white/50 px-3 py-2 text-sm font-semibold text-ink-secondary">
             <Sparkles className="size-4 text-ink" />
-            Finally, not another portal
+            Text-first internship search
           </div>
 
           <h1 className="font-display text-[2.95rem] leading-[0.98] text-ink sm:text-[5.5rem] lg:text-[6rem]">
-            Way better than refreshing <span className="text-party-gradient">LinkedIn all day.</span>
+            Get texts when something <span className="text-party-gradient">actually fits.</span>
           </h1>
 
           <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
-            Tell InternJobs what you're into. It keeps looking while you're in class, at work, or doing life. Then you get the text when something actually fits.
+            InternJobs keeps looking for startup internships while you're busy with class, work, or literally anything else.
           </p>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:flex sm:flex-row">
+          <div className="mt-6 grid gap-3 sm:mt-8 sm:flex sm:flex-row">
             <a href="#waitlist" className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-4 text-sm font-bold text-white sm:h-14 sm:px-7 sm:text-base">
-              <span className="hidden sm:inline">Join Early Access</span>
-              <span className="sm:hidden">Join Early</span>
+              <span>Join Early Access</span>
               <ArrowRight className="ml-2 size-4" />
             </a>
             <a href="#channels" className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] bg-white/55 px-4 text-sm font-bold text-ink transition hover:bg-white sm:h-14 sm:px-7 sm:text-base">
@@ -321,16 +320,17 @@ function HeroSection() {
           <div className="mt-5 grid gap-2 text-sm text-ink-secondary sm:mt-7 sm:gap-3">
             <div className="flex items-center gap-2">
               <Linkedin className="size-4" />
-              <span>No endless applications. No weird networking.</span>
+              <span>Start with LinkedIn. Then just text.</span>
             </div>
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4" />
-              <span>It drafts replies. You approve before anything sends.</span>
+              <span>You approve anything before it sends.</span>
             </div>
           </div>
         </Reveal>
 
         <motion.div style={{ y: phoneY }} className="relative mx-auto w-full max-w-[22rem] sm:max-w-[25rem] lg:max-w-[27rem]">
+          <ChannelArtifacts channel={channels[0]} />
           <PhoneExperience messages={heroMessages} channel={channels[0]} mode="hero" />
         </motion.div>
       </div>
@@ -794,7 +794,7 @@ function AgentSearchingIndicator() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
       <div className="rounded-[1.15rem] rounded-bl-md bg-[#E9E9EB] px-3.5 py-2 text-[12px] font-medium text-[#555]">
-        Still looking for better stuff
+        Still looking for stronger matches
       </div>
     </motion.div>
   );
@@ -826,9 +826,7 @@ function HowItWorksSection() {
 
 function ChannelSection() {
   const [active, setActive] = useState(0);
-  const [hovered, setHovered] = useState<number | null>(null);
   const channel = channels[active];
-  const effectChannel = channels[hovered ?? active];
 
   useEffect(() => {
     const timer = window.setTimeout(() => setActive((value) => (value + 1) % channels.length), 6200);
@@ -845,7 +843,7 @@ function ChannelSection() {
               Not another <span className="text-party-gradient">internship portal.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              It shows up where you already talk. iMessage, WhatsApp, Slack, Discord, phone. Less logging in. More "wait, this might actually be good."
+              InternJobs meets you where you already talk: iMessage, WhatsApp, Slack, Discord, and phone. No extra portal to keep checking.
             </p>
           </Reveal>
 
@@ -857,14 +855,10 @@ function ChannelSection() {
                 onClick={() => setActive(index)}
                 onMouseEnter={() => {
                   setActive(index);
-                  setHovered(index);
                 }}
-                onMouseLeave={() => setHovered(null)}
                 onFocus={() => {
                   setActive(index);
-                  setHovered(index);
                 }}
-                onBlur={() => setHovered(null)}
                 className={`channel-chip ${active === index ? "is-active" : ""}`}
                 style={{
                   borderColor: item.color,
@@ -879,13 +873,12 @@ function ChannelSection() {
           </div>
 
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
-            <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Say what you want. Say what feels annoying. Approve anything before it goes out." />
-            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they might fit, and helps you send a normal reply." />
+            <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Share what you want and what you have built. Approve anything before it goes out." />
+            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they fit, and helps you send a clear reply." />
           </div>
         </div>
 
         <div className="relative mx-auto w-full max-w-[25rem]">
-          <ChannelArtifacts channel={effectChannel} />
           <AnimatePresence mode="wait">
             <motion.div
               key={channel.name}
@@ -950,7 +943,7 @@ function ChannelArtifacts({ channel }: { channel: Channel }) {
         animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
         transition={{ duration: 0.36, delay: 0.1, ease: "easeOut" }}
       >
-        {isSlack ? "Drafted a normal reply." : isDiscord ? "This one is lowkey good." : isPhone ? "3 things to say." : "This actually fits."}
+        {isSlack ? "Drafted a normal reply." : isDiscord ? "Worth checking out." : isPhone ? "3 things to say." : "This actually fits."}
       </motion.div>
 
       <motion.div
@@ -991,8 +984,8 @@ function SignalsSection() {
       <div className="mx-auto max-w-7xl">
         <SectionIntro
           eyebrow="Less exhausting"
-          title="It keeps looking while you do literally anything else."
-          copy="Class, work, practice, side projects, life. When something worth checking out pops up, you get the text."
+          title="It keeps looking in the background."
+          copy="Class, work, practice, side projects. When something worth checking out pops up, you get the text."
         />
 
         <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
@@ -1044,7 +1037,7 @@ function FAQSection() {
   return (
     <section id="faq" className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.7fr_1.3fr]">
-        <SectionIntro eyebrow="FAQ" title="Tiny FAQ." copy="Stuff people ask before joining." />
+        <SectionIntro eyebrow="FAQ" title="A few things to know." copy="Short answers before you join early access." />
         <div className="divide-y divide-black/[0.08] border-y border-black/[0.08]">
           {faqs.map(([question, answer], index) => (
             <div key={question}>
@@ -1078,9 +1071,9 @@ function FAQSection() {
 
 function WaitlistSection() {
   return (
-    <section id="waitlist" className="relative overflow-hidden bg-canvas px-5 py-24 sm:px-6 lg:px-8">
+    <section id="waitlist" className="waitlist-band relative overflow-hidden px-5 py-24 sm:px-6 lg:px-8">
       <div className="cta-spectrum" aria-hidden="true" />
-      <div className="cta-card relative z-10 mx-auto grid max-w-5xl items-center gap-8 rounded-lg p-7 shadow-cta sm:p-10 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="cta-card relative z-10 mx-auto grid max-w-7xl items-center gap-8 rounded-none p-0 shadow-none sm:p-0 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="relative z-10 text-left">
           <BrandMark size="lg" />
           <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">InternJobs.ai</p>

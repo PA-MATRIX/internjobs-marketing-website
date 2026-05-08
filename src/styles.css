@@ -853,13 +853,18 @@ a {
     radial-gradient(circle at 52% 88%, rgba(37, 211, 102, 0.1), transparent 22rem);
 }
 
+.waitlist-band {
+  background:
+    radial-gradient(circle at 16% 24%, rgba(255, 77, 141, 0.2), transparent 22rem),
+    radial-gradient(circle at 78% 16%, rgba(54, 197, 240, 0.2), transparent 24rem),
+    radial-gradient(circle at 56% 92%, rgba(37, 211, 102, 0.12), transparent 26rem),
+    linear-gradient(135deg, #111111 0%, #191919 58%, #0b0b0b 100%);
+}
+
 .cta-card {
   position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 82% 12%, rgba(54, 197, 240, 0.2), transparent 18rem),
-    radial-gradient(circle at 20% 90%, rgba(255, 77, 141, 0.18), transparent 18rem),
-    linear-gradient(135deg, #111111 0%, #191919 58%, #0b0b0b 100%);
+  overflow: visible;
+  background: transparent;
 }
 
 .cta-card::before,
