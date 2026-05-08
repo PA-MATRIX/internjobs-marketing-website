@@ -92,7 +92,6 @@ a {
   border-radius: inherit;
   background:
     conic-gradient(from 12deg, #ff5c7a, #ffce3d, #25d366, #36c5f0, #5865f2, #b25cff, #ff5c7a);
-  animation: logo-spin 9s linear infinite;
 }
 
 .brand-mark::after {
@@ -158,12 +157,6 @@ a {
   background: #ffce3d;
 }
 
-@keyframes logo-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes party-text {
   from {
     background-position: 0% 50%;
@@ -183,8 +176,39 @@ a {
   animation: party-text 6s ease-in-out infinite alternate;
 }
 
-.shadow-blue {
-  box-shadow: 0 18px 44px rgba(0, 122, 255, 0.26);
+.primary-party-button {
+  background:
+    linear-gradient(135deg, #ff4d8d 0%, #ff8a3d 34%, #ffce3d 58%, #25d366 100%);
+  box-shadow:
+    0 18px 42px rgba(255, 77, 141, 0.28),
+    0 12px 26px rgba(37, 211, 102, 0.2);
+  transition:
+    transform 180ms ease,
+    filter 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.primary-party-button:hover {
+  filter: saturate(1.08) brightness(1.02);
+  transform: translateY(-1px);
+  box-shadow:
+    0 22px 50px rgba(255, 77, 141, 0.34),
+    0 16px 32px rgba(37, 211, 102, 0.24);
+}
+
+.secondary-party-button {
+  background: linear-gradient(90deg, #fff7b8 0%, #ffffff 48%, #dcffe9 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 14px 32px rgba(0, 0, 0, 0.16);
+  transition:
+    transform 180ms ease,
+    filter 180ms ease;
+}
+
+.secondary-party-button:hover {
+  filter: saturate(1.08);
+  transform: translateY(-1px);
 }
 
 .shadow-soft {
@@ -404,6 +428,33 @@ a {
 .channel-chip.is-active {
   transform: translateY(-1px);
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.1);
+}
+
+.emoji-burst {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.emoji-pop {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72)),
+    var(--emoji-color);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.14),
+    inset 0 -6px 20px rgba(255, 255, 255, 0.4);
+  font-size: 1.18rem;
+  font-weight: 900;
 }
 
 .whatsapp-surface,

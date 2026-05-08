@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useInView, useScroll, useTransform } from "framer-motion";
 import { siDiscord, siImessage, siWhatsapp } from "simple-icons";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ChatMessage = {
   author: "agent" | "student";
@@ -33,6 +34,7 @@ type Channel = {
   color: string;
   soft: string;
   icon: ReactNode;
+  emojis: string[];
   messages: ChatMessage[];
 };
 
@@ -60,6 +62,7 @@ const channels: Channel[] = [
     color: "#007AFF",
     soft: "#E8F2FF",
     icon: <PlatformLogo platform="imessage" className="size-4" />,
+    emojis: ["💬", "✨", "📲", "🎯", "⚡"],
     messages: [
       { author: "agent", text: "New founder signal: RevOps AI startup is hiring interns quietly." },
       { author: "student", text: "Is it a real fit?" },
@@ -72,6 +75,7 @@ const channels: Channel[] = [
     color: "#25D366",
     soft: "#E9FBEF",
     icon: <PlatformLogo platform="whatsapp" className="size-4" />,
+    emojis: ["✅", "🟢", "📣", "💚", "⚡"],
     messages: [
       { author: "agent", text: "Two paid internships opened near your target category." },
       { author: "student", text: "Send the best one." },
@@ -84,6 +88,7 @@ const channels: Channel[] = [
     color: "#4A154B",
     soft: "#FFF0F5",
     icon: <PlatformLogo platform="slack" className="size-4" />,
+    emojis: ["#", "🚀", "✅", "💡", "🎉"],
     messages: [
       { author: "agent", text: "A partner community asked for AI product interns." },
       { author: "student", text: "Can you make me sound specific?" },
@@ -96,6 +101,7 @@ const channels: Channel[] = [
     color: "#5865F2",
     soft: "#EEF0FF",
     icon: <PlatformLogo platform="discord" className="size-4" />,
+    emojis: ["🎮", "👾", "🔥", "💜", "✨"],
     messages: [
       { author: "agent", text: "Founder community signal detected: design engineer internship." },
       { author: "student", text: "I have design work, but not a formal role." },
@@ -108,6 +114,7 @@ const channels: Channel[] = [
     color: "#34C759",
     soft: "#EDFFF4",
     icon: <PlatformLogo platform="phone" className="size-4" />,
+    emojis: ["📞", "⏰", "🎙️", "✅", "⚡"],
     messages: [
       { author: "agent", text: "Founder call tomorrow. Want a 5 minute prep?" },
       { author: "student", text: "Yes. I get nervous." },
@@ -218,7 +225,7 @@ function Navbar() {
           ))}
         </div>
 
-        <a href="#waitlist" className="hidden rounded-full bg-accent-blue px-5 py-3 text-sm font-bold text-white shadow-blue transition hover:bg-accent-blue-hover md:inline-flex">
+        <a href="#waitlist" className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white md:inline-flex">
           Join Early Access
           <ArrowRight className="ml-2 size-4" />
         </a>
@@ -255,7 +262,7 @@ function Navbar() {
               <a
                 href="#waitlist"
                 onClick={() => setOpen(false)}
-                className="mt-3 flex h-12 items-center justify-center rounded-full bg-accent-blue px-5 text-sm font-bold text-white"
+                className="primary-party-button mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm font-bold text-white"
               >
                 Join Early Access
               </a>
@@ -292,12 +299,12 @@ function HeroSection() {
       <div className="mx-auto grid min-h-[calc(100svh-5rem)] w-full max-w-[1600px] items-center gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:gap-10">
         <Reveal className="max-w-[36rem]">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white/50 px-3 py-2 text-sm font-semibold text-ink-secondary">
-            <Sparkles className="size-4 text-accent-blue" />
+            <Sparkles className="size-4 text-[#FF4D8D]" />
             Text-first internship agent
           </div>
 
           <h1 className="font-display text-[2.95rem] leading-[0.98] text-ink sm:text-[5.5rem] lg:text-[6rem]">
-            Your internship <span className="text-accent-blue">agent.</span>
+            Your internship <span className="text-party-gradient">agent.</span>
           </h1>
 
           <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
@@ -305,7 +312,7 @@ function HeroSection() {
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:flex sm:flex-row">
-            <a href="#waitlist" className="inline-flex h-12 items-center justify-center rounded-full bg-accent-blue px-4 text-sm font-bold text-white shadow-blue transition hover:bg-accent-blue-hover sm:h-14 sm:px-7 sm:text-base">
+            <a href="#waitlist" className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-4 text-sm font-bold text-white sm:h-14 sm:px-7 sm:text-base">
               <span className="hidden sm:inline">Join Early Access</span>
               <span className="sm:hidden">Join Early</span>
               <ArrowRight className="ml-2 size-4" />
@@ -823,7 +830,9 @@ function HowItWorksSection() {
 
 function ChannelSection() {
   const [active, setActive] = useState(0);
+  const [hovered, setHovered] = useState<number | null>(null);
   const channel = channels[active];
+  const effectChannel = channels[hovered ?? active];
 
   useEffect(() => {
     const timer = window.setTimeout(() => setActive((value) => (value + 1) % channels.length), 6200);
@@ -850,11 +859,21 @@ function ChannelSection() {
                 key={item.name}
                 type="button"
                 onClick={() => setActive(index)}
+                onMouseEnter={() => {
+                  setActive(index);
+                  setHovered(index);
+                }}
+                onMouseLeave={() => setHovered(null)}
+                onFocus={() => {
+                  setActive(index);
+                  setHovered(index);
+                }}
+                onBlur={() => setHovered(null)}
                 className={`channel-chip ${active === index ? "is-active" : ""}`}
                 style={{
                   borderColor: item.color,
-                  color: active === index ? "#111" : item.color,
-                  background: active === index ? item.soft : "white",
+                  color: active === index ? "white" : item.color,
+                  background: active === index ? item.color : "rgba(255, 255, 255, 0.78)",
                 }}
               >
                 {item.icon}
@@ -870,6 +889,7 @@ function ChannelSection() {
         </div>
 
         <div className="relative mx-auto w-full max-w-[25rem]">
+          <EmojiBurst channel={effectChannel} />
           <AnimatePresence mode="wait">
             <motion.div
               key={channel.name}
@@ -884,6 +904,37 @@ function ChannelSection() {
         </div>
       </div>
     </section>
+  );
+}
+
+function EmojiBurst({ channel }: { channel: Channel }) {
+  return (
+    <div className="emoji-burst" aria-hidden="true">
+      {channel.emojis.map((emoji, index) => (
+        <motion.span
+          key={`${channel.name}-${emoji}-${index}`}
+          className="emoji-pop"
+          style={
+            {
+              "--emoji-x": `${Math.cos((index / channel.emojis.length) * Math.PI * 2 - 0.6) * 10.8}rem`,
+              "--emoji-y": `${Math.sin((index / channel.emojis.length) * Math.PI * 2 - 0.6) * 12.2}rem`,
+              "--emoji-color": channel.color,
+            } as CSSProperties
+          }
+          initial={{ opacity: 0, scale: 0.35, x: 0, y: 0, rotate: -18 }}
+          animate={{
+            opacity: [0, 1, 0.86],
+            scale: [0.35, 1.16, 1],
+            x: "var(--emoji-x)",
+            y: "var(--emoji-y)",
+            rotate: [-18, 12, 0],
+          }}
+          transition={{ duration: 0.72, delay: index * 0.055, ease: "easeOut" }}
+        >
+          {emoji}
+        </motion.span>
+      ))}
+    </div>
   );
 }
 
@@ -1008,7 +1059,7 @@ function WaitlistSection() {
         <p className="mx-auto mt-5 max-w-md leading-7 text-white/82">
           Be first in line for the text-first internship agent built for students who live in messages, communities, and creator-style networks.
         </p>
-        <a href="mailto:hello@internjobs.ai?subject=Join%20InternJobs.ai%20Early%20Access" className="mx-auto mt-8 inline-flex h-[3.35rem] items-center justify-center rounded-full bg-white px-7 font-black text-[#111] transition hover:scale-[1.02] hover:bg-[#FFF7B8]">
+        <a href="mailto:hello@internjobs.ai?subject=Join%20InternJobs.ai%20Early%20Access" className="secondary-party-button mx-auto mt-8 inline-flex h-[3.35rem] items-center justify-center rounded-full px-7 font-black text-[#111]">
           Join Early Access
           <ArrowRight className="ml-2 size-4" />
         </a>
@@ -1096,7 +1147,7 @@ function FloatingMobileCTA() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
-          className="fixed bottom-4 left-4 right-4 z-40 flex h-12 items-center justify-center rounded-full bg-accent-blue font-bold text-white shadow-blue md:hidden"
+          className="primary-party-button fixed bottom-4 left-4 right-4 z-40 flex h-12 items-center justify-center rounded-full font-bold text-white md:hidden"
         >
           Join Early Access
         </motion.a>
