@@ -5,11 +5,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: "#F3EFE6",
-        ink: "#1A1A1A",
+        canvas: "#FBF7EF",
+        ink: "#111111",
         "ink-secondary": "#555555",
-        "accent-blue": "#007AFF",
-        "accent-blue-hover": "#005FCC",
+        "accent-blue": "#111111",
+        "accent-blue-hover": "#2A2A2A",
         electric: {
           blue: "#2F80FF",
           violet: "#8B5CF6",
