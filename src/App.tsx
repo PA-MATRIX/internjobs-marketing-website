@@ -300,11 +300,11 @@ function HeroSection() {
           </div>
 
           <h1 className="font-display text-[2.95rem] leading-[0.98] text-ink sm:text-[5.5rem] lg:text-[6rem]">
-            Get texts when something <span className="text-party-gradient">actually fits.</span>
+            Way better than refreshing <span className="text-party-gradient">LinkedIn all day.</span>
           </h1>
 
           <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
-            Tell InternJobs what you're into. It keeps looking while you're in class, at work, or doing life. Way better than refreshing LinkedIn all day.
+            Tell InternJobs what you're into. It keeps looking while you're in class, at work, or doing life. Then you get the text when something actually fits.
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:flex sm:flex-row">
