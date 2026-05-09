@@ -1003,11 +1003,11 @@ function SignalsSection() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {signals.map(([title, copy, tag], index) => (
-              <Reveal key={title} delay={index * 0.06}>
-                <div className="rounded-lg border border-black/[0.08] bg-white/55 p-5 shadow-soft">
+              <Reveal key={title} delay={index * 0.06} className="h-full">
+                <div className="flex h-full min-h-[11.25rem] flex-col rounded-lg border border-black/[0.08] bg-white/55 p-5 shadow-soft">
                   <span className="inline-flex rounded-full bg-black/[0.045] px-3 py-1 text-xs font-black text-ink">{tag}</span>
                   <h3 className="mt-5 text-lg font-bold text-ink">{title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-ink-secondary">{copy}</p>
+                  <p className="mt-2 flex-1 text-sm leading-6 text-ink-secondary">{copy}</p>
                 </div>
               </Reveal>
             ))}
