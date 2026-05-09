@@ -888,7 +888,8 @@ a {
   min-height: 1.85rem;
   border-radius: 0.35rem;
   padding: 0.42rem 0.58rem;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.76);
+  font-weight: 650;
   white-space: nowrap;
 }
 
@@ -898,8 +899,10 @@ a {
 }
 
 .startup-slack-channel.is-active {
-  background: #1264a3;
+  background: #1164a3;
+  box-shadow: none;
   color: #ffffff;
+  font-weight: 800;
 }
 
 .startup-slack-main {
@@ -1143,12 +1146,12 @@ a {
 
   .startup-slack-sidebar .startup-slack-channel {
     min-height: 2rem;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.14);
     padding: 0.4rem 0.65rem;
   }
 
   .startup-slack-sidebar .startup-slack-channel.is-active {
-    background: #1264a3;
+    background: #1164a3;
   }
 
   .startup-slack-sidebar span:not(.startup-slack-channel) {
