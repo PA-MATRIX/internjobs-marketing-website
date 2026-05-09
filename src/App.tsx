@@ -1901,7 +1901,7 @@ function StartupHeroSection() {
 
 function StartupChatMockup() {
   return (
-    <div className="startup-chat-wrap relative mx-auto max-w-[35rem]">
+    <div className="startup-chat-wrap relative mx-auto w-full max-w-[45rem]">
       {startupFloatingCards.map((card, index) => (
         <motion.div
           key={card}
@@ -1914,44 +1914,110 @@ function StartupChatMockup() {
         </motion.div>
       ))}
       <div className="startup-chat-shell">
-        <div className="flex items-center justify-between border-b border-black/[0.08] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <BrandMark size="sm" />
-            <div>
-              <p className="text-sm font-black text-ink">InternJobs.ai</p>
-              <p className="text-xs font-semibold text-ink-secondary">startup concierge</p>
-            </div>
+        <div className="startup-slack-titlebar">
+          <div className="flex items-center gap-1.5">
+            <span className="size-3 rounded-full bg-[#FF5F57]" />
+            <span className="size-3 rounded-full bg-[#FEBC2E]" />
+            <span className="size-3 rounded-full bg-[#28C840]" />
           </div>
-          <span className="rounded-full bg-black px-3 py-1 text-xs font-black text-white">live</span>
+          <span className="text-xs font-black text-white/70">Acme AI - Slack</span>
+          <span className="w-14" />
         </div>
-        <div className="space-y-4 p-5">
-          <StartupBubble author="Founder">Need someone scrappy for growth + community.</StartupBubble>
-          <StartupBubble author="InternJobs.ai" agent>
-            <span>Found 3 students that fit:</span>
-            <span>- AI newsletter experience</span>
-            <span>- startup club leadership</span>
-            <span>- creator-style growth projects</span>
-          </StartupBubble>
-          <StartupBubble author="Founder">This one feels interesting.</StartupBubble>
-          <StartupBubble author="InternJobs.ai" agent>
-            <span>Warm intro drafted.</span>
-            <span>Waiting for student approval.</span>
-          </StartupBubble>
-          <StartupBubble author="Founder">Can we keep this in Slack?</StartupBubble>
-          <StartupBubble author="InternJobs.ai" agent>
-            Yep. Slack, text, or email. Whatever your team already uses.
-          </StartupBubble>
+
+        <div className="startup-slack-layout">
+          <aside className="startup-slack-sidebar">
+            <div className="flex items-center gap-2">
+              <div className="grid size-8 place-items-center rounded-md bg-white/14 text-white">
+                <SlackBrandLogo className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-white">Acme AI</p>
+                <p className="text-[11px] font-semibold text-white/52">founder workspace</p>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-1 text-[12px] font-bold text-white/58">
+              <span className="startup-slack-channel is-active"># intern-intros</span>
+              <span className="startup-slack-channel"># growth</span>
+              <span className="startup-slack-channel"># hiring</span>
+              <span className="startup-slack-channel"># founder-notes</span>
+            </div>
+          </aside>
+
+          <div className="startup-slack-main">
+            <div className="startup-slack-header">
+              <div>
+                <p className="text-sm font-black text-[#1D1C1D]"># intern-intros</p>
+                <p className="text-xs font-semibold text-[#616061]">InternJobs.ai sends strong student matches here.</p>
+              </div>
+              <span className="rounded-full bg-[#2EB67D]/12 px-3 py-1 text-xs font-black text-[#137A45]">live</span>
+            </div>
+
+            <div className="startup-slack-thread">
+              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+                Need someone scrappy for growth + community.
+              </StartupSlackMessage>
+
+              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+                <p>Found 3 students that fit.</p>
+                <div className="startup-slack-card">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-[#616061]">Why this one stands out</p>
+                  <ul className="mt-3 grid gap-2 text-sm text-[#1D1C1D]">
+                    <li>AI newsletter experience</li>
+                    <li>startup club leadership</li>
+                    <li>creator-style growth projects</li>
+                  </ul>
+                </div>
+              </StartupSlackMessage>
+
+              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+                This one feels interesting.
+              </StartupSlackMessage>
+
+              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+                <p>Warm intro drafted. Waiting for student approval.</p>
+              </StartupSlackMessage>
+
+              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+                Can we keep this in Slack?
+              </StartupSlackMessage>
+
+              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+                Yep. Slack, text, or email. Whatever your team already uses.
+              </StartupSlackMessage>
+            </div>
+
+            <div className="startup-slack-compose">Message #intern-intros</div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function StartupBubble({ author, agent = false, children }: { author: string; agent?: boolean; children: ReactNode }) {
+function StartupSlackMessage({
+  name,
+  role,
+  color,
+  agent = false,
+  children,
+}: {
+  name: string;
+  role: string;
+  color: string;
+  agent?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className={`startup-bubble ${agent ? "is-agent" : ""}`}>
-      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.12em]">{author}</p>
-      <div className="grid gap-1 text-sm leading-6">{children}</div>
+    <div className="startup-slack-message">
+      <div className="startup-slack-avatar" style={{ background: color }}>
+        {agent ? <InfinityIcon className="size-4" /> : name.charAt(0)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-black text-[#1D1C1D]">
+          {name} <span className="font-semibold text-[#616061]">{role} 9:41 AM</span>
+        </p>
+        <div className="mt-1 grid gap-2 text-[13px] leading-5 text-[#1D1C1D]">{children}</div>
+      </div>
     </div>
   );
 }
