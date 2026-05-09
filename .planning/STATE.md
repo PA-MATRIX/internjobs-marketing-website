@@ -57,6 +57,9 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - Add DNS records for `app.internjobs.ai`: A `66.241.125.177`, AAAA `2a09:8280:1::113:206e:0`; or CNAME `932q002.internjobs-ai-student-app.fly.dev`.
 - Use Infisical as the secrets source of truth for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
 - Current repo has no `.infisical.json`; provider automation cannot read InternJobs.ai secrets until the Projecta Labs Infisical project metadata is provided.
+- Checked `/Users/rajren/MATRIX/.infisical.json`: it points at Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`.
+- Checked `/Users/rajren/MATRIX/.env.local`: Cloudflare variable names exist there, but the local values are empty placeholders.
+- Do not use GrowthPods/SIOS/SuperIntelligence Cloudflare secrets for InternJobs.ai; this project should use Projecta Labs / InternJobs.ai credentials only.
 
 ### Blockers/Concerns
 
