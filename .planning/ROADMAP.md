@@ -13,11 +13,11 @@ The next milestone turns the marketing site into a real two-surface product: `in
 ## Phases
 
 - [x] **Phase 1: Monorepo and Deploy Split** - Separate marketing and app workspaces without breaking Cloudflare production deploys.
-- [ ] **Phase 2: Clerk LinkedIn Waitlist Auth** - Add LinkedIn-first student signup and post-signup routing into the app.
-- [ ] **Phase 3: Neon Data Foundation** - Create database, migrations, profile/waitlist schema, and secret management.
-- [ ] **Phase 4: Photon/Spectrum Channel Pairing** - Add QR/code pairing, inbound webhook handling, and first waitlist text.
-- [ ] **Phase 5: LinkedIn Profile Ingestion** - Store authorized LinkedIn data and design safe enrichment gates.
-- [ ] **Phase 6: Launch Guardrails and Ops** - Add checks, webhook security, observability, privacy controls, and deploy docs.
+- [~] **Phase 2: Clerk LinkedIn Waitlist Auth** - App routes and Clerk JWT handling implemented; live Clerk provider activation pending.
+- [~] **Phase 3: Neon Data Foundation** - Migrations and data layer implemented; live Neon project/secret pending.
+- [~] **Phase 4: Photon/Spectrum Channel Pairing** - QR/code and webhook flow implemented; live Photon/Spectrum number/secret pending.
+- [x] **Phase 5: LinkedIn Profile Ingestion** - Authorized profile storage, student context editing, and enrichment gates are implemented.
+- [x] **Phase 6: Launch Guardrails and Ops** - Checks, webhook security, privacy docs, Dockerfile fix, and verification guardrails are implemented.
 
 ## Phase Details
 
@@ -50,9 +50,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Configure Clerk app/provider, domains, redirects, and environment variables.
-- [ ] 02-02: Add Clerk middleware/session handling to the Fly app.
-- [ ] 02-03: Build student waitlist entry and post-auth onboarding screen.
+- [ ] 02-01: Configure Clerk app/provider, domains, redirects, and environment variables. External provider activation pending.
+- [x] 02-02: Add Clerk middleware/session handling to the Fly app.
+- [x] 02-03: Build student waitlist entry and post-auth onboarding screen.
 
 ### Phase 3: Neon Data Foundation
 
@@ -67,9 +67,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Create Neon project, database, roles, and local/prod connection strategy.
-- [ ] 03-02: Add migrations for students, waitlist state, channel pairing, consents, profile snapshots, and audit events.
-- [ ] 03-03: Add repository/data-access layer and idempotent upsert behavior.
+- [ ] 03-01: Create Neon project, database, roles, and local/prod connection strategy. External database activation pending.
+- [x] 03-02: Add migrations for students, waitlist state, channel pairing, consents, profile snapshots, and audit events.
+- [x] 03-03: Add repository/data-access layer and idempotent upsert behavior.
 
 ### Phase 4: Photon/Spectrum Channel Pairing
 
@@ -85,9 +85,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Confirm Photon/Spectrum number, webhook contract, authentication, and local tunnel strategy.
-- [ ] 04-02: Build QR/code screen and pairing-code lifecycle.
-- [ ] 04-03: Build inbound webhook, channel confirmation, and welcome-message sender.
+- [ ] 04-01: Confirm Photon/Spectrum number, webhook contract, authentication, and local tunnel strategy. External number/provider activation pending.
+- [x] 04-02: Build QR/code screen and pairing-code lifecycle.
+- [x] 04-03: Build inbound webhook, channel confirmation, and welcome-message sender.
 
 ### Phase 5: LinkedIn Profile Ingestion
 
@@ -102,9 +102,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Map Clerk/LinkedIn fields into profile snapshot storage.
-- [ ] 05-02: Build profile review and correction UI.
-- [ ] 05-03: Write browser-enrichment design doc with explicit compliance gates before implementation.
+- [x] 05-01: Map Clerk/LinkedIn fields into profile snapshot storage.
+- [x] 05-02: Build profile review and correction UI.
+- [x] 05-03: Write browser-enrichment design doc with explicit compliance gates before implementation.
 
 ### Phase 6: Launch Guardrails and Ops
 
@@ -119,16 +119,16 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Add deployment docs, health checks, secret checklist, and smoke tests.
-- [ ] 06-02: Add webhook security, log hygiene, and privacy operations checklist.
+- [x] 06-01: Add deployment docs, health checks, secret checklist, and smoke tests.
+- [x] 06-02: Add webhook security, log hygiene, and privacy operations checklist.
 
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Monorepo and Deploy Split | v1.0 | 2/2 | Complete | 2026-05-09 |
-| 2. Clerk LinkedIn Waitlist Auth | v1.0 | 0/3 | Not started | - |
-| 3. Neon Data Foundation | v1.0 | 0/3 | Not started | - |
-| 4. Photon/Spectrum Channel Pairing | v1.0 | 0/3 | Not started | - |
-| 5. LinkedIn Profile Ingestion | v1.0 | 0/3 | Not started | - |
-| 6. Launch Guardrails and Ops | v1.0 | 0/2 | Not started | - |
+| 2. Clerk LinkedIn Waitlist Auth | v1.0 | 2/3 | External activation pending | - |
+| 3. Neon Data Foundation | v1.0 | 2/3 | External activation pending | - |
+| 4. Photon/Spectrum Channel Pairing | v1.0 | 2/3 | External activation pending | - |
+| 5. LinkedIn Profile Ingestion | v1.0 | 3/3 | Complete | 2026-05-09 |
+| 6. Launch Guardrails and Ops | v1.0 | 2/2 | Complete | 2026-05-09 |

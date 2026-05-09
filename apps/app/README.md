@@ -7,13 +7,30 @@ It is intentionally separate from the marketing site:
 - `apps/marketing` deploys to Cloudflare Pages for `internjobs.ai`.
 - `apps/app` deploys to Fly.io for LinkedIn signup, waitlist onboarding, channel pairing, and the future student agent experience.
 
-The current server is a small Fly-ready shell with `/healthz`. The next milestone will add Clerk, Neon, Photon/Spectrum webhooks, and the waitlist flows.
+The current server hosts the student waitlist app foundation:
+
+- LinkedIn-first waitlist entry at `/waitlist`
+- Protected onboarding at `/onboarding`
+- QR/code channel pairing at `/pairing`
+- Student profile context review at `/profile`
+- Photon/Spectrum inbound webhook at `/webhooks/photon`
+- Health check at `/healthz`
 
 ## Secrets
 
 Use Infisical for all app secrets. Required app secrets will include Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, Cloudflare DNS, and Fly runtime values.
 
 Production InternJobs.ai secrets live in Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`. Do not print secret values while syncing them into Fly.io or provider APIs.
+
+## Database
+
+Migrations live in `db/migrations`.
+
+```bash
+npm --workspace @internjobs/app run migrate
+```
+
+Without `DATABASE_URL`, the app uses an in-memory development store so the UI and smoke checks still run. Production data collection requires Neon.
 
 ## Fly.io
 
@@ -30,3 +47,10 @@ Production InternJobs.ai secrets live in Projecta/MATRIX Infisical project `0484
 - `TXT _fly-ownership.app.internjobs.ai -> app-932q002`
 
 Fly certificate status: issued and active.
+
+## Docs
+
+- `docs/fly-deploy.md`
+- `docs/photon-spectrum-contract.md`
+- `docs/linkedin-enrichment-gate.md`
+- `docs/privacy-operations.md`

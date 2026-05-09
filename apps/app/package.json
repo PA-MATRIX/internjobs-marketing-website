@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "node --watch src/server.mjs",
     "start": "node src/server.mjs",
-    "build": "node scripts/verify-app.mjs"
+    "build": "node scripts/verify-app.mjs",
+    "verify": "node scripts/verify-app.mjs",
+    "migrate": "node scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.20.0",
+    "qrcode": "^1.5.4"
   },
   "engines": {
     "node": ">=22"

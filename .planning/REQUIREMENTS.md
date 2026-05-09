@@ -16,6 +16,8 @@
 
 ## v1.0 — Waitlist Identity and Messaging Foundation (Active)
 
+**Implementation note:** The app foundation is implemented and verified locally. Live production activation still depends on external Clerk LinkedIn, Neon, and Photon/Spectrum credentials being configured in Projecta/MATRIX Infisical and Fly.
+
 ### Repo and Deployment
 
 - [x] **ARCH-01**: Repository is organized into separately deployable `apps/marketing` and `apps/app` workspaces.
@@ -25,39 +27,39 @@
 
 ### Identity and Waitlist
 
-- [ ] **AUTH-01**: Student waitlist signup uses Clerk with LinkedIn as the primary sign-in method.
-- [ ] **AUTH-02**: Email/password signup is not presented in the student waitlist flow.
-- [ ] **AUTH-03**: After LinkedIn sign-in, the student lands on channel pairing instead of another marketing page.
-- [ ] **AUTH-04**: Clerk user ID is stored with the waitlist profile in Neon.
+- [ ] **AUTH-01**: Student waitlist signup uses Clerk with LinkedIn as the primary sign-in method. Code is ready; live Clerk provider activation is pending.
+- [x] **AUTH-02**: Email/password signup is not presented in the student waitlist flow.
+- [x] **AUTH-03**: After LinkedIn sign-in, the student lands on channel pairing instead of another marketing page.
+- [ ] **AUTH-04**: Clerk user ID is stored with the waitlist profile in Neon. Code is ready; live Neon activation is pending.
 
 ### Neon Data Model
 
-- [ ] **DATA-01**: Neon database has tables for students, waitlist status, channel pairing codes, profile snapshots, consents, and audit events.
-- [ ] **DATA-02**: Database migrations can run repeatably in development and production.
-- [ ] **DATA-03**: Application secrets are configured through Infisical and synced into Fly.io/local development without committing values.
-- [ ] **DATA-04**: Waitlist writes are idempotent for repeated sign-in and repeated webhook events.
+- [ ] **DATA-01**: Neon database has tables for students, waitlist status, channel pairing codes, profile snapshots, consents, and audit events. Migration exists; live Neon run is pending.
+- [x] **DATA-02**: Database migrations can run repeatably in development and production.
+- [ ] **DATA-03**: Application secrets are configured through Infisical and synced into Fly.io/local development without committing values. Cloudflare token is stored; Clerk/Neon/Photon secrets are pending.
+- [x] **DATA-04**: Waitlist writes are idempotent for repeated sign-in and repeated webhook events.
 
 ### Messaging and Photon/Spectrum
 
-- [ ] **MSG-01**: App generates a unique pairing code for each student waitlist session.
-- [ ] **MSG-02**: App displays a QR/code screen for connecting the student messaging channel.
-- [ ] **MSG-03**: Photon/Spectrum inbound webhook can confirm the student's phone/channel against the pairing code.
-- [ ] **MSG-04**: Student receives a first welcome/waitlist message after channel confirmation.
-- [ ] **MSG-05**: Messaging events are stored with delivery state and provider metadata.
+- [x] **MSG-01**: App generates a unique pairing code for each student waitlist session.
+- [x] **MSG-02**: App displays a QR/code screen for connecting the student messaging channel.
+- [x] **MSG-03**: Photon/Spectrum inbound webhook can confirm the student's phone/channel against the pairing code.
+- [ ] **MSG-04**: Student receives a first welcome/waitlist message after channel confirmation. Sender is implemented; live Photon/Spectrum credentials are pending.
+- [x] **MSG-05**: Messaging events are stored with delivery state and provider metadata.
 
 ### LinkedIn Profile Data
 
-- [ ] **LINK-01**: App stores LinkedIn profile fields available through Clerk/OAuth authorization.
-- [ ] **LINK-02**: Student explicitly consents before any profile enrichment beyond OAuth fields.
-- [ ] **LINK-03**: Browser-based enrichment is not enabled in production until legal/compliance approval and a safe provider design are documented.
-- [ ] **LINK-04**: Students can review and correct the profile summary used for matching.
+- [x] **LINK-01**: App stores LinkedIn profile fields available through Clerk/OAuth authorization.
+- [x] **LINK-02**: Student explicitly consents before any profile enrichment beyond OAuth fields.
+- [x] **LINK-03**: Browser-based enrichment is not enabled in production until legal/compliance approval and a safe provider design are documented.
+- [x] **LINK-04**: Students can review and correct the profile summary used for matching.
 
 ### Operations and Safety
 
-- [ ] **OPS-01**: App has health checks suitable for Fly.io.
-- [ ] **OPS-02**: Webhook endpoints validate provider signatures or shared secrets.
-- [ ] **OPS-03**: Sensitive data is not logged.
-- [ ] **OPS-04**: User deletion/export paths are planned for privacy compliance before collecting production data.
+- [x] **OPS-01**: App has health checks suitable for Fly.io.
+- [x] **OPS-02**: Webhook endpoints validate provider signatures or shared secrets.
+- [x] **OPS-03**: Sensitive data is not logged.
+- [x] **OPS-04**: User deletion/export paths are planned for privacy compliance before collecting production data.
 
 ## Future Milestones
 
@@ -86,30 +88,32 @@
 | ARCH-02 | Phase 1 | Complete |
 | ARCH-03 | Phase 1 | Complete |
 | ARCH-04 | Phase 1 | Complete |
-| AUTH-01 | Phase 2 | Pending |
-| AUTH-02 | Phase 2 | Pending |
-| AUTH-03 | Phase 2 | Pending |
-| AUTH-04 | Phase 2 | Pending |
-| DATA-01 | Phase 3 | Pending |
-| DATA-02 | Phase 3 | Pending |
-| DATA-03 | Phase 3 | Pending |
-| DATA-04 | Phase 3 | Pending |
-| MSG-01 | Phase 4 | Pending |
-| MSG-02 | Phase 4 | Pending |
-| MSG-03 | Phase 4 | Pending |
-| MSG-04 | Phase 4 | Pending |
-| MSG-05 | Phase 4 | Pending |
-| LINK-01 | Phase 5 | Pending |
-| LINK-02 | Phase 5 | Pending |
-| LINK-03 | Phase 5 | Pending |
-| LINK-04 | Phase 5 | Pending |
-| OPS-01 | Phase 6 | Pending |
-| OPS-02 | Phase 6 | Pending |
-| OPS-03 | Phase 6 | Pending |
-| OPS-04 | Phase 6 | Pending |
+| AUTH-01 | Phase 2 | External activation pending |
+| AUTH-02 | Phase 2 | Complete |
+| AUTH-03 | Phase 2 | Complete |
+| AUTH-04 | Phase 2 | External activation pending |
+| DATA-01 | Phase 3 | External activation pending |
+| DATA-02 | Phase 3 | Complete |
+| DATA-03 | Phase 3 | External activation pending |
+| DATA-04 | Phase 3 | Complete |
+| MSG-01 | Phase 4 | Complete |
+| MSG-02 | Phase 4 | Complete |
+| MSG-03 | Phase 4 | Complete |
+| MSG-04 | Phase 4 | External activation pending |
+| MSG-05 | Phase 4 | Complete |
+| LINK-01 | Phase 5 | Complete |
+| LINK-02 | Phase 5 | Complete |
+| LINK-03 | Phase 5 | Complete |
+| LINK-04 | Phase 5 | Complete |
+| OPS-01 | Phase 6 | Complete |
+| OPS-02 | Phase 6 | Complete |
+| OPS-03 | Phase 6 | Complete |
+| OPS-04 | Phase 6 | Complete |
 
 **Coverage (v1.0):**
 - Active requirements: 25 total
+- Complete in code/local verification: 20
+- External activation pending: 5
 - Mapped to phases: 25
 - Unmapped: 0
 
