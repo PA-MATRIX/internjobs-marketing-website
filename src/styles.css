@@ -879,12 +879,22 @@ a {
 
 .startup-slack-sidebar {
   background: #3f0e40;
-  padding: 1rem;
+  padding: 1rem 0.72rem;
 }
 
 .startup-slack-channel {
+  display: flex;
+  align-items: center;
+  min-height: 1.85rem;
   border-radius: 0.35rem;
-  padding: 0.42rem 0.5rem;
+  padding: 0.42rem 0.58rem;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+}
+
+.startup-slack-channel:not(.is-active):hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 .startup-slack-channel.is-active {
@@ -1110,6 +1120,38 @@ a {
   }
 
   .startup-slack-sidebar {
+    display: block;
+    overflow-x: auto;
+    padding: 0.7rem;
+    scrollbar-width: none;
+  }
+
+  .startup-slack-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .startup-slack-sidebar > .flex {
+    display: none;
+  }
+
+  .startup-slack-sidebar > .grid {
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0;
+    width: max-content;
+  }
+
+  .startup-slack-sidebar .startup-slack-channel {
+    min-height: 2rem;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.4rem 0.65rem;
+  }
+
+  .startup-slack-sidebar .startup-slack-channel.is-active {
+    background: #1264a3;
+  }
+
+  .startup-slack-sidebar span:not(.startup-slack-channel) {
     display: none;
   }
 
