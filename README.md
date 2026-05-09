@@ -50,14 +50,15 @@ Current Fly app:
 - App: `internjobs-ai-student-app`
 - Org: `projecta-labs`
 - Temporary URL: `https://internjobs-ai-student-app.fly.dev`
+- Custom domain: `https://app.internjobs.ai`
 
-Custom domain DNS needed for `app.internjobs.ai`:
+Custom domain DNS:
 
 - `A app.internjobs.ai -> 66.241.125.177`
 - `AAAA app.internjobs.ai -> 2a09:8280:1::113:206e:0`
+- `CNAME _acme-challenge.app.internjobs.ai -> app.internjobs.ai.932q002.flydns.net`
+- `TXT _fly-ownership.app.internjobs.ai -> app-932q002`
 
-Alternative CNAME setup:
-
-- `CNAME app.internjobs.ai -> 932q002.internjobs-ai-student-app.fly.dev`
+Fly certificate status: issued and active.
 
 The repo should stay together until there is a concrete reason to split it, such as separate teams, separate access controls, or conflicting release schedules.

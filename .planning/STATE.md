@@ -15,8 +15,7 @@ blockers:
   - "Need LinkedIn OAuth app client ID/secret for Clerk provider configuration."
   - "Need Neon project/token or database connection string."
   - "Need Photon/Spectrum number, API credentials, webhook docs, and webhook secret."
-  - "Need DNS records for app.internjobs.ai pointing to the Projecta Labs Fly app."
-  - "Need this repo linked to the Projecta Labs InternJobs.ai Infisical project, or the project ID/environment/path passed explicitly."
+  - "Need this repo linked to the Projecta Labs InternJobs.ai Infisical project, or the correct Infisical account/org selected."
 ---
 
 # Project State
@@ -54,12 +53,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 - Confirm external provider credentials for Clerk LinkedIn, Neon, and Photon/Spectrum.
 - Plan Phase 2 implementation once Clerk LinkedIn credentials and redirect domains are ready.
-- Add DNS records for `app.internjobs.ai`: A `66.241.125.177`, AAAA `2a09:8280:1::113:206e:0`; or CNAME `932q002.internjobs-ai-student-app.fly.dev`.
+- `app.internjobs.ai` DNS points to the Projecta Labs Fly app and returns `/healthz` successfully over HTTPS.
 - Use Infisical as the secrets source of truth for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
 - Current repo has no `.infisical.json`; provider automation cannot read InternJobs.ai secrets until the Projecta Labs Infisical project metadata is provided.
 - Checked `/Users/rajren/MATRIX/.infisical.json`: it points at Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`.
 - Checked `/Users/rajren/MATRIX/.env.local`: Cloudflare variable names exist there, but the local values are empty placeholders.
 - Do not use GrowthPods/SIOS/SuperIntelligence Cloudflare secrets for InternJobs.ai; this project should use Projecta Labs / InternJobs.ai credentials only.
+- Attempted to save the InternJobs.ai-scoped Cloudflare DNS token to Infisical path `/internjobs-ai` in `prod`, but the logged-in Infisical org returned 403: the MATRIX project belongs to a different selected organization.
 
 ### Blockers/Concerns
 

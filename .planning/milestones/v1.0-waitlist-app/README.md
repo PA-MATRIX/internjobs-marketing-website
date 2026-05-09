@@ -29,16 +29,13 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 - Clerk LinkedIn provider credentials and production domain settings.
 - Neon project, database URL, and role strategy.
 - Photon/Spectrum phone number, inbound webhook shape, outbound send API, and auth method.
-- Final decision on whether `app.internjobs.ai` DNS points directly to Fly.io or through Cloudflare proxy.
-- Infisical project/environment/path for InternJobs.ai secrets.
+- Correct Infisical account/org selection for the Projecta Labs / MATRIX project before saving InternJobs.ai secrets.
 
 ## Current Fly DNS Records
 
-Fly certificate created for `app.internjobs.ai`.
+Fly certificate for `app.internjobs.ai` is issued and active.
 
 - `A app.internjobs.ai -> 66.241.125.177`
 - `AAAA app.internjobs.ai -> 2a09:8280:1::113:206e:0`
-
-Alternative:
-
-- `CNAME app.internjobs.ai -> 932q002.internjobs-ai-student-app.fly.dev`
+- `CNAME _acme-challenge.app.internjobs.ai -> app.internjobs.ai.932q002.flydns.net`
+- `TXT _fly-ownership.app.internjobs.ai -> app-932q002`
