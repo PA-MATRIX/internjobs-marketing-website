@@ -130,9 +130,9 @@ const channels: Channel[] = [
 ];
 
 const steps = [
-  ["Start with what you have", "Use LinkedIn or your projects so InternJobs knows the basics. No giant profile to fill out."],
+  ["Start with what you have", "Use LinkedIn or your projects so InternJobs.ai knows the basics. No giant profile to fill out."],
   ["Text it naturally", "Say what kind of work you want and what you have already built."],
-  ["Get the text", "InternJobs keeps looking in the background, texts when something fits, and helps coordinate the next step."],
+  ["Get the text", "InternJobs.ai keeps looking in the background, texts when something fits, and helps coordinate the next step."],
 ];
 
 const signals = [
@@ -145,7 +145,7 @@ const signals = [
 const faqs = [
   [
     "Is this another job board?",
-    "No. InternJobs texts you when something actually looks worth your time, then helps you reply without the awkward blank-page moment.",
+    "No. InternJobs.ai texts you when something actually looks worth your time, then helps you reply without the awkward blank-page moment.",
   ],
   [
     "Does it apply without me?",
@@ -163,7 +163,7 @@ const faqs = [
 
 const employerCards = [
   ["Share the real work", "What they will build, who they will learn from, and what kind of student will enjoy it."],
-  ["Reach students where they are", "InternJobs explains the role over text, with enough context to make it feel worth a reply."],
+  ["Reach students where they are", "InternJobs.ai explains the role over text, with enough context to make it feel worth a reply."],
   ["Get clearer replies", "Students can ask for help drafting something short, normal, and easy to send."],
 ];
 
@@ -357,7 +357,7 @@ function HeroSection() {
           </h1>
 
           <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
-            InternJobs keeps looking for startup internships while you're busy with class, work, or literally anything else.
+            InternJobs.ai keeps looking for startup internships while you're busy with class, work, or literally anything else.
           </p>
 
           <div className="mt-6 grid gap-3 sm:mt-8 sm:flex sm:flex-row">
@@ -895,7 +895,7 @@ function ChannelSection() {
               Built for where <span className="text-party-gradient">students already talk.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              InternJobs works in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
+              InternJobs.ai works in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -926,7 +926,7 @@ function ChannelSection() {
 
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
             <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Tell it what you're into and what you've built. Approve anything before it goes out." />
-            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they fit, handles the back-and-forth, and helps set up the interview." />
+            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs.ai" copy="Finds roles, explains why they fit, handles the back-and-forth, and helps set up the interview." />
           </div>
         </div>
 
@@ -994,7 +994,7 @@ function SignalsSection() {
               <div className="agent-node">
                 <BrandMark />
                 <div>
-                  <strong>InternJobs</strong>
+                  <strong>InternJobs.ai</strong>
                   <p>texts you first</p>
                 </div>
               </div>
@@ -1027,7 +1027,7 @@ function EmployerSection() {
           <SectionIntro
             eyebrow="For startups"
             title="Find students who already move like builders."
-            copy="Share the role in plain English. InternJobs helps the right students understand why it fits and reply with context."
+            copy="Share the role in plain English. InternJobs.ai helps the right students understand why it fits and reply with context."
           />
 
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -1066,7 +1066,7 @@ function EmployerSection() {
             </div>
 
             <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs note</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs.ai note</p>
               <p className="mt-3 text-lg font-black leading-7">This is best for students who have built projects, grown communities, or shipped content before.</p>
             </div>
 
@@ -1157,7 +1157,7 @@ function WaitlistSection() {
         <div className="relative z-10">
           <img
             src="/images/student-agent-handshake.png"
-            alt="A student shaking hands with a glowing InternJobs helper"
+            alt="A student shaking hands with a glowing InternJobs.ai helper"
             className="cta-illustration w-full"
           />
         </div>
@@ -1169,7 +1169,7 @@ function WaitlistSection() {
 function Footer() {
   return (
     <footer className="relative overflow-hidden border-t border-black/[0.08] bg-canvas px-5 py-12 sm:px-6 lg:px-8">
-      <div className="footer-word" aria-hidden="true">InternJobs</div>
+      <div className="footer-word" aria-hidden="true">InternJobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
