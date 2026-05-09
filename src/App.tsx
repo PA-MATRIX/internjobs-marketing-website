@@ -11,7 +11,6 @@ import {
   Send,
   ShieldCheck,
   Signal,
-  Sparkles,
   UserRound,
   Wifi,
   X,
@@ -342,8 +341,7 @@ function HeroSection() {
       <div className="hero-spectrum" aria-hidden="true" />
       <div className="relative z-10 mx-auto grid min-h-[calc(100svh-5rem)] w-full max-w-[1600px] items-center gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:gap-10">
         <Reveal className="max-w-[36rem]">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white/50 px-3 py-2 text-sm font-semibold text-ink-secondary">
-            <Sparkles className="size-4 text-ink" />
+          <div className="mb-6 inline-flex items-center rounded-full border border-black/[0.08] bg-white/50 px-3 py-2 text-sm font-semibold text-ink-secondary">
             Text-first internship search
           </div>
 
