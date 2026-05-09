@@ -480,7 +480,7 @@ function IMessageSurface({
           <InfinityIcon className="size-5" strokeWidth={2.4} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-ink">InternJobs</p>
+          <p className="truncate text-sm font-bold text-ink">InternJobs.ai</p>
           <p className="text-[11px] font-medium text-ink-secondary">{channel.label}</p>
         </div>
         <motion.div
@@ -567,7 +567,7 @@ function WhatsAppSurface({
           <PlatformLogo platform="whatsapp" className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-white">InternJobs</p>
+          <p className="truncate text-sm font-bold text-white">InternJobs.ai</p>
           <p className="text-[11px] text-white/78">online</p>
         </div>
         <motion.span key={pulse} initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} className="rounded-full bg-white/18 px-2 py-1 text-[10px] font-bold text-white">
@@ -630,7 +630,7 @@ function SlackSurface({
           <PlatformLogo platform="slack" className="size-5" />
         </div>
         <div>
-          <p className="text-sm font-black text-white">InternJobs group</p>
+          <p className="text-sm font-black text-white">InternJobs.ai</p>
           <p className="text-[11px] text-white/70"># tiny-wins</p>
         </div>
       </div>
@@ -651,7 +651,7 @@ function SlackSurface({
                 <SlackMessage key={`${message.text}-${index}`} message={message} index={index} />
               ))}
             </AnimatePresence>
-            {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#616061]">InternJobs is typing...</div> : null}
+            {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#616061]">InternJobs.ai is typing...</div> : null}
           </div>
         </div>
       </div>
@@ -675,7 +675,7 @@ function SlackMessage({ message, index }: { message: ChatMessage; index: number 
       </div>
       <div className="min-w-0">
         <p className="text-[12px] font-black text-[#1D1C1D]">
-          {isAgent ? "InternJobs" : "You"} <span className="font-medium text-[#616061]">9:41 AM</span>
+          {isAgent ? "InternJobs.ai" : "You"} <span className="font-medium text-[#616061]">9:41 AM</span>
         </p>
         <p className="text-[13px] leading-5 text-[#1D1C1D]">{message.text}</p>
       </div>
@@ -709,7 +709,7 @@ function DiscordSurface({
               <DiscordMessage key={`${message.text}-${index}`} message={message} index={index} />
             ))}
           </AnimatePresence>
-          {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#B5BAC1]">InternJobs is typing...</div> : null}
+          {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#B5BAC1]">InternJobs.ai is typing...</div> : null}
         </div>
       </div>
       <div className="discord-compose">Message #internjobs-helper</div>
@@ -732,7 +732,7 @@ function DiscordMessage({ message, index }: { message: ChatMessage; index: numbe
       </div>
       <div>
         <p className={`text-[12px] font-black ${isAgent ? "text-[#8E95FF]" : "text-[#23A559]"}`}>
-          {isAgent ? "InternJobs" : "student"} <span className="font-medium text-[#949BA4]">Today at 9:41 AM</span>
+          {isAgent ? "InternJobs.ai" : "student"} <span className="font-medium text-[#949BA4]">Today at 9:41 AM</span>
         </p>
         <p className="text-[13px] leading-5 text-[#DBDEE1]">{message.text}</p>
       </div>
@@ -759,7 +759,7 @@ function PhoneCallSurface({
         <div className="mx-auto grid size-20 place-items-center rounded-full bg-white/16 text-white">
           <InfinityIcon className="size-10" />
         </div>
-        <p className="mt-4 text-sm text-white/70">InternJobs</p>
+        <p className="mt-4 text-sm text-white/70">InternJobs.ai</p>
         <h3 className="mt-1 text-2xl font-black text-white">Tiny prep sheet</h3>
         <p className="mt-2 text-sm leading-5 text-white/65">Quick call tomorrow at 3:00 PM</p>
         <div className="mt-7 flex justify-center gap-5">
@@ -793,7 +793,7 @@ function PhoneCallSurface({
       </div>
       <div className="phonecall-tabbar">
         <span>Recents</span>
-        <strong>InternJobs</strong>
+        <strong>InternJobs.ai</strong>
         <span>Voicemail</span>
       </div>
     </div>
