@@ -1,0 +1,14 @@
+{
+  "name": "@internjobs/app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs",
+    "build": "node scripts/verify-app.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
