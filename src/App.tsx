@@ -197,8 +197,6 @@ const employerCards = [
   ["Get clearer replies", "Students can ask for help drafting something short, normal, and easy to send."],
 ];
 
-const startupFloatingCards = ["Strong fit", "Intro drafted", "Student approved", "Reply ready", "Slack update"];
-
 const resumeProblems = ["feel crowded", "create resume piles", "make every conversation cold"];
 const resumeFocuses = ["explains the fit", "finds students earlier", "starts warmer conversations"];
 
@@ -1870,7 +1868,7 @@ function StartupHeroSection() {
   return (
     <section className="startup-hero relative min-h-[100svh] overflow-hidden px-5 pb-16 pt-24 sm:px-6 lg:px-8">
       <div className="startup-hero-glow" aria-hidden="true" />
-      <div className="relative z-10 mx-auto grid min-h-[calc(100svh-6rem)] max-w-7xl items-center gap-12 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="relative z-10 mx-auto grid min-h-[calc(100svh-6rem)] max-w-[90rem] items-center gap-10 lg:grid-cols-[0.78fr_1.22fr]">
         <Reveal className="max-w-[42rem]">
           <div className="mb-6 inline-flex rounded-full border border-black/[0.08] bg-white/55 px-3 py-2 text-sm font-bold text-ink-secondary">For startups</div>
           <h1 className="font-display text-[3.3rem] leading-[0.98] text-ink sm:text-[5.4rem] lg:text-[6.4rem]">
@@ -1901,18 +1899,7 @@ function StartupHeroSection() {
 
 function StartupChatMockup() {
   return (
-    <div className="startup-chat-wrap relative mx-auto w-full max-w-[45rem]">
-      {startupFloatingCards.map((card, index) => (
-        <motion.div
-          key={card}
-          className={`startup-floating-card startup-floating-card-${index}`}
-          initial={{ opacity: 0, y: 14, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ delay: 0.25 + index * 0.08, duration: 0.35, ease: "easeOut" }}
-        >
-          {card}
-        </motion.div>
-      ))}
+    <div className="startup-chat-wrap relative mx-auto w-full max-w-[54rem]">
       <div className="startup-chat-shell">
         <div className="startup-slack-titlebar">
           <div className="flex items-center gap-1.5">
@@ -1920,7 +1907,7 @@ function StartupChatMockup() {
             <span className="size-3 rounded-full bg-[#FEBC2E]" />
             <span className="size-3 rounded-full bg-[#28C840]" />
           </div>
-          <span className="text-xs font-black text-white/70">Acme AI - Slack</span>
+          <span className="text-xs font-black text-white/70">Awesome Startup Inc. - Slack</span>
           <span className="w-14" />
         </div>
 
@@ -1931,15 +1918,26 @@ function StartupChatMockup() {
                 <SlackBrandLogo className="size-5" />
               </div>
               <div>
-                <p className="text-sm font-black text-white">Acme AI</p>
+                <p className="text-sm font-black text-white">Awesome Startup Inc.</p>
                 <p className="text-[11px] font-semibold text-white/52">founder workspace</p>
               </div>
             </div>
-            <div className="mt-6 grid gap-1 text-[12px] font-bold text-white/58">
-              <span className="startup-slack-channel is-active"># intern-intros</span>
+            <div className="mt-5 grid gap-1 text-[12px] font-bold text-white/58">
+              <span className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/32">Channels</span>
+              <span className="startup-slack-channel"># announcements</span>
+              <span className="startup-slack-channel"># product</span>
               <span className="startup-slack-channel"># growth</span>
+              <span className="startup-slack-channel"># customer-love</span>
+              <span className="startup-slack-channel is-active"># intern-intros</span>
               <span className="startup-slack-channel"># hiring</span>
+              <span className="startup-slack-channel"># standup</span>
               <span className="startup-slack-channel"># founder-notes</span>
+              <span className="startup-slack-channel"># random</span>
+              <span className="mt-4 px-2 pb-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/32">Apps</span>
+              <span className="startup-slack-channel flex items-center gap-2">
+                <InfinityIcon className="size-3.5" />
+                InternJobs.ai
+              </span>
             </div>
           </aside>
 
@@ -1953,7 +1951,7 @@ function StartupChatMockup() {
             </div>
 
             <div className="startup-slack-thread">
-              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+              <StartupSlackMessage name="Eric" role="Founder" color="#2EB67D">
                 Need someone scrappy for growth + community.
               </StartupSlackMessage>
 
@@ -1969,7 +1967,7 @@ function StartupChatMockup() {
                 </div>
               </StartupSlackMessage>
 
-              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+              <StartupSlackMessage name="Eric" role="Founder" color="#2EB67D">
                 This one feels interesting.
               </StartupSlackMessage>
 
@@ -1977,7 +1975,7 @@ function StartupChatMockup() {
                 <p>Warm intro drafted. Waiting for student approval.</p>
               </StartupSlackMessage>
 
-              <StartupSlackMessage name="Maya" role="Founder" color="#2EB67D">
+              <StartupSlackMessage name="Eric" role="Founder" color="#2EB67D">
                 Can we keep this in Slack?
               </StartupSlackMessage>
 
