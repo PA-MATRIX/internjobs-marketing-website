@@ -13,6 +13,7 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 - Clerk owns identity, starting with LinkedIn.
 - Neon owns durable app data.
 - Photon/Spectrum owns messaging transport and number/webhook integration.
+- Infisical owns secrets for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime configuration.
 
 ## Key Guardrails
 
@@ -21,6 +22,7 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 - Webhooks must be idempotent and authenticated.
 - Sensitive profile/message data must not be logged.
 - Browser-based LinkedIn enrichment is a design/review item, not default production behavior.
+- Secret values must stay in Infisical and should not be printed into chat, logs, or docs.
 
 ## External Inputs Needed
 
@@ -28,6 +30,7 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 - Neon project, database URL, and role strategy.
 - Photon/Spectrum phone number, inbound webhook shape, outbound send API, and auth method.
 - Final decision on whether `app.internjobs.ai` DNS points directly to Fly.io or through Cloudflare proxy.
+- Infisical project/environment/path for InternJobs.ai secrets.
 
 ## Current Fly DNS Records
 

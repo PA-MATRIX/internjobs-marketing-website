@@ -34,7 +34,7 @@
 
 - [ ] **DATA-01**: Neon database has tables for students, waitlist status, channel pairing codes, profile snapshots, consents, and audit events.
 - [ ] **DATA-02**: Database migrations can run repeatably in development and production.
-- [ ] **DATA-03**: Application secrets are configured outside source control for Fly.io and local development.
+- [ ] **DATA-03**: Application secrets are configured through Infisical and synced into Fly.io/local development without committing values.
 - [ ] **DATA-04**: Waitlist writes are idempotent for repeated sign-in and repeated webhook events.
 
 ### Messaging and Photon/Spectrum

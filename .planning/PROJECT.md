@@ -45,6 +45,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - Neon will be the system of record for waitlist students, startups, messaging pairing, consents, profile enrichment, and audit events.
 - Photon/Spectrum number, API credentials, webhook contract, and production phone number are still external dependencies.
 - `app.internjobs.ai` needs DNS records pointed at the Projecta Labs Fly app before the branded app domain resolves.
+- Infisical is the source of truth for secrets, including Cloudflare DNS/API tokens, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
 
 ## Constraints
 
@@ -53,6 +54,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - **Database**: Neon Postgres is the primary application database.
 - **Messaging**: Channel pairing depends on Photon/Spectrum number and inbound webhook support.
 - **Compliance**: LinkedIn data collection must be user-authorized and avoid credential capture, anti-bot bypass, or scraping private LinkedIn surfaces.
+- **Secrets**: Provider secrets live in Infisical, not repo files or plain local notes.
 - **UX**: Students should not feel like they are filling out recruiting software.
 
 ## Key Decisions

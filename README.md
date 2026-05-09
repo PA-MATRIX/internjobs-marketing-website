@@ -26,6 +26,25 @@ Cloudflare Pages should build the marketing app and publish `apps/marketing/dist
 
 Fly.io should deploy from `apps/app` using `apps/app/fly.toml`.
 
+## Secrets
+
+Infisical is the source of truth for secrets. Do not save provider tokens in `.env` files or repo docs.
+
+This repo must be linked to the InternJobs.ai Infisical project before provider automation can read secrets:
+
+- Run `infisical init` for the Projecta Labs InternJobs.ai project, or pass `--projectId` explicitly in automation.
+- Use the confirmed environment/path for Cloudflare, Clerk, LinkedIn, Neon, Photon/Spectrum, and Fly secrets.
+- Never print secret values into terminal output, chat, planning docs, or commits.
+
+Expected Infisical-managed secrets include:
+
+- Cloudflare API token with DNS edit access for `internjobs.ai`
+- Clerk publishable and secret keys
+- LinkedIn OAuth client ID and client secret
+- Neon database URLs and role credentials
+- Photon/Spectrum API token, webhook secret, and phone number
+- Fly.io deploy/runtime secrets
+
 Current Fly app:
 
 - App: `internjobs-ai-student-app`

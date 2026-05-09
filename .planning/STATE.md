@@ -16,6 +16,7 @@ blockers:
   - "Need Neon project/token or database connection string."
   - "Need Photon/Spectrum number, API credentials, webhook docs, and webhook secret."
   - "Need DNS records for app.internjobs.ai pointing to the Projecta Labs Fly app."
+  - "Need this repo linked to the Projecta Labs InternJobs.ai Infisical project, or the project ID/environment/path passed explicitly."
 ---
 
 # Project State
@@ -54,11 +55,14 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - Confirm external provider credentials for Clerk LinkedIn, Neon, and Photon/Spectrum.
 - Plan Phase 2 implementation once Clerk LinkedIn credentials and redirect domains are ready.
 - Add DNS records for `app.internjobs.ai`: A `66.241.125.177`, AAAA `2a09:8280:1::113:206e:0`; or CNAME `932q002.internjobs-ai-student-app.fly.dev`.
+- Use Infisical as the secrets source of truth for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
+- Current repo has no `.infisical.json`; provider automation cannot read InternJobs.ai secrets until the Projecta Labs Infisical project metadata is provided.
 
 ### Blockers/Concerns
 
 - LinkedIn browser automation must not become production scraping without explicit legal/compliance approval.
 - App and marketing should deploy separately, but stay in one repo until there is a real team/security reason to split repositories.
+- Do not print Infisical secret values into chat, logs, or committed docs.
 
 ## Session Continuity
 
