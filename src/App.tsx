@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useInView, useScroll, useTransform } from "framer-motion";
 import { siDiscord, siImessage, siWhatsapp } from "simple-icons";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 type ChatMessage = {
@@ -41,6 +41,7 @@ const navLinks = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Channels", href: "#channels" },
   { label: "Why it helps", href: "#signals" },
+  { label: "Employers", href: "#employers" },
   { label: "FAQ", href: "#faq" },
 ];
 
@@ -154,6 +155,12 @@ const faqs = [
   ],
 ];
 
+const employerCards = [
+  ["Share the real work", "What they will build, who they will learn from, and what kind of student will enjoy it."],
+  ["Reach students where they are", "InternJobs explains the role over text, with enough context to make it feel worth a reply."],
+  ["Get clearer replies", "Students can ask for help drafting something short, normal, and easy to send."],
+];
+
 type PlatformName = "imessage" | "whatsapp" | "slack" | "discord" | "phone";
 
 function PlatformLogo({ platform, className = "" }: { platform: PlatformName; className?: string }) {
@@ -197,6 +204,7 @@ function App() {
       <HowItWorksSection />
       <ChannelSection />
       <SignalsSection />
+      <EmployerSection />
       <FAQSection />
       <WaitlistSection />
       <Footer />
@@ -207,32 +215,70 @@ function App() {
 
 function Navbar() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [activeHref, setActiveHref] = useState("");
+
+  useEffect(() => {
+    const sectionIds = navLinks.map((link) => link.href.slice(1));
+
+    const update = () => {
+      setScrolled(window.scrollY > 8);
+
+      let current = "";
+      sectionIds.forEach((id) => {
+        const section = document.getElementById(id);
+        if (section && section.getBoundingClientRect().top <= 116) {
+          current = id;
+        }
+      });
+      setActiveHref(current ? `#${current}` : "");
+    };
+
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-canvas/82 backdrop-blur-2xl">
-      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8">
-        <a href="#" className="flex items-center gap-2" aria-label="InternJobs.ai home">
+    <header
+      className={`fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] backdrop-blur-2xl transition ${
+        scrolled ? "bg-canvas/92 shadow-[0_12px_36px_rgba(0,0,0,0.06)]" : "bg-canvas/76"
+      }`}
+    >
+      <nav className="relative flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
+        <a href="#" className="flex items-center gap-2.5" aria-label="InternJobs.ai home" onClick={() => setOpen(false)}>
           <BrandMark size="sm" />
-          <span className="text-base font-bold text-ink">InternJobs.ai</span>
+          <span className="text-base font-black text-ink">InternJobs.ai</span>
         </a>
 
-        <div className="hidden items-center gap-8 md:flex">
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-black/[0.06] bg-white/46 p-1 lg:flex">
           {navLinks.map((link) => (
-            <a key={link.href} href={link.href} className="text-sm font-medium text-ink-secondary transition hover:text-ink">
+            <a
+              key={link.href}
+              href={link.href}
+              className={`rounded-full px-3.5 py-2 text-sm font-bold transition ${
+                activeHref === link.href ? "bg-black/[0.06] text-ink" : "text-ink-secondary hover:bg-white/70 hover:text-ink"
+              }`}
+            >
               {link.label}
             </a>
           ))}
         </div>
 
-        <a href="#waitlist" className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white md:inline-flex">
+        <a href="#waitlist" className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white lg:inline-flex">
           Join Early Access
           <ArrowRight className="ml-2 size-4" />
         </a>
 
         <button
           type="button"
-          className="grid size-10 place-items-center rounded-lg border border-black/[0.08] bg-white/60 md:hidden"
+          className="grid size-10 place-items-center rounded-lg border border-black/[0.08] bg-white/70 lg:hidden"
           aria-label="Toggle navigation"
+          aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
           {open ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -245,7 +291,7 @@ function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-t border-black/[0.06] bg-canvas md:hidden"
+            className="border-t border-black/[0.06] bg-canvas lg:hidden"
           >
             <div className="space-y-1 px-5 py-4">
               {navLinks.map((link) => (
@@ -253,7 +299,9 @@ function Navbar() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="block rounded-lg px-3 py-3 text-sm font-semibold text-ink-secondary hover:bg-black/[0.04]"
+                  className={`block rounded-lg px-3 py-3 text-sm font-bold ${
+                    activeHref === link.href ? "bg-black/[0.06] text-ink" : "text-ink-secondary hover:bg-black/[0.04]"
+                  }`}
                 >
                   {link.label}
                 </a>
@@ -300,7 +348,7 @@ function HeroSection() {
           </div>
 
           <h1 className="font-display text-[2.95rem] leading-[0.98] text-ink sm:text-[5.5rem] lg:text-[6rem]">
-            Get texts when something <span className="text-party-gradient">actually fits.</span>
+            Internships <span className="text-party-gradient">over text.</span>
           </h1>
 
           <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
@@ -330,7 +378,6 @@ function HeroSection() {
         </Reveal>
 
         <motion.div style={{ y: phoneY }} className="relative mx-auto w-full max-w-[22rem] sm:max-w-[25rem] lg:max-w-[27rem]">
-          <ChannelArtifacts channel={channels[0]} />
           <PhoneExperience messages={heroMessages} channel={channels[0]} mode="hero" />
         </motion.div>
       </div>
@@ -840,10 +887,10 @@ function ChannelSection() {
         <div>
           <Reveal>
             <h2 className="max-w-[42rem] text-[2.55rem] font-black leading-[1.05] text-[#070707] sm:text-[4.75rem]">
-              Not another <span className="text-party-gradient">internship portal.</span>
+              Built for where <span className="text-party-gradient">students already talk.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              InternJobs meets you where you already talk: iMessage, WhatsApp, Slack, Discord, and phone. No extra portal to keep checking.
+              InternJobs meets you in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -893,71 +940,6 @@ function ChannelSection() {
         </div>
       </div>
     </section>
-  );
-}
-
-function ChannelArtifacts({ channel }: { channel: Channel }) {
-  const accent = channel.color;
-  const isImessage = channel.name === "iMessage";
-  const isSlack = channel.name === "Slack";
-  const isDiscord = channel.name === "Discord";
-  const isWhatsApp = channel.name === "WhatsApp";
-  const isPhone = channel.name === "Phone";
-
-  return (
-    <div className="channel-artifacts" aria-hidden="true">
-      <motion.div
-        key={`${channel.name}-card`}
-        className="artifact-card artifact-card-left"
-        style={{ "--artifact-accent": accent } as CSSProperties}
-        initial={{ opacity: 0, x: 14, y: 16, scale: 0.88, rotate: -4 }}
-        animate={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: -2 }}
-        transition={{ duration: 0.36, ease: "easeOut" }}
-      >
-        <div className="artifact-card-top">
-          <PlatformLogo platform={channel.name.toLowerCase() as PlatformName} className="size-4" />
-          <span>{channel.label}</span>
-        </div>
-        <strong>{isPhone ? "Prep sheet" : isSlack ? "#intern-finds" : isDiscord ? "founder-drops" : "Actually fits"}</strong>
-        <small>{isWhatsApp ? "while you were in class" : isImessage ? "remote + paid" : "worth checking out"}</small>
-      </motion.div>
-
-      <motion.div
-        key={`${channel.name}-voice`}
-        className="artifact-voice"
-        style={{ "--artifact-accent": accent } as CSSProperties}
-        initial={{ opacity: 0, x: -12, y: 18, scale: 0.9 }}
-        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-        transition={{ duration: 0.36, delay: 0.05, ease: "easeOut" }}
-      >
-        <span className="artifact-play" />
-        <span className="artifact-wave" />
-        <small>0:06</small>
-      </motion.div>
-
-      <motion.div
-        key={`${channel.name}-bubble`}
-        className="artifact-bubble"
-        style={{ "--artifact-accent": accent } as CSSProperties}
-        initial={{ opacity: 0, x: -16, y: -10, scale: 0.9 }}
-        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-        transition={{ duration: 0.36, delay: 0.1, ease: "easeOut" }}
-      >
-        {isSlack ? "Drafted a normal reply." : isDiscord ? "Worth checking out." : isPhone ? "3 things to say." : "This actually fits."}
-      </motion.div>
-
-      <motion.div
-        key={`${channel.name}-chips`}
-        className="artifact-chips"
-        initial={{ opacity: 0, y: -12, scale: 0.94 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.36, delay: 0.14, ease: "easeOut" }}
-      >
-        {channel.emojis.slice(0, 3).map((tag) => (
-          <span key={`${channel.name}-${tag}`}>{tag}</span>
-        ))}
-      </motion.div>
-    </div>
   );
 }
 
@@ -1026,6 +1008,87 @@ function SignalsSection() {
             ))}
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function EmployerSection() {
+  return (
+    <section id="employers" className="employer-band relative overflow-hidden px-5 py-24 sm:px-6 lg:px-8">
+      <div className="employer-glow" aria-hidden="true" />
+      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.92fr_1.08fr]">
+        <div className="min-w-0">
+          <SectionIntro
+            eyebrow="For startups"
+            title="Find students who already move like builders."
+            copy="Share the role in plain English. InternJobs helps the right students understand why it fits and reply with context."
+          />
+
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {employerCards.map(([title, copy], index) => (
+              <Reveal key={title} delay={index * 0.06} className="min-w-0">
+                <div className="min-w-0 rounded-lg border border-black/[0.08] bg-white/62 p-5 shadow-soft backdrop-blur">
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-black text-sm font-black text-white">0{index + 1}</span>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-black text-ink">{title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-ink-secondary">{copy}</p>
+                    </div>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+
+        <Reveal className="min-w-0">
+          <div className="employer-preview rounded-lg border border-black/[0.08] bg-white/72 p-5 shadow-soft backdrop-blur-xl sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-secondary">Startup role</p>
+                <h3 className="mt-3 text-3xl font-black leading-tight text-ink">Growth intern for an AI tools team</h3>
+              </div>
+              <span className="inline-flex w-fit rounded-full bg-black px-3 py-1 text-xs font-black text-white">paid</span>
+            </div>
+
+            <div className="mt-6 grid gap-2 sm:grid-cols-3">
+              {["Remote", "10-15 hrs", "Founder-led"].map((tag) => (
+                <span key={tag} className="rounded-lg bg-black/[0.045] px-3 py-3 text-sm font-black text-ink">
+                  {tag}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs note</p>
+              <p className="mt-3 text-lg font-black leading-7">This is best for students who have built projects, grown communities, or shipped content before.</p>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-black/[0.08] bg-white p-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-black text-ink">Students who may fit</p>
+                <span className="text-xs font-bold text-ink-secondary">3 ready to text</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {[
+                  ["AI newsletter + campus ambassador", "Strong context"],
+                  ["Built a waitlist for a student app", "Worth a look"],
+                  ["Runs a Discord for builders", "Relevant"],
+                ].map(([student, tag]) => (
+                  <div key={student} className="flex items-center gap-3 rounded-lg bg-[#F6F4EE] p-3">
+                    <BrandMark size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black text-ink">{student}</p>
+                      <p className="text-xs font-semibold text-ink-secondary">Can reply over text first</p>
+                    </div>
+                    <span className="hidden rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-ink-secondary sm:inline-flex">{tag}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Reveal>
       </div>
     </section>
   );

@@ -398,159 +398,6 @@ a {
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.1);
 }
 
-.channel-artifacts {
-  position: absolute;
-  inset: -1.5rem;
-  z-index: 8;
-  pointer-events: none;
-}
-
-.artifact-card,
-.artifact-voice,
-.artifact-bubble,
-.artifact-chips {
-  position: absolute;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.16);
-}
-
-.artifact-card {
-  left: -3.2rem;
-  top: 3.2rem;
-  width: 9.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 0.72rem;
-  backdrop-filter: blur(18px);
-}
-
-.artifact-card-top {
-  display: flex;
-  align-items: center;
-  gap: 0.42rem;
-  color: var(--artifact-accent);
-  font-size: 0.68rem;
-  font-weight: 900;
-}
-
-.artifact-card strong {
-  display: block;
-  margin-top: 1.55rem;
-  color: #111111;
-  font-size: 0.84rem;
-  line-height: 1.15;
-}
-
-.artifact-card small {
-  display: block;
-  margin-top: 0.24rem;
-  color: #6f6f6f;
-  font-size: 0.66rem;
-  font-weight: 700;
-}
-
-.artifact-voice {
-  right: -3.7rem;
-  top: 2.45rem;
-  display: flex;
-  align-items: center;
-  gap: 0.52rem;
-  min-width: 9.65rem;
-  border-radius: 999px;
-  background: var(--artifact-accent);
-  padding: 0.58rem 0.72rem;
-  color: #ffffff;
-}
-
-.artifact-play {
-  display: grid;
-  width: 1.35rem;
-  height: 1.35rem;
-  place-items: center;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.artifact-play::before {
-  content: "";
-  width: 0;
-  height: 0;
-  margin-left: 0.12rem;
-  border-bottom: 0.28rem solid transparent;
-  border-left: 0.42rem solid #ffffff;
-  border-top: 0.28rem solid transparent;
-}
-
-.artifact-wave {
-  display: block;
-  width: 4.5rem;
-  height: 1rem;
-  background:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.92) 0 2px, transparent 2px 6px);
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  animation: wave-slide 1.2s linear infinite;
-}
-
-.artifact-voice small {
-  font-size: 0.6rem;
-  font-weight: 800;
-  opacity: 0.78;
-}
-
-.artifact-bubble {
-  right: -4.4rem;
-  bottom: 6.4rem;
-  max-width: 12rem;
-  border-radius: 1.1rem;
-  background: #111111;
-  padding: 0.68rem 0.9rem;
-  color: #ffffff;
-  font-size: 0.78rem;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
-.artifact-bubble::after {
-  content: "";
-  position: absolute;
-  right: 1rem;
-  bottom: -0.38rem;
-  width: 0.8rem;
-  height: 0.8rem;
-  transform: rotate(45deg);
-  background: #111111;
-}
-
-.artifact-chips {
-  left: -2.55rem;
-  bottom: 5.1rem;
-  display: flex;
-  max-width: 12rem;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.artifact-chips span {
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 0.38rem 0.58rem;
-  color: #111111;
-  font-size: 0.66rem;
-  font-weight: 900;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.1);
-}
-
-@keyframes wave-slide {
-  from {
-    background-position: 0 0;
-  }
-
-  to {
-    background-position: 18px 0;
-  }
-}
-
 .whatsapp-surface,
 .slack-surface,
 .discord-surface,
@@ -843,6 +690,46 @@ a {
   }
 }
 
+.employer-band {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 77, 141, 0.14), transparent 22rem),
+    radial-gradient(circle at 44% 3%, rgba(255, 206, 61, 0.16), transparent 24rem),
+    radial-gradient(circle at 86% 26%, rgba(0, 122, 255, 0.12), transparent 24rem),
+    linear-gradient(180deg, #fbf7ef 0%, #f7f0e6 100%);
+}
+
+.employer-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 77, 141, 0.08) 0 18%, rgba(255, 206, 61, 0.08) 18% 36%, rgba(37, 211, 102, 0.07) 36% 56%, rgba(54, 197, 240, 0.08) 56% 76%, rgba(88, 101, 242, 0.08) 76% 100%),
+    linear-gradient(rgba(17, 17, 17, 0.024) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 17, 17, 0.024) 1px, transparent 1px);
+  background-size: auto, 56px 56px, 56px 56px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), transparent 80%);
+}
+
+.employer-preview {
+  position: relative;
+  overflow: hidden;
+}
+
+.employer-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 77, 141, 0.1), transparent 16rem),
+    radial-gradient(circle at 94% 14%, rgba(0, 122, 255, 0.11), transparent 16rem);
+}
+
+.employer-preview > * {
+  position: relative;
+  z-index: 1;
+}
+
 .cta-spectrum {
   position: absolute;
   inset: 0;
@@ -943,45 +830,6 @@ a {
 
   .channel-spectrum {
     background-size: 140% 26rem;
-  }
-
-  .channel-artifacts {
-    inset: -0.5rem;
-  }
-
-  .artifact-card,
-  .artifact-voice,
-  .artifact-bubble,
-  .artifact-chips {
-    transform-origin: center;
-  }
-
-  .artifact-card {
-    left: -0.55rem;
-    top: 1.7rem;
-    width: 7.75rem;
-  }
-
-  .artifact-voice {
-    right: -0.7rem;
-    top: 1.45rem;
-    min-width: 7.7rem;
-  }
-
-  .artifact-wave {
-    width: 3rem;
-  }
-
-  .artifact-bubble {
-    right: -0.65rem;
-    bottom: 5.4rem;
-    max-width: 9rem;
-  }
-
-  .artifact-chips {
-    left: -0.55rem;
-    bottom: 4.2rem;
-    max-width: 8rem;
   }
 
   .cta-illustration {
