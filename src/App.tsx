@@ -41,12 +41,12 @@ const navLinks = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Channels", href: "#channels" },
   { label: "Why it helps", href: "#signals" },
-  { label: "Employers", href: "#employers" },
+  { label: "Startups", href: "#startups" },
   { label: "FAQ", href: "#faq" },
 ];
 
 const heroMessages: ChatMessage[] = [
-  { author: "agent", text: "Found something you'd probably be into." },
+  { author: "agent", text: "Hey Jordan, found something you'd probably be into." },
   { author: "agent", text: "Growth intern. Early-stage AI startup. Remote + paid." },
   { author: "student", text: "Okay wait this actually looks really good" },
   { author: "agent", text: "Yeah. Your AI newsletter and campus ambassador stuff made this stand out." },
@@ -361,7 +361,7 @@ function HeroSection() {
               <ArrowRight className="ml-2 size-4" />
             </a>
             <a href="#channels" className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] bg-white/55 px-4 text-sm font-bold text-ink transition hover:bg-white sm:h-14 sm:px-7 sm:text-base">
-              See it work
+              See the texts
             </a>
           </div>
 
@@ -841,7 +841,7 @@ function AgentSearchingIndicator() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
       <div className="rounded-[1.15rem] rounded-bl-md bg-[#E9E9EB] px-3.5 py-2 text-[12px] font-medium text-[#555]">
-        Still looking for stronger matches
+        Still looking for better fits
       </div>
     </motion.div>
   );
@@ -890,7 +890,7 @@ function ChannelSection() {
               Built for where <span className="text-party-gradient">students already talk.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              InternJobs meets you in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
+              InternJobs works in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -920,7 +920,7 @@ function ChannelSection() {
           </div>
 
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
-            <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Share what you want and what you have built. Approve anything before it goes out." />
+            <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Tell it what you're into and what you've built. Approve anything before it goes out." />
             <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they fit, and helps you send a clear reply." />
           </div>
         </div>
@@ -967,7 +967,7 @@ function SignalsSection() {
         <SectionIntro
           eyebrow="Less exhausting"
           title="It keeps looking in the background."
-          copy="Class, work, practice, side projects. When something worth checking out pops up, you get the text."
+          copy="Find startup internships before everyone else does. When something worth checking out pops up, you get the text."
         />
 
         <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
@@ -1015,7 +1015,7 @@ function SignalsSection() {
 
 function EmployerSection() {
   return (
-    <section id="employers" className="employer-band relative overflow-hidden px-5 py-24 sm:px-6 lg:px-8">
+    <section id="startups" className="employer-band relative overflow-hidden px-5 py-24 sm:px-6 lg:px-8">
       <div className="employer-glow" aria-hidden="true" />
       <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="min-w-0">
