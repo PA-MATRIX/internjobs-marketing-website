@@ -16,10 +16,10 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import { AnimatePresence, motion, useInView, useScroll, useTransform } from "framer-motion";
+import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion";
 import { siDiscord, siImessage, siWhatsapp } from "simple-icons";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 type ChatMessage = {
   author: "agent" | "student";
@@ -58,6 +58,8 @@ const messageAnimation = {
   nextBubbleDelay: 1250,
   cyclePause: 3800,
 };
+
+const APP_WAITLIST_URL = "https://app.internjobs.ai";
 
 const navLinks = [
   { label: "How it works", href: "#how-it-works" },
@@ -859,7 +861,7 @@ function Navbar() {
           ))}
         </div>
 
-        <a href="#waitlist" className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white lg:inline-flex">
+        <a href={APP_WAITLIST_URL} className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white lg:inline-flex">
           Join Early Access
           <ArrowRight className="ml-2 size-4" />
         </a>
@@ -897,7 +899,7 @@ function Navbar() {
                 </a>
               ))}
               <a
-                href="#waitlist"
+                href={APP_WAITLIST_URL}
                 onClick={() => setOpen(false)}
                 className="primary-party-button mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm font-bold text-white"
               >
@@ -945,7 +947,7 @@ function HeroSection() {
           </p>
 
           <div className="mt-6 grid gap-3 sm:mt-8 sm:flex sm:flex-row">
-            <a href="#waitlist" className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-4 text-sm font-bold text-white sm:h-14 sm:px-7 sm:text-base">
+            <a href={APP_WAITLIST_URL} className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-4 text-sm font-bold text-white sm:h-14 sm:px-7 sm:text-base">
               <span>Join Early Access</span>
               <ArrowRight className="ml-2 size-4" />
             </a>
@@ -1733,7 +1735,7 @@ function WaitlistSection() {
           <p className="mt-5 max-w-md leading-7 text-white/75">
             Get the first text when we open up. Built for students who would rather text than fill out another giant form.
           </p>
-          <a href="mailto:hello@internjobs.ai?subject=Join%20InternJobs.ai%20Early%20Access" className="secondary-party-button mt-8 inline-flex h-[3.35rem] items-center justify-center rounded-full px-7 font-black text-[#111]">
+          <a href={APP_WAITLIST_URL} className="secondary-party-button mt-8 inline-flex h-[3.35rem] items-center justify-center rounded-full px-7 font-black text-[#111]">
             Join Early Access
             <ArrowRight className="ml-2 size-4" />
           </a>
@@ -2414,7 +2416,7 @@ function LegalNavbar({ active }: { active: "privacy" | "terms" }) {
           <a href="/startups" className="hidden text-sm font-bold text-ink-secondary transition hover:text-ink md:inline-flex">
             Startups
           </a>
-          <a href="/#waitlist" className="primary-party-button inline-flex rounded-full px-4 py-2.5 text-sm font-bold text-white sm:px-5">
+          <a href={APP_WAITLIST_URL} className="primary-party-button inline-flex rounded-full px-4 py-2.5 text-sm font-bold text-white sm:px-5">
             Join Early Access
           </a>
         </div>
@@ -2532,15 +2534,12 @@ function SectionIntro({
 }
 
 function Reveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-80px" });
-
   return (
     <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 24 }}
-      animate={isInView ? { opacity: 1, y: 0 } : undefined}
+      initial={{ opacity: 1, y: 0 }}
+      whileInView={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.55, delay, ease: "easeOut" }}
+      viewport={{ once: true, margin: "-80px" }}
       className={className}
     >
       {children}
@@ -2562,7 +2561,7 @@ function FloatingMobileCTA() {
     <AnimatePresence>
       {visible ? (
         <motion.a
-          href="#waitlist"
+          href={APP_WAITLIST_URL}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}

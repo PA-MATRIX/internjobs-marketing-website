@@ -1106,7 +1106,8 @@ a {
 
   .signal-lines {
     width: 100%;
-    transform: rotate(90deg);
+    max-width: 12rem;
+    transform: none;
   }
 
   .channel-spectrum {
