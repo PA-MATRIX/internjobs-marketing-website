@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Infinity as InfinityIcon,
   Linkedin,
+  Mail,
   Menu,
   MessageCircle,
   Phone,
@@ -196,36 +197,59 @@ const employerCards = [
   ["Get clearer replies", "Students can ask for help drafting something short, normal, and easy to send."],
 ];
 
-const startupFloatingCards = ["Strong fit detected", "Founder requested intro", "Student approved intro", "Reply drafted", "Context card viewed"];
+const startupFloatingCards = ["Strong fit", "Intro drafted", "Student approved", "Reply ready", "Slack update"];
 
-const resumeProblems = ["cold applications", "generic resumes", "low-context conversations", "students spraying applications everywhere"];
-const resumeFocuses = ["students who actually fit", "startup interest", "projects and initiative", "conversational matching", "warmer intros"];
+const resumeProblems = ["feel crowded", "create resume piles", "make every conversation cold"];
+const resumeFocuses = ["explains the fit", "finds students earlier", "starts warmer conversations"];
 
 const startupContextCards = [
-  ["Built things already", "Projects, side quests, waitlists, communities, creator work, startup curiosity."],
-  ["Actually interested", "Students matched based on goals, interests, and startup fit."],
-  ["Startup-friendly energy", "Students who want ownership, ambiguity, and fast-moving teams."],
-  ["Reply naturally", "Students can respond over text before the first call."],
+  ["Built things already", "Projects, side projects, communities, creator work."],
+  ["Actually interested", "Goals, interests, and startup fit."],
+  ["Ready for small teams", "Students who want ownership and fast-moving work."],
+  ["Reply naturally", "Students can text before the first call."],
 ];
 
-const startupSignals = ["Founder posts", "Discord communities", "Student builders", "Warm intro paths", "Startup interest signals"];
+const startupSignals = ["Founder posts", "Builder communities", "Student projects", "Creator work", "Warm intros"];
+
+const startupWorkflowChannels = [
+  {
+    name: "Slack",
+    copy: "Get candidate summaries and intros directly in Slack.",
+    icon: <SlackBrandLogo className="size-6" />,
+  },
+  {
+    name: "Email",
+    copy: "Receive short, context-rich intros without another recruiting inbox.",
+    icon: <Mail className="size-6" />,
+  },
+  {
+    name: "Text",
+    copy: "Quick updates, replies, and approvals over text.",
+    icon: <MessageCircle className="size-6" />,
+  },
+  {
+    name: "Discord",
+    copy: "Startup communities and student builders already live here.",
+    icon: <PlatformLogo platform="discord" className="size-6" />,
+  },
+];
 
 const humanNoList = ["No giant applicant spreadsheets", "No resume black holes", "No generic cold outreach", "No easy apply spam", "No awkward first messages"];
 const humanYesList = ["Students with context", "Faster replies", "Natural conversations", "Warm intros", "People who actually care about startups"];
 
 const startupSteps = [
   ["Describe the role", "What they'll build, learn, and work on."],
-  ["InternJobs.ai keeps looking", "Projects, startup communities, student builders, and internship interest."],
+  ["InternJobs.ai keeps looking", "Projects, communities, student builders, and early interest."],
   ["Students get the text", "The role gets explained with context, not just a listing."],
-  ["Start the conversation", "Students can reply naturally before the first call."],
+  ["Start the conversation", "Slack, email, or text. Whatever your team already uses."],
 ];
 
 const startupFaqs = [
-  ["Is this an ATS?", "No. InternJobs.ai is a conversational internship matching layer built for startups and students."],
+  ["Is this an ATS?", "Not really. It is a simpler way for startups and students to find each other over text."],
   ["Do students approve intros?", "Yes. Nothing moves forward without student approval."],
-  ["What kinds of startups is this built for?", "Founder-led teams, AI startups, growth-stage startups, remote teams, and companies hiring through networks and communities."],
-  ["Can students reply over text?", "Yes. The experience is messaging-first."],
-  ["How is this different from LinkedIn?", "InternJobs.ai focuses on startup fit, projects, interest, and conversational matching, not just applications."],
+  ["What kinds of startups is this built for?", "Founder-led teams, AI startups, small teams, remote teams, and companies hiring through networks."],
+  ["Can this work in Slack or email?", "Yes. Slack, email, text, or Discord. Whatever your team already uses."],
+  ["How is this different from LinkedIn?", "InternJobs.ai looks for students who fit the role and care about startups, then helps start the conversation."],
 ];
 
 const privacyContent: LegalPageContent = {
@@ -1758,12 +1782,12 @@ function StartupPage() {
       <StartupNavbar />
       <StartupHeroSection />
       <ResumePileSection />
-      <StartupContextSection />
+      <StartupWorkflowSection />
       <StartupSignalsSection />
+      <StartupContextSection />
       <StartupHiringSection />
-      <HumanInternshipsSection />
-      <StartupHowItWorksSection />
       <StartupRoleMockupSection />
+      <StartupHowItWorksSection />
       <StartupAccessSection />
       <StartupFAQSection />
       <StartupFooter />
@@ -1853,7 +1877,7 @@ function StartupHeroSection() {
             Find students who already move like builders.
           </h1>
           <p className="mt-6 max-w-[37rem] text-lg leading-8 text-ink-secondary">
-            InternJobs.ai helps startups discover ambitious students through projects, communities, startup interest, and conversational matching, not just resumes.
+            Find ambitious students through projects, communities, and warm intros, not just resumes.
           </p>
           <div className="mt-8 grid gap-3 sm:flex">
             <a href="#startup-access" className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-5 text-sm font-black text-white sm:h-14 sm:px-7 sm:text-base">
@@ -1913,9 +1937,9 @@ function StartupChatMockup() {
             <span>Warm intro drafted.</span>
             <span>Waiting for student approval.</span>
           </StartupBubble>
-          <StartupBubble author="Founder">Can they reply over text first?</StartupBubble>
+          <StartupBubble author="Founder">Can we keep this in Slack?</StartupBubble>
           <StartupBubble author="InternJobs.ai" agent>
-            Yep. They can ask questions, reply naturally, and prep before the call.
+            Yep. Slack, text, or email. Whatever your team already uses.
           </StartupBubble>
         </div>
       </div>
@@ -1936,10 +1960,10 @@ function ResumePileSection() {
   return (
     <section className="dark-band px-5 py-24 text-white sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.75fr_1.25fr]">
-        <StartupSectionIntro eyebrow="Anti-resume-pile" title="Not another resume pile." copy="Most internship platforms create cold starts. InternJobs.ai keeps the first conversation warmer, more natural, and higher-context." light />
+        <StartupSectionIntro eyebrow="Anti-resume-pile" title="Not another resume pile." copy="Good interns should not be buried in a crowded board. InternJobs.ai keeps the first conversation warmer." light />
         <div className="grid gap-4 md:grid-cols-2">
-          <ComparisonCard title="Most platforms create" items={resumeProblems} muted />
-          <ComparisonCard title="InternJobs.ai focuses on" items={resumeFocuses} />
+          <ComparisonCard title="Most internship platforms" items={resumeProblems} muted />
+          <ComparisonCard title="InternJobs.ai" items={resumeFocuses} />
         </div>
       </div>
     </section>
@@ -1964,11 +1988,37 @@ function ComparisonCard({ title, items, muted = false }: { title: string; items:
   );
 }
 
+function StartupWorkflowSection() {
+  return (
+    <section className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <StartupSectionIntro
+          eyebrow="No new dashboard"
+          title="Works where your team already works."
+          copy="Some founders want texts. Some want Slack. Some want email. InternJobs.ai adapts to the workflow you already use."
+        />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {startupWorkflowChannels.map((channel, index) => (
+            <Reveal key={channel.name} delay={index * 0.05} className="h-full">
+              <div className="workflow-card h-full rounded-lg border border-black/[0.08] bg-white/62 p-5 shadow-soft">
+                <div className="workflow-icon grid size-12 place-items-center rounded-lg bg-black text-white">{channel.icon}</div>
+                <h3 className="mt-6 text-xl font-black text-ink">{channel.name}</h3>
+                <p className="mt-3 text-sm leading-6 text-ink-secondary">{channel.copy}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+        <p className="mt-6 text-sm font-black text-ink">No extra dashboard to babysit.</p>
+      </div>
+    </section>
+  );
+}
+
 function StartupContextSection() {
   return (
     <section className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <StartupSectionIntro eyebrow="Context first" title="See the context before the conversation." copy="A resume can miss the reason a student is worth talking to. InternJobs.ai gives founders the details that make a first reply easier." />
+        <StartupSectionIntro eyebrow="Context first" title="See the context before the conversation." copy="A resume can miss why someone is worth talking to. InternJobs.ai shows the reason." />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {startupContextCards.map(([title, copy], index) => (
             <Reveal key={title} delay={index * 0.06} className="h-full">
@@ -1991,7 +2041,7 @@ function StartupSignalsSection() {
         <StartupSectionIntro
           eyebrow="Earlier signal"
           title="Find students before everyone else does."
-          copy="Some of the best startup interns are not applying everywhere. They are hanging out in communities, building things already, and getting discovered through networks. InternJobs.ai helps startups reach them earlier."
+          copy="The best startup interns are often already building, posting, and helping in communities. InternJobs.ai helps you reach them earlier."
         />
         <div className="grid gap-3 sm:grid-cols-2">
           {startupSignals.map((signal, index) => (
@@ -2012,11 +2062,11 @@ function StartupHiringSection() {
   return (
     <section className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <StartupSectionIntro eyebrow="Founder-led hiring" title="Built for how startups actually hire." copy="Less filtering. More real conversations." />
+        <StartupSectionIntro eyebrow="Founder-led hiring" title="Built for how startups actually hire." copy="No recruiter jargon. No giant forms. Just the role, the work, and who would love it." />
         <div className="grid gap-4 lg:grid-cols-2">
           <Reveal className="h-full">
             <div className="h-full rounded-lg border border-black/[0.08] bg-white/62 p-6 shadow-soft">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-secondary">Left side</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-secondary">Founder note</p>
               <h3 className="mt-4 text-3xl font-black leading-tight text-ink">Post a role in plain English.</h3>
               <p className="mt-5 leading-7 text-ink-secondary">Say what the intern will build, learn, and help with. No rigid job template needed.</p>
             </div>
@@ -2032,6 +2082,7 @@ function StartupHiringSection() {
                   </li>
                 ))}
               </ul>
+              <p className="mt-6 text-sm font-semibold text-white/50">Slack, email, text. Whatever your team already uses.</p>
             </div>
           </Reveal>
         </div>
@@ -2080,7 +2131,7 @@ function StartupRoleMockupSection() {
     <section className="employer-band relative overflow-hidden px-5 py-24 sm:px-6 lg:px-8">
       <div className="employer-glow" aria-hidden="true" />
       <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.75fr_1.25fr]">
-        <StartupSectionIntro eyebrow="Role context" title="A role card students can actually understand." copy="The role gets packaged with fit, context, and a simple path to reply over text." />
+        <StartupSectionIntro eyebrow="Role context" title="A role card students can actually understand." copy="Fit, context, and a simple way to reply." />
         <StartupRolePanel />
       </div>
     </section>
@@ -2114,9 +2165,9 @@ function StartupRolePanel() {
           </div>
           <div className="mt-4 space-y-3">
             {[
-              ["AI newsletter + campus ambassador", "Can reply over text first"],
+              ["AI newsletter + campus ambassador", "Can text before the call"],
               ["Built a waitlist for a student app", "Strong fit"],
-              ["Runs a Discord for builders", "Worth a look"],
+              ["Runs a Discord for builders", "Probably a fit"],
             ].map(([student, tag]) => (
               <div key={student} className="flex items-center gap-3 rounded-lg bg-[#F6F4EE] p-3">
                 <BrandMark size="sm" />
@@ -2144,9 +2195,9 @@ function StartupAccessSection() {
           <BrandMark size="lg" />
           <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">Startup access</p>
           <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl">Get startup access.</h2>
-          <p className="mt-5 max-w-md leading-7 text-white/74">Join early access for startups looking for ambitious students before the applications pile up everywhere else.</p>
+          <p className="mt-5 max-w-md leading-7 text-white/74">Meet ambitious students before everyone else does.</p>
           <p className="mt-6 max-w-md text-sm leading-6 text-white/54">
-            InternJobs.ai works best for startups hiring through curiosity, projects, and initiative, not just resumes.
+            InternJobs.ai works inside the channels your team already uses.
           </p>
         </div>
         <form
