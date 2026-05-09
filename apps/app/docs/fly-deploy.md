@@ -31,6 +31,7 @@ Secrets live in Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, enviro
 - `DATABASE_URL`
 - `PHOTON_FROM_NUMBER`
 - `PHOTON_WEBHOOK_SECRET`
+- `PHOTON_PROJECT_ID`
 - `PHOTON_API_BASE_URL`
 - `PHOTON_API_TOKEN`
 
