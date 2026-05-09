@@ -59,6 +59,8 @@ const messageAnimation = {
   cyclePause: 3800,
 };
 
+const MAX_VISIBLE_CHAT_MESSAGES = 5;
+
 const APP_WAITLIST_URL = "https://app.internjobs.ai";
 
 const navLinks = [
@@ -1019,7 +1021,8 @@ function PhoneExperience({
     };
   }, [messages, channel.name]);
 
-  const visibleMessages = messages.slice(0, visibleCount);
+  const windowStart = Math.max(0, visibleCount - MAX_VISIBLE_CHAT_MESSAGES);
+  const visibleMessages = messages.slice(windowStart, visibleCount);
 
   return (
     <div className={`phone-float ${mode === "hero" ? "hero-phone" : ""}`}>
@@ -1036,9 +1039,9 @@ function PhoneExperience({
           </div>
 
           {mode === "hero" || channel.name === "iMessage" ? (
-            <IMessageSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={messages.length} pulse={pulse} />
+            <IMessageSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={messages.length} pulse={pulse} windowStart={windowStart} />
           ) : (
-            <ChannelSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={messages.length} pulse={pulse} />
+            <ChannelSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={messages.length} pulse={pulse} windowStart={windowStart} />
           )}
         </div>
       </div>
@@ -1052,12 +1055,14 @@ function IMessageSurface({
   visibleCount,
   totalMessages,
   pulse,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
   pulse: number;
+  windowStart: number;
 }) {
   return (
     <>
@@ -1082,10 +1087,10 @@ function IMessageSurface({
       </div>
 
       <div className="messages-body">
-        <div className="flex min-h-[28rem] flex-col justify-end gap-1 px-3 py-4">
+        <div className="message-stack message-stack-imessage">
           <AnimatePresence>
             {visibleMessages.map((message, index) => (
-              <MessageBubble key={`${channel.name}-${message.text}-${index}`} message={message} index={index} />
+              <MessageBubble key={`${channel.name}-${message.text}-${windowStart + index}`} message={message} index={index} />
             ))}
           </AnimatePresence>
           {visibleCount < totalMessages ? <TypingIndicator color={channel.color} /> : <AgentSearchingIndicator />}
@@ -1111,26 +1116,28 @@ function ChannelSurface({
   visibleCount,
   totalMessages,
   pulse,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
   pulse: number;
+  windowStart: number;
 }) {
   if (channel.name === "WhatsApp") {
-    return <WhatsAppSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} pulse={pulse} />;
+    return <WhatsAppSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} pulse={pulse} windowStart={windowStart} />;
   }
 
   if (channel.name === "Slack") {
-    return <SlackSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} />;
+    return <SlackSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} windowStart={windowStart} />;
   }
 
   if (channel.name === "Discord") {
-    return <DiscordSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} />;
+    return <DiscordSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} windowStart={windowStart} />;
   }
 
-  return <PhoneCallSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} />;
+  return <PhoneCallSurface channel={channel} visibleMessages={visibleMessages} visibleCount={visibleCount} totalMessages={totalMessages} windowStart={windowStart} />;
 }
 
 function WhatsAppSurface({
@@ -1139,12 +1146,14 @@ function WhatsAppSurface({
   visibleCount,
   totalMessages,
   pulse,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
   pulse: number;
+  windowStart: number;
 }) {
   return (
     <div className="whatsapp-surface">
@@ -1161,10 +1170,10 @@ function WhatsAppSurface({
         </motion.span>
       </div>
       <div className="whatsapp-body">
-        <div className="flex min-h-[29rem] flex-col justify-end gap-1.5 px-3 py-4">
+        <div className="message-stack message-stack-whatsapp">
           <AnimatePresence>
             {visibleMessages.map((message, index) => (
-              <WhatsAppBubble key={`${message.text}-${index}`} message={message} index={index} />
+              <WhatsAppBubble key={`${message.text}-${windowStart + index}`} message={message} index={index} />
             ))}
           </AnimatePresence>
           {visibleCount < totalMessages ? <TypingIndicator color={channel.color} /> : null}
@@ -1203,11 +1212,13 @@ function SlackSurface({
   visibleMessages,
   visibleCount,
   totalMessages,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
+  windowStart: number;
 }) {
   return (
     <div className="slack-surface">
@@ -1231,10 +1242,10 @@ function SlackSurface({
             <p className="text-sm font-black text-[#1D1C1D]"># tiny-wins</p>
             <p className="text-[11px] text-[#616061]">Roles, drafts, and "should I reply?" moments live here.</p>
           </div>
-          <div className="flex min-h-[24.25rem] flex-col justify-end px-3 py-3">
+          <div className="message-stack message-stack-slack">
             <AnimatePresence>
               {visibleMessages.map((message, index) => (
-                <SlackMessage key={`${message.text}-${index}`} message={message} index={index} />
+                <SlackMessage key={`${message.text}-${windowStart + index}`} message={message} index={index} />
               ))}
             </AnimatePresence>
             {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#616061]">InternJobs.ai is typing...</div> : null}
@@ -1274,11 +1285,13 @@ function DiscordSurface({
   visibleMessages,
   visibleCount,
   totalMessages,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
+  windowStart: number;
 }) {
   return (
     <div className="discord-surface">
@@ -1289,10 +1302,10 @@ function DiscordSurface({
         <span className="ml-auto rounded-full bg-[#23A559]/18 px-2 py-1 text-[10px] font-bold text-[#23A559]">online</span>
       </div>
       <div className="discord-body">
-        <div className="flex min-h-[29rem] flex-col justify-end px-3 py-4">
+        <div className="message-stack message-stack-discord">
           <AnimatePresence>
             {visibleMessages.map((message, index) => (
-              <DiscordMessage key={`${message.text}-${index}`} message={message} index={index} />
+              <DiscordMessage key={`${message.text}-${windowStart + index}`} message={message} index={index} />
             ))}
           </AnimatePresence>
           {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#B5BAC1]">InternJobs.ai is typing...</div> : null}
@@ -1331,11 +1344,13 @@ function PhoneCallSurface({
   visibleMessages,
   visibleCount,
   totalMessages,
+  windowStart,
 }: {
   channel: Channel;
   visibleMessages: ChatMessage[];
   visibleCount: number;
   totalMessages: number;
+  windowStart: number;
 }) {
   const latest = visibleMessages[visibleMessages.length - 1];
 
@@ -1363,7 +1378,7 @@ function PhoneCallSurface({
           <AnimatePresence>
             {visibleMessages.map((message, index) => (
               <motion.div
-                key={`${message.text}-${index}`}
+                key={`${message.text}-${windowStart + index}`}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.22, delay: Math.min(index * 0.05, 0.18) }}
