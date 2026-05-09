@@ -36,6 +36,12 @@ type Channel = {
   messages: ChatMessage[];
 };
 
+const messageAnimation = {
+  firstBubbleDelay: 1100,
+  nextBubbleDelay: 1250,
+  cyclePause: 3800,
+};
+
 const navLinks = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Channels", href: "#channels" },
@@ -407,14 +413,14 @@ function PhoneExperience({
         timers.push(
           window.setTimeout(() => {
             if (!cancelled) setVisibleCount(index + 1);
-          }, 520 + index * 620),
+          }, messageAnimation.firstBubbleDelay + index * messageAnimation.nextBubbleDelay),
         );
       });
 
       timers.push(
         window.setTimeout(() => {
           if (!cancelled) runCycle();
-        }, 520 + messages.length * 620 + 2400),
+        }, messageAnimation.firstBubbleDelay + messages.length * messageAnimation.nextBubbleDelay + messageAnimation.cyclePause),
       );
     };
 
