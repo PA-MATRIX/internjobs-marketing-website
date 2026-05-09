@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "deploy:pages": "npm run build && wrangler pages deploy dist --project-name internjobs-ai"
+    "verify:dist": "node scripts/verify-site-assets.mjs --dist dist",
+    "verify:production": "node scripts/verify-site-assets.mjs --url https://internjobs.ai",
+    "deploy:pages": "npm run build && npm run verify:dist && wrangler pages deploy dist --project-name internjobs-ai --branch main && npm run verify:production"
   },
   "dependencies": {
     "framer-motion": "^12.23.12",
