@@ -57,7 +57,8 @@ const heroMessages: ChatMessage[] = [
   { author: "agent", text: "Yeah. Your AI newsletter and campus ambassador stuff made this stand out." },
   { author: "student", text: "Can you help me reply?" },
   { author: "agent", text: "Already drafted something. You can edit it or approve before it sends." },
-  { author: "student", text: "Perfect send me the draft" },
+  { author: "student", text: "Perfect. If they reply, can you set up the interview?" },
+  { author: "agent", text: "Yep. I can handle the back-and-forth with the hiring manager." },
 ];
 
 const channels: Channel[] = [
@@ -131,14 +132,14 @@ const channels: Channel[] = [
 const steps = [
   ["Start with what you have", "Use LinkedIn or your projects so InternJobs knows the basics. No giant profile to fill out."],
   ["Text it naturally", "Say what kind of work you want and what you have already built."],
-  ["Get the text", "InternJobs keeps looking in the background and texts when something actually fits."],
+  ["Get the text", "InternJobs keeps looking in the background, texts when something fits, and helps coordinate the next step."],
 ];
 
 const signals = [
   ["Found before LinkedIn", "A small team posted it in a community first.", "new"],
   ["Actually fits", "Remote, paid, and close to stuff you've already built.", "now"],
   ["Reply drafted", "Short, normal, and easy to send.", "ready"],
-  ["Call prep ready", "What to say, what to ask, and why you fit.", "5 min"],
+  ["Interview setup", "Back-and-forth with the hiring manager handled over text.", "next"],
 ];
 
 const faqs = [
@@ -148,7 +149,7 @@ const faqs = [
   ],
   [
     "Does it apply without me?",
-    "No. You stay in control. It can draft stuff, but you approve before anything gets sent.",
+    "No. You stay in control. It can draft replies and help set up the interview, but you approve before anything gets sent.",
   ],
   [
     "Do I need a perfect resume?",
@@ -925,7 +926,7 @@ function ChannelSection() {
 
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
             <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Tell it what you're into and what you've built. Approve anything before it goes out." />
-            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they fit, and helps you send a clear reply." />
+            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs" copy="Finds roles, explains why they fit, handles the back-and-forth, and helps set up the interview." />
           </div>
         </div>
 
@@ -949,16 +950,16 @@ function ChannelSection() {
 
 function HumanAgentCard({ icon, title, copy }: { icon: ReactNode; title: string; copy: string }) {
   return (
-    <Reveal>
-      <div className="human-agent-card rounded-lg border border-black/[0.08] bg-white/70 p-5">
+    <Reveal className="h-full">
+      <div className="human-agent-card flex h-full min-h-[11.75rem] flex-col rounded-lg border border-black/[0.08] bg-white/70 p-5">
         <div className="flex items-center gap-3">
           <div className="portrait-frame grid size-12 place-items-center rounded-lg text-white">{icon}</div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-black text-[#070707]">{title}</h3>
             <p className="text-sm text-[#5F6368]">{title === "You" ? "Still in control" : "Keeps looking"}</p>
           </div>
         </div>
-        <p className="mt-4 text-sm leading-6 text-[#5F6368]">{copy}</p>
+        <p className="mt-4 flex-1 text-sm leading-6 text-[#5F6368]">{copy}</p>
       </div>
     </Reveal>
   );
