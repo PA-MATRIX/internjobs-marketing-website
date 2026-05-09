@@ -29,7 +29,7 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 - Clerk LinkedIn provider credentials and production domain settings.
 - Neon project, database URL, and role strategy.
 - Photon/Spectrum phone number, inbound webhook shape, outbound send API, and auth method.
-- Correct Infisical account/org selection for the Projecta Labs / MATRIX project before saving InternJobs.ai secrets.
+- Clerk LinkedIn, Neon, and Photon/Spectrum secrets in Projecta/MATRIX Infisical `prod` path `/internjobs-ai`.
 
 ## Current Fly DNS Records
 

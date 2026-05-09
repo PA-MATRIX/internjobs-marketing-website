@@ -33,7 +33,8 @@ Infisical is the source of truth for secrets. Do not save provider tokens in `.e
 This repo must be linked to the InternJobs.ai Infisical project before provider automation can read secrets:
 
 - Run `infisical init` for the Projecta Labs InternJobs.ai project, or pass `--projectId` explicitly in automation.
-- Use the confirmed environment/path for Cloudflare, Clerk, LinkedIn, Neon, Photon/Spectrum, and Fly secrets.
+- Current Projecta/MATRIX project ID: `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`.
+- Use environment `prod`, path `/internjobs-ai` for InternJobs.ai production secrets.
 - Never print secret values into terminal output, chat, planning docs, or commits.
 
 Expected Infisical-managed secrets include:

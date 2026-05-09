@@ -15,7 +15,7 @@ blockers:
   - "Need LinkedIn OAuth app client ID/secret for Clerk provider configuration."
   - "Need Neon project/token or database connection string."
   - "Need Photon/Spectrum number, API credentials, webhook docs, and webhook secret."
-  - "Need this repo linked to the Projecta Labs InternJobs.ai Infisical project, or the correct Infisical account/org selected."
+  - "Need Clerk LinkedIn, Neon, and Photon/Spectrum secrets added to Projecta/MATRIX Infisical path /internjobs-ai."
 ---
 
 # Project State
@@ -55,11 +55,11 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - Plan Phase 2 implementation once Clerk LinkedIn credentials and redirect domains are ready.
 - `app.internjobs.ai` DNS points to the Projecta Labs Fly app and returns `/healthz` successfully over HTTPS.
 - Use Infisical as the secrets source of truth for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
-- Current repo has no `.infisical.json`; provider automation cannot read InternJobs.ai secrets until the Projecta Labs Infisical project metadata is provided.
+- InternJobs.ai production secrets live in Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
 - Checked `/Users/rajren/MATRIX/.infisical.json`: it points at Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`.
 - Checked `/Users/rajren/MATRIX/.env.local`: Cloudflare variable names exist there, but the local values are empty placeholders.
 - Do not use GrowthPods/SIOS/SuperIntelligence Cloudflare secrets for InternJobs.ai; this project should use Projecta Labs / InternJobs.ai credentials only.
-- Attempted to save the InternJobs.ai-scoped Cloudflare DNS token to Infisical path `/internjobs-ai` in `prod`, but the logged-in Infisical org returned 403: the MATRIX project belongs to a different selected organization.
+- Saved and verified secret name `CLOUDFLARE_API_TOKEN` in Projecta/MATRIX Infisical `prod` path `/internjobs-ai`.
 
 ### Blockers/Concerns
 
