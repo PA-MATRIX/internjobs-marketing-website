@@ -1,4 +1,4 @@
-app = "internjobs-ai-app"
+app = "internjobs-ai-student-app"
 primary_region = "ord"
 
 [build]

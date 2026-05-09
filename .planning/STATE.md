@@ -15,6 +15,7 @@ blockers:
   - "Need LinkedIn OAuth app client ID/secret for Clerk provider configuration."
   - "Need Neon project/token or database connection string."
   - "Need Photon/Spectrum number, API credentials, webhook docs, and webhook secret."
+  - "Need DNS records for app.internjobs.ai pointing to the Projecta Labs Fly app."
 ---
 
 # Project State
@@ -52,6 +53,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 - Confirm external provider credentials for Clerk LinkedIn, Neon, and Photon/Spectrum.
 - Plan Phase 2 implementation once Clerk LinkedIn credentials and redirect domains are ready.
+- Add DNS records for `app.internjobs.ai`: A `66.241.125.177`, AAAA `2a09:8280:1::113:206e:0`; or CNAME `932q002.internjobs-ai-student-app.fly.dev`.
 
 ### Blockers/Concerns
 
