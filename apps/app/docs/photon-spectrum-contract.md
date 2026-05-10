@@ -4,13 +4,18 @@ InternJobs.ai treats Photon/Spectrum as the messaging transport for waitlist cha
 
 ## Required Secrets
 
-Store these in Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
+Store these in the Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
 
 - `PHOTON_FROM_NUMBER`
 - `PHOTON_WEBHOOK_SECRET`
 - `PHOTON_PROJECT_ID`
 - `PHOTON_API_BASE_URL`
 - `PHOTON_API_TOKEN`
+- `SPECTRUM_FROM_NUMBER`
+- `SPECTRUM_PROJECT_ID`
+- `SPECTRUM_API_TOKEN`
+- `PROJECT_ID`
+- `PROJECT_SECRET`
 
 `SPECTRUM_*` aliases are also supported by the app for the same values. For Spectrum Cloud, the SDK credential names `PROJECT_ID` and `PROJECT_SECRET` are also accepted.
 

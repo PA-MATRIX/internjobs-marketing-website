@@ -20,7 +20,7 @@ https://app.internjobs.ai
 
 ## Required Runtime Secrets
 
-Secrets live in Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
+Secrets live in the Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
 
 - `APP_URL=https://app.internjobs.ai`
 - `APP_SESSION_SECRET`
@@ -34,6 +34,11 @@ Secrets live in Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, enviro
 - `PHOTON_PROJECT_ID`
 - `PHOTON_API_BASE_URL`
 - `PHOTON_API_TOKEN`
+- `SPECTRUM_PROJECT_ID`
+- `SPECTRUM_API_TOKEN`
+- `SPECTRUM_FROM_NUMBER`
+- `PROJECT_ID`
+- `PROJECT_SECRET`
 
 ## Deploy
 
