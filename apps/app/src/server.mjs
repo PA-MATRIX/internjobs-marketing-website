@@ -4,7 +4,8 @@ import { getAuth, getSignInUrl, setDevSessionCookie, clearDevSessionCookie } fro
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore } from "./store.mjs";
 import { parseInboundMessage, sendWelcomeMessage, verifyPhotonWebhook } from "./messaging.mjs";
-import { renderLayout, renderOnboarding, renderPairing, renderProfile, renderSavedProfile, renderWaitlist } from "./views.mjs";
+import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
+import { renderLayout, renderOnboarding, renderPairing, renderPairingConfirmed, renderProfile, renderSavedProfile, renderWaitlist } from "./views.mjs";
 
 const config = getConfig();
 const store = createStore(config);
@@ -22,6 +23,7 @@ const server = createServer(async (req, res) => {
           database: Boolean(config.databaseUrl),
           photonNumber: Boolean(config.photon.fromNumber),
           photonWebhook: Boolean(config.photon.webhookSecret),
+          spectrumListener: Boolean(config.enableSpectrumListener),
         },
       });
       return;
@@ -40,7 +42,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/waitlist") {
       const auth = await getAuth(req, config);
       if (auth) {
-        redirect(res, "/onboarding");
+        redirect(res, "/pairing");
         return;
       }
       sendHtml(res, 200, renderLayout({ title: "Join Early Access", config, auth: null, body: renderWaitlist(config) }));
@@ -53,7 +55,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       setDevSessionCookie(res, config);
-      redirect(res, "/onboarding");
+      redirect(res, "/pairing");
       return;
     }
 
@@ -64,7 +66,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/auth/callback") {
-      redirect(res, "/onboarding");
+      redirect(res, "/pairing");
       return;
     }
 
@@ -80,6 +82,10 @@ const server = createServer(async (req, res) => {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const student = await store.upsertStudentFromAuth(auth);
+      if (student.status === "channel_confirmed") {
+        sendHtml(res, 200, renderLayout({ title: "Messages Connected", config, auth, body: renderPairingConfirmed(student) }));
+        return;
+      }
       const pairing = await store.createOrRefreshPairingCode(student.id);
       sendHtml(res, 200, renderLayout({ title: "Pair Messages", config, auth, body: await renderPairing({ student, pairing, config }) }));
       return;
@@ -132,7 +138,7 @@ const server = createServer(async (req, res) => {
 
       const payload = JSON.parse(rawBody || "{}");
       const inbound = parseInboundMessage(payload);
-      const confirmation = await store.confirmPairingCode(inbound);
+      const confirmation = inbound.code ? await store.confirmPairingCode(inbound) : await store.recordInboundMessage(inbound);
 
       if (confirmation.student && confirmation.welcomeNeeded) {
         const welcome = await sendWelcomeMessage(confirmation.student, config);
@@ -143,6 +149,7 @@ const server = createServer(async (req, res) => {
         ok: !confirmation.error,
         duplicate: confirmation.duplicate,
         error: confirmation.error,
+        eventType: confirmation.eventType,
       });
       return;
     }
@@ -179,6 +186,8 @@ const server = createServer(async (req, res) => {
 server.listen(config.port, config.host, () => {
   console.log(`InternJobs.ai app listening on ${config.host}:${config.port}`);
 });
+
+startSpectrumWaitlistListener({ config, store });
 
 async function requireAuth(req, res) {
   const auth = await getAuth(req, config);

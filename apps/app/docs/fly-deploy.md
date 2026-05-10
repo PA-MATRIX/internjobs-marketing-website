@@ -9,7 +9,7 @@ internjobs-ai-student-app
 Organization:
 
 ```text
-projecta-labs
+internjobs-sios-org
 ```
 
 Domain:
@@ -39,6 +39,14 @@ Secrets live in the Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c
 - `SPECTRUM_FROM_NUMBER`
 - `PROJECT_ID`
 - `PROJECT_SECRET`
+- `ENABLE_SPECTRUM_LISTENER=true` when using the Spectrum SDK listener for live in-channel replies.
+
+`apps/app/fly.toml` keeps `min_machines_running = 1` because the Spectrum listener needs one running process to receive incoming messages.
+
+Provider handoff records are stored in Postgres until provider credentials are available:
+
+- `student_threads` uses provider `cognee` for hosted graph/thread memory.
+- `profile_enrichment_jobs` uses provider `sprite_brightdata` for later LinkedIn enrichment.
 
 ## Deploy
 

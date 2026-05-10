@@ -9,7 +9,7 @@ Students should be able to click Join Early Access, sign in with LinkedIn, conne
 ## Product Shape
 
 - Public marketing remains at `internjobs.ai` on Cloudflare Pages.
-- Authenticated app runs at `app.internjobs.ai` on Fly.io under `projecta-labs` as `internjobs-ai-student-app`.
+- Authenticated app runs at `app.internjobs.ai` on Fly.io as `internjobs-ai-student-app`. It was originally created under `projecta-labs` and moved to `internjobs-sios-org` in v1.1.
 - Clerk owns identity, starting with LinkedIn.
 - Neon owns durable app data.
 - Photon/Spectrum owns messaging transport and number/webhook integration.

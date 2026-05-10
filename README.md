@@ -50,7 +50,7 @@ Expected Infisical-managed secrets include:
 Current Fly app:
 
 - App: `internjobs-ai-student-app`
-- Org: `projecta-labs`
+- Org: `internjobs-sios-org`
 - Temporary URL: `https://internjobs-ai-student-app.fly.dev`
 - Custom domain: `https://app.internjobs.ai`
 

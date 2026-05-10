@@ -9,11 +9,7 @@ export function createStore(config) {
 }
 
 export function createPairingCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "IJ-";
-  const bytes = randomBytes(6);
-  for (const byte of bytes) code += alphabet[byte % alphabet.length];
-  return code;
+  return randomBytes(4).toString("hex").toUpperCase();
 }
 
 export function eventIdFromPayload(payload) {
@@ -33,6 +29,8 @@ class MemoryStore {
     this.pairingCodes = new Map();
     this.messagingEvents = new Set();
     this.profileContexts = new Map();
+    this.profileEnrichmentJobs = new Map();
+    this.studentThreads = new Map();
     this.auditEvents = [];
     this.profileSnapshots = [];
     this.consents = [];
@@ -56,6 +54,7 @@ class MemoryStore {
     };
     this.students.set(auth.clerkUserId, student);
     await this.storeProfileSnapshot(student.id, auth);
+    await this.queueProfileEnrichment(student.id, auth);
     await this.writeConsent(student.id, "linkedin_oauth_profile", true, auth.source);
     await this.writeAuditEvent(student.id, "student_upserted", "system", { source: auth.source });
     return student;
@@ -124,8 +123,36 @@ class MemoryStore {
       deliveryStatus: "received",
       metadata,
     });
+    await this.ensureStudentThread(student.id, channelAddress, { trigger: "pairing_confirmed", channelType });
     await this.writeAuditEvent(student.id, "channel_confirmed", "provider", { channelType });
     return { duplicate: false, student, welcomeNeeded: true };
+  }
+
+  async recordInboundMessage({ providerEventId, channelType, channelAddress, text, metadata }) {
+    if (this.messagingEvents.has(providerEventId)) {
+      return { duplicate: true, student: null, welcomeNeeded: false };
+    }
+    this.messagingEvents.add(providerEventId);
+
+    const normalizedAddress = normalizeAddress(channelAddress);
+    const student = [...this.students.values()].find((item) => normalizeAddress(item.channelAddress) === normalizedAddress && item.channelConfirmedAt) || null;
+    await this.writeMessagingEvent({
+      provider: "photon",
+      providerEventId,
+      studentId: student?.id || null,
+      direction: "inbound",
+      channelType,
+      channelAddress,
+      eventType: student ? "student_reply" : "unmatched_inbound",
+      deliveryStatus: "received",
+      metadata: { ...metadata, hasCode: false, previewLength: String(text || "").length },
+    });
+
+    if (student) {
+      await this.ensureStudentThread(student.id, channelAddress, { trigger: "student_reply", channelType });
+      await this.writeAuditEvent(student.id, "student_reply_received", "provider", { channelType });
+    }
+    return { duplicate: false, student, welcomeNeeded: false, eventType: student ? "student_reply" : "unmatched_inbound" };
   }
 
   async writeMessagingEvent(event) {
@@ -158,6 +185,41 @@ class MemoryStore {
 
   async storeProfileSnapshot(studentId, auth) {
     this.profileSnapshots.push({ studentId, provider: auth.provider, raw: auth.raw, collectedAt: new Date().toISOString() });
+  }
+
+  async queueProfileEnrichment(studentId, auth) {
+    if (!auth.linkedinProfileUrl) return null;
+    const job = {
+      studentId,
+      provider: "sprite_brightdata",
+      profileUrl: auth.linkedinProfileUrl,
+      status: "pending_provider_setup",
+      metadata: { source: auth.source },
+      updatedAt: new Date().toISOString(),
+    };
+    this.profileEnrichmentJobs.set(`${studentId}:sprite_brightdata`, job);
+    await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: job.provider, status: job.status });
+    return job;
+  }
+
+  async ensureStudentThread(studentId, channelAddress, metadata = {}) {
+    const threadKey = `student:${studentId}:phone:${normalizeAddress(channelAddress)}`;
+    const existing = this.studentThreads.get(threadKey);
+    const thread = {
+      id: existing?.id || randomUUID(),
+      studentId,
+      provider: "cognee",
+      threadKey,
+      externalThreadId: existing?.externalThreadId || "",
+      channelAddress,
+      status: "pending_provider_setup",
+      metadata: { ...(existing?.metadata || {}), ...metadata },
+      updatedAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || new Date().toISOString(),
+    };
+    this.studentThreads.set(threadKey, thread);
+    await this.writeAuditEvent(studentId, "student_thread_noted", "system", { provider: thread.provider, status: thread.status });
+    return thread;
   }
 
   async writeConsent(studentId, consentType, granted, source) {
@@ -198,6 +260,7 @@ class PostgresStore {
       [student.id, auth.source],
     );
     await this.storeProfileSnapshot(student.id, auth);
+    await this.queueProfileEnrichment(student.id, auth);
     await this.writeConsent(student.id, "linkedin_oauth_profile", true, auth.source);
     await this.writeAuditEvent(student.id, "student_upserted", "system", { source: auth.source });
     return student;
@@ -279,6 +342,7 @@ class PostgresStore {
          values ($1, 'channel_confirmed', 'provider', $2)`,
         [pairing.student_id, { channelType }],
       );
+      await this.ensureStudentThread(pairing.student_id, channelAddress, { trigger: "pairing_confirmed", channelType }, client);
       await client.query("commit");
       return { duplicate: false, student: mapStudent(studentResult.rows[0]), welcomeNeeded: true };
     } catch (error) {
@@ -287,6 +351,39 @@ class PostgresStore {
     } finally {
       client.release();
     }
+  }
+
+  async recordInboundMessage({ providerEventId, channelType, channelAddress, text, metadata }) {
+    const duplicate = await this.pool.query("select id from messaging_events where provider = 'photon' and provider_event_id = $1", [providerEventId]);
+    if (duplicate.rows[0]) return { duplicate: true, student: null, welcomeNeeded: false };
+
+    const studentResult = await this.pool.query(
+      `select * from students
+       where regexp_replace(coalesce(channel_address, ''), '[^0-9+]', '', 'g') = $1
+         and channel_confirmed_at is not null
+       order by updated_at desc
+       limit 1`,
+      [normalizeAddress(channelAddress)],
+    );
+    const student = studentResult.rows[0] ? mapStudent(studentResult.rows[0]) : null;
+    const eventType = student ? "student_reply" : "unmatched_inbound";
+
+    await this.writeMessagingEvent({
+      provider: "photon",
+      providerEventId,
+      studentId: student?.id || null,
+      direction: "inbound",
+      channelType,
+      channelAddress,
+      eventType,
+      deliveryStatus: "received",
+      metadata: { ...metadata, hasCode: false, previewLength: String(text || "").length },
+    });
+    if (student) {
+      await this.ensureStudentThread(student.id, channelAddress, { trigger: "student_reply", channelType });
+      await this.writeAuditEvent(student.id, "student_reply_received", "provider", { channelType });
+    }
+    return { duplicate: false, student, welcomeNeeded: false, eventType };
   }
 
   async writeMessagingEvent(event) {
@@ -343,6 +440,23 @@ class PostgresStore {
     );
   }
 
+  async queueProfileEnrichment(studentId, auth) {
+    if (!auth.linkedinProfileUrl) return null;
+    const result = await this.pool.query(
+      `insert into profile_enrichment_jobs (student_id, provider, profile_url, status, metadata)
+       values ($1, 'sprite_brightdata', $2, 'pending_provider_setup', $3)
+       on conflict (student_id, provider) do update set
+         profile_url = excluded.profile_url,
+         status = excluded.status,
+         metadata = excluded.metadata,
+         updated_at = now()
+       returning *`,
+      [studentId, auth.linkedinProfileUrl, { source: auth.source }],
+    );
+    await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: "sprite_brightdata", status: "pending_provider_setup" });
+    return result.rows[0];
+  }
+
   async writeConsent(studentId, consentType, granted, source) {
     await this.pool.query(
       `insert into consents (student_id, consent_type, granted, source)
@@ -355,6 +469,33 @@ class PostgresStore {
   async writeAuditEvent(studentId, eventType, actor, metadata = {}) {
     await this.pool.query("insert into audit_events (student_id, event_type, actor, metadata) values ($1, $2, $3, $4)", [studentId, eventType, actor, metadata]);
   }
+
+  async ensureStudentThread(studentId, channelAddress, metadata = {}, client = this.pool) {
+    const threadKey = `student:${studentId}:phone:${normalizeAddress(channelAddress)}`;
+    const result = await client.query(
+      `insert into student_threads (student_id, provider, thread_key, channel_address, status, metadata)
+       values ($1, 'cognee', $2, $3, 'pending_provider_setup', $4)
+       on conflict (provider, thread_key) do update set
+         channel_address = excluded.channel_address,
+         metadata = student_threads.metadata || excluded.metadata,
+         updated_at = now()
+       returning *`,
+      [studentId, threadKey, channelAddress, metadata],
+    );
+    if (client === this.pool) {
+      await this.writeAuditEvent(studentId, "student_thread_noted", "system", { provider: "cognee", status: "pending_provider_setup" });
+    } else {
+      await client.query("insert into audit_events (student_id, event_type, actor, metadata) values ($1, 'student_thread_noted', 'system', $2)", [
+        studentId,
+        { provider: "cognee", status: "pending_provider_setup" },
+      ]);
+    }
+    return result.rows[0];
+  }
+}
+
+function normalizeAddress(value) {
+  return String(value || "").replace(/[^\d+]/g, "");
 }
 
 function mapStudent(row) {

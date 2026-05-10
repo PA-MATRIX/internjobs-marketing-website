@@ -2,7 +2,7 @@
 
 **Defined:** 2026-05-09
 **Core Value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current Milestone:** v1.0
+**Current Milestone:** v1.1
 
 ## Validated
 
@@ -16,7 +16,7 @@
 
 ## v1.0 — Waitlist Identity and Messaging Foundation (Active)
 
-**Implementation note:** The app foundation is implemented and verified locally. Live production activation still depends on external Clerk LinkedIn, Neon, and Photon/Spectrum credentials being configured in Projecta/MATRIX Infisical and Fly.
+**Implementation note:** The app foundation is implemented and verified. Neon and Photon/Spectrum are configured in Infisical/Fly. Clerk production LinkedIn activation remains the main external identity dependency.
 
 ### Repo and Deployment
 
@@ -30,13 +30,13 @@
 - [ ] **AUTH-01**: Student waitlist signup uses Clerk with LinkedIn as the primary sign-in method. Code is ready; live Clerk provider activation is pending.
 - [x] **AUTH-02**: Email/password signup is not presented in the student waitlist flow.
 - [x] **AUTH-03**: After LinkedIn sign-in, the student lands on channel pairing instead of another marketing page.
-- [ ] **AUTH-04**: Clerk user ID is stored with the waitlist profile in Neon. Code is ready; live Neon activation is pending.
+- [x] **AUTH-04**: Clerk user ID is stored with the waitlist profile in Neon.
 
 ### Neon Data Model
 
-- [ ] **DATA-01**: Neon database has tables for students, waitlist status, channel pairing codes, profile snapshots, consents, and audit events. Migration exists; live Neon run is pending.
+- [x] **DATA-01**: Neon database has tables for students, waitlist status, channel pairing codes, profile snapshots, consents, and audit events.
 - [x] **DATA-02**: Database migrations can run repeatably in development and production.
-- [ ] **DATA-03**: Application secrets are configured through Infisical and synced into Fly.io/local development without committing values. Cloudflare token is stored; Clerk/Neon/Photon secrets are pending.
+- [x] **DATA-03**: Application secrets are configured through Infisical and synced into Fly.io/local development without committing values.
 - [x] **DATA-04**: Waitlist writes are idempotent for repeated sign-in and repeated webhook events.
 
 ### Messaging and Photon/Spectrum
@@ -44,7 +44,7 @@
 - [x] **MSG-01**: App generates a unique pairing code for each student waitlist session.
 - [x] **MSG-02**: App displays a QR/code screen for connecting the student messaging channel.
 - [x] **MSG-03**: Photon/Spectrum inbound webhook can confirm the student's phone/channel against the pairing code.
-- [ ] **MSG-04**: Student receives a first welcome/waitlist message after channel confirmation. Sender is implemented; live Photon/Spectrum credentials are pending.
+- [x] **MSG-04**: Student receives a first welcome/waitlist message after channel confirmation.
 - [x] **MSG-05**: Messaging events are stored with delivery state and provider metadata.
 
 ### LinkedIn Profile Data
@@ -64,6 +64,17 @@
 ## Future Milestones
 
 ### v1.1 Candidates
+
+### v1.1 — Seamless Waitlist and Student Threading
+
+- [x] **WAIT-01**: Authenticated waitlist users land directly on QR/SMS pairing.
+- [x] **WAIT-02**: QR opens the exact verification text: `Hey internjobs.ai! My verification code is {CODE}. What's next?`
+- [x] **WAIT-03**: Pairing code is short, unique, and suitable for texting.
+- [x] **THREAD-01**: Follow-up inbound messages from the same phone number attach to the verified student instead of creating a new pairing attempt.
+- [x] **GRAPH-01**: App creates a durable student thread placeholder for Cognee hosted graph integration.
+- [x] **ENRICH-01**: App creates a durable Sprite.dev + Bright Data enrichment job placeholder after LinkedIn URL capture.
+
+### v1.2 Candidates
 
 - **MATCH-01**: Use student profile data to draft first internship recommendations.
 - **AGENT-01**: Let students approve drafts before messages or intros send.
@@ -91,15 +102,15 @@
 | AUTH-01 | Phase 2 | External activation pending |
 | AUTH-02 | Phase 2 | Complete |
 | AUTH-03 | Phase 2 | Complete |
-| AUTH-04 | Phase 2 | External activation pending |
-| DATA-01 | Phase 3 | External activation pending |
+| AUTH-04 | Phase 2 | Complete |
+| DATA-01 | Phase 3 | Complete |
 | DATA-02 | Phase 3 | Complete |
-| DATA-03 | Phase 3 | External activation pending |
+| DATA-03 | Phase 3 | Complete |
 | DATA-04 | Phase 3 | Complete |
 | MSG-01 | Phase 4 | Complete |
 | MSG-02 | Phase 4 | Complete |
 | MSG-03 | Phase 4 | Complete |
-| MSG-04 | Phase 4 | External activation pending |
+| MSG-04 | Phase 4 | Complete |
 | MSG-05 | Phase 4 | Complete |
 | LINK-01 | Phase 5 | Complete |
 | LINK-02 | Phase 5 | Complete |
@@ -109,14 +120,20 @@
 | OPS-02 | Phase 6 | Complete |
 | OPS-03 | Phase 6 | Complete |
 | OPS-04 | Phase 6 | Complete |
+| WAIT-01 | Phase 7 | Complete |
+| WAIT-02 | Phase 7 | Complete |
+| WAIT-03 | Phase 7 | Complete |
+| THREAD-01 | Phase 7 | Complete |
+| GRAPH-01 | Phase 7 | Complete |
+| ENRICH-01 | Phase 7 | Complete |
 
 **Coverage (v1.0):**
-- Active requirements: 25 total
-- Complete in code/local verification: 20
-- External activation pending: 5
-- Mapped to phases: 25
+- Active requirements: 31 total
+- Complete in code/local verification: 30
+- External activation pending: 1
+- Mapped to phases: 31
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-09*
-*Last updated: 2026-05-09 after waitlist architecture request*
+*Last updated: 2026-05-09 after v1.1 seamless waitlist implementation*

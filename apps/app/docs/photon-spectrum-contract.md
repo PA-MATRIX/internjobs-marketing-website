@@ -19,6 +19,8 @@ Store these in the Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2
 
 `SPECTRUM_*` aliases are also supported by the app for the same values. For Spectrum Cloud, the SDK credential names `PROJECT_ID` and `PROJECT_SECRET` are also accepted.
 
+Set `ENABLE_SPECTRUM_LISTENER=true` to run the `spectrum-ts` listener in the Fly app. That listener receives incoming iMessages from Spectrum Cloud, confirms verification codes, and replies in the same message space.
+
 ## Inbound Webhook
 
 Endpoint:
@@ -33,18 +35,26 @@ Supported authentication:
 - Provider secret header: `x-photon-webhook-secret` or `x-spectrum-webhook-secret`
 - HMAC SHA-256 header: `x-photon-signature` or `x-spectrum-signature`
 
-Supported JSON fields:
+Supported JSON fields for the fallback HTTP webhook:
 
 - `id`, `messageId`, `message_id`, `eventId`, or `event_id`
 - `text`, `body`, or `message`
 - `from`, `phone`, `sender`, or `user.phone`
 - `channel` or `type`
 
-The app extracts pairing codes matching:
+The app extracts modern pairing codes matching:
 
 ```text
-IJ-XXXXXX
+B9A8F50A
 ```
+
+Legacy `IJ-XXXXXX` codes remain accepted for old local smoke tests and expired sessions.
+
+## Shared Number Routing
+
+All students text the same Spectrum number. After the first code-bearing message is confirmed, InternJobs.ai stores the sender phone number on the student record. Later inbound messages without a code are routed by normalized sender phone number and stored as `student_reply` events for that student.
+
+The app also creates a `student_threads` row with provider `cognee` so future agent memory can attach to the same student graph.
 
 ## Outbound Welcome Message
 

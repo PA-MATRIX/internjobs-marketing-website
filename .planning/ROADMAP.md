@@ -6,16 +6,17 @@ The next milestone turns the marketing site into a real two-surface product: `in
 
 ## Milestones
 
-- 🚧 **v1.0 Waitlist Identity and Messaging Foundation** - Phases 1-6
-- 📋 **v1.1 Student Agent MVP** - recommendations, drafts, approvals, and first matching loops
+- ✅ **v1.0 Waitlist Identity and Messaging Foundation** - Phases 1-6
+- 🚧 **v1.1 Seamless Waitlist and Student Threading** - LinkedIn to QR to Spectrum verification, phone-thread routing, Cognee/Sprite/Bright Data handoff records
+- 📋 **v1.2 Student Agent MVP** - recommendations, drafts, approvals, and first matching loops
 - 📋 **v1.2 Startup Access MVP** - startup onboarding, role intake, and founder messaging channels
 
 ## Phases
 
 - [x] **Phase 1: Monorepo and Deploy Split** - Separate marketing and app workspaces without breaking Cloudflare production deploys.
-- [~] **Phase 2: Clerk LinkedIn Waitlist Auth** - App routes and Clerk JWT handling implemented; live Clerk provider activation pending.
-- [~] **Phase 3: Neon Data Foundation** - Migrations and data layer implemented; live Neon project/secret pending.
-- [~] **Phase 4: Photon/Spectrum Channel Pairing** - QR/code and webhook flow implemented; live Photon/Spectrum number/secret pending.
+- [~] **Phase 2: Clerk LinkedIn Waitlist Auth** - App routes and Clerk JWT handling implemented; Clerk production LinkedIn activation still pending.
+- [x] **Phase 3: Neon Data Foundation** - Migrations and data layer implemented; Neon production database activated.
+- [x] **Phase 4: Photon/Spectrum Channel Pairing** - QR/code, shared Spectrum number, webhook handling, and runtime secrets configured.
 - [x] **Phase 5: LinkedIn Profile Ingestion** - Authorized profile storage, student context editing, and enrichment gates are implemented.
 - [x] **Phase 6: Launch Guardrails and Ops** - Checks, webhook security, privacy docs, Dockerfile fix, and verification guardrails are implemented.
 
@@ -122,13 +123,30 @@ Plans:
 - [x] 06-01: Add deployment docs, health checks, secret checklist, and smoke tests.
 - [x] 06-02: Add webhook security, log hygiene, and privacy operations checklist.
 
+### Phase 7: Seamless Student Waitlist
+
+**Goal**: Make the waitlist feel like one natural student flow from LinkedIn to text verification.
+**Depends on**: Phases 2-6.
+**Requirements**: WAIT-01, WAIT-02, WAIT-03, THREAD-01, GRAPH-01, ENRICH-01
+**Success Criteria**:
+1. Student login routes directly to QR/SMS pairing.
+2. QR opens the exact InternJobs.ai verification message with a unique 8-character code.
+3. First inbound Spectrum message confirms the student.
+4. Later inbound messages from that same phone number attach to the same student thread.
+5. Cognee hosted and Sprite/Bright Data handoff records are created without running unapproved enrichment.
+**Plans**: 1 plan
+
+Plans:
+- [x] 07-01: Wire seamless waitlist flow, phone-number routing, and provider handoff records.
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Monorepo and Deploy Split | v1.0 | 2/2 | Complete | 2026-05-09 |
 | 2. Clerk LinkedIn Waitlist Auth | v1.0 | 2/3 | External activation pending | - |
-| 3. Neon Data Foundation | v1.0 | 2/3 | External activation pending | - |
-| 4. Photon/Spectrum Channel Pairing | v1.0 | 2/3 | External activation pending | - |
+| 3. Neon Data Foundation | v1.0 | 3/3 | Complete | 2026-05-09 |
+| 4. Photon/Spectrum Channel Pairing | v1.0 | 3/3 | Complete | 2026-05-09 |
 | 5. LinkedIn Profile Ingestion | v1.0 | 3/3 | Complete | 2026-05-09 |
 | 6. Launch Guardrails and Ops | v1.0 | 2/2 | Complete | 2026-05-09 |
+| 7. Seamless Student Waitlist | v1.1 | 1/1 | Complete | 2026-05-09 |

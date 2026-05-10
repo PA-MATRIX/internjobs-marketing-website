@@ -37,8 +37,12 @@ export function parseInboundMessage(payload) {
   };
 }
 
+export function createWelcomeText(student) {
+  return `Hey ${firstName(student.name) || "there"} - you're in. Welcome to InternJobs.ai. We'll text when something actually fits.`;
+}
+
 export async function sendWelcomeMessage(student, config) {
-  const message = `Hey ${firstName(student.name) || "there"} - welcome to InternJobs.ai. You're on the early list. We'll text when a startup internship actually fits.`;
+  const message = createWelcomeText(student);
 
   if (!config.photon.apiBaseUrl || !config.photon.apiToken || !student.channelAddress) {
     return {
@@ -75,6 +79,8 @@ export async function sendWelcomeMessage(student, config) {
 }
 
 function extractPairingCode(text) {
+  const modern = text.match(/\b[A-F0-9]{8}\b/i)?.[0];
+  if (modern) return modern;
   return text.match(/\bIJ-[A-Z0-9]{6}\b/i)?.[0] || "";
 }
 

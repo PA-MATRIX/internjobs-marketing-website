@@ -8,6 +8,7 @@ export function getConfig(env = process.env) {
     isProduction,
     appSessionSecret: env.APP_SESSION_SECRET || (isProduction ? "" : "internjobs-local-dev-secret"),
     enableDevAuth: env.ENABLE_DEV_AUTH === "true" || (!isProduction && env.ENABLE_DEV_AUTH !== "false"),
+    enableSpectrumListener: env.ENABLE_SPECTRUM_LISTENER === "true",
     clerk: {
       publishableKey: env.CLERK_PUBLISHABLE_KEY || env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "",
       secretKey: env.CLERK_SECRET_KEY || "",
