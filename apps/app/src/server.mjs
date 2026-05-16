@@ -300,6 +300,118 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // ─── Roles: helper that requires startup auth + active consent ───────────
+    // Used by all roles routes. Per PITFALLS #12, authorization is enforced
+    // here, not inside individual handlers. Per the consent gate in
+    // success_criteria #3, missing 'messaging_on_behalf' redirects to onboarding.
+    async function requireStartupWithConsent() {
+      const auth = await requireStartupAuth(req, res, config);
+      if (!auth) return null;
+      const startup = await store.getStartupByClerkUserId(auth.clerkUserId);
+      if (!startup) {
+        redirect(res, "/startup/onboarding");
+        return null;
+      }
+      const hasConsent = await store.hasStartupConsent(startup.id, "messaging_on_behalf");
+      if (!hasConsent) {
+        redirect(res, "/startup/onboarding");
+        return null;
+      }
+      return { auth, startup };
+    }
+
+    // GET /startup/roles/new
+    if (req.method === "GET" && url.pathname === "/startup/roles/new") {
+      const ctx = await requireStartupWithConsent();
+      if (!ctx) return;
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "New Role",
+          config,
+          auth: ctx.auth,
+          body: renderRoleForm({ role: null, action: "/startup/roles" }),
+        }),
+      );
+      return;
+    }
+
+    // POST /startup/roles
+    if (req.method === "POST" && url.pathname === "/startup/roles") {
+      const ctx = await requireStartupWithConsent();
+      if (!ctx) return;
+      const form = await readForm(req);
+      if (!form.title || !form.description || !form.requirements) {
+        redirect(res, "/startup/roles/new");
+        return;
+      }
+      await store.createRole({
+        startupId: ctx.startup.id,
+        title: String(form.title).slice(0, 200),
+        description: String(form.description).slice(0, 4000),
+        requirements: String(form.requirements).slice(0, 4000),
+        location: String(form.location || "").slice(0, 100),
+        compRange: String(form.comp_range || "").slice(0, 100),
+      });
+      redirect(res, "/startup/dashboard");
+      return;
+    }
+
+    // GET /startup/roles/:id/edit
+    if (req.method === "GET" && /^\/startup\/roles\/[^/]+\/edit$/.test(url.pathname)) {
+      const ctx = await requireStartupWithConsent();
+      if (!ctx) return;
+      const roleId = url.pathname.split("/")[3];
+      const role = await store.getRoleById(roleId, ctx.startup.id);
+      if (!role) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Edit Role",
+          config,
+          auth: ctx.auth,
+          body: renderRoleForm({ role, action: `/startup/roles/${roleId}` }),
+        }),
+      );
+      return;
+    }
+
+    // POST /startup/roles/:id/pause  (match BEFORE the generic update route)
+    if (req.method === "POST" && /^\/startup\/roles\/[^/]+\/pause$/.test(url.pathname)) {
+      const ctx = await requireStartupWithConsent();
+      if (!ctx) return;
+      const roleId = url.pathname.split("/")[3];
+      await store.pauseRole(roleId, ctx.startup.id);
+      redirect(res, "/startup/dashboard");
+      return;
+    }
+
+    // POST /startup/roles/:id
+    if (req.method === "POST" && /^\/startup\/roles\/[^/]+$/.test(url.pathname)) {
+      const ctx = await requireStartupWithConsent();
+      if (!ctx) return;
+      const roleId = url.pathname.split("/")[3];
+      const form = await readForm(req);
+      if (!form.title || !form.description || !form.requirements) {
+        redirect(res, `/startup/roles/${roleId}/edit`);
+        return;
+      }
+      await store.updateRole(roleId, ctx.startup.id, {
+        title: String(form.title).slice(0, 200),
+        description: String(form.description).slice(0, 4000),
+        requirements: String(form.requirements).slice(0, 4000),
+        location: String(form.location || "").slice(0, 100),
+        compRange: String(form.comp_range || "").slice(0, 100),
+      });
+      redirect(res, "/startup/dashboard");
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/ops/privacy") {
       sendHtml(
         res,
