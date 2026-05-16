@@ -1,38 +1,149 @@
 # Roadmap: InternJobs.ai
 
-**Status:** 📋 Between milestones — v1.1 shipped, v1.2 not yet planned
+**Status:** 🚧 v1.2 — Two-Sided Agent MVP (active)
 
-## Completed Milestones
+## Milestones
 
-- ✅ **v1.0 Waitlist Identity and Messaging Foundation** — Phases 1-6 (shipped 2026-05-09)
+- ✅ **v1.0 Waitlist Identity and Messaging Foundation** — Phases 01–06 (shipped 2026-05-09)
   - Archive: `.planning/milestones/v1.0-waitlist-app/`
-- ✅ **v1.1 Seamless Waitlist and Student Threading** — Phase 7 (shipped 2026-05-15)
+- ✅ **v1.1 Seamless Waitlist and Student Threading** — Phase 01 (shipped 2026-05-15)
   - Archive: `.planning/milestones/v1.1-seamless-waitlist/`
+- 🚧 **v1.2 Two-Sided Agent MVP** — Phases 01–06 (active)
+  - Workspace: `.planning/milestones/v1.2-two-sided-agent-mvp/`
 
-## Next Milestone
+## v1.2 Overview
 
-**v1.2 — Two-Sided Agent MVP**
+Stand up a Mastra-powered agent that drafts both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel — every outbound message human-approved. Student SMS stays on the existing Spectrum/Photon path; v1.2 only ships an `SmsProvider` interface seam so v1.3+ can swap in Telnyx without touching call-sites.
 
-Stand up a Mastra-powered agent that drafts both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel — every outbound message human-approved. Student SMS stays on the existing Spectrum/Photon path; v1.2 only ships an `SmsProvider` interface seam so v1.3+ can swap in Telnyx without touching call-sites. See `.planning/PROJECT.md` (`### Active`) for v1.2 requirement set.
+**Phase numbering convention:** v1.2 restarts at Phase 01 (per existing v1.0/v1.1 pattern). Each milestone has its own phase sequence under its workspace directory.
 
-Rough phase shape (will be refined by `/rrr:create-roadmap`):
+## Phases (v1.2)
 
-1. Pre-flight + SMS provider abstraction (fix Cloudflare DNS proxy; rotate `CLERK_SECRET_KEY`; wrap Spectrum send/receive behind `SmsProvider`)
-2. Startup auth + onboarding + roles data model
-3. Cloudflare Email Routing inbound pipeline for startups + outbound email provider (Resend candidate)
-4. Mastra agent core — workflows, thread memory, pgvector memory
-5. Approval/safety gate UI (operator dashboard for draft review)
-6. Two-sided integration + smoke test
+- [ ] **Phase 01: Pre-flight + SMS Provider Abstraction** — Clear v1.1 carry-over blockers; wrap Spectrum/Photon behind a swappable `SmsProvider` interface.
+- [ ] **Phase 02: Startup Identity, Consent & Roles** — Email-first Clerk auth for startups; profile + consent capture; roles CRUD.
+- [ ] **Phase 03: Startup Email Channel (Inbound + Outbound)** — CF Email Routing → Worker → Mastra ingest; Resend (or equivalent) for outbound with SPF + DKIM.
+- [ ] **Phase 04: Mastra Agent Core** — Workflow that drafts (never sends); thread memory in dedicated `mastra` schema; pgvector with HNSW index.
+- [ ] **Phase 05: Operator Approval Gate** — `/ops/drafts` dashboard, approve / edit / reject, gated send through correct channel.
+- [ ] **Phase 06: Two-Sided Integration Smoke Test** — All 11 INTEG-01 steps pass end-to-end in production.
 
-## Phases
+## Phase Details
 
-*No active phases. Run `/rrr:define-requirements` to scope v1.2, then `/rrr:create-roadmap` to break it into phases.*
+### Phase 01: Pre-flight + SMS Provider Abstraction
+
+**Goal:** Clear the v1.1 carry-over blockers and seal the Spectrum/Photon SMS path behind an `SmsProvider` interface so v1.3+ can swap in Telnyx (or any other adapter) without touching call-sites.
+
+**Depends on:** Nothing (first phase of v1.2)
+
+**Requirements:** SEC-01, SMS-01
+
+**Success Criteria** (what must be TRUE):
+1. Live LinkedIn → Clerk → app sign-in completes end-to-end against prod Clerk (`accounts.internjobs.ai` and `clerk.internjobs.ai` are DNS-only, not proxied).
+2. All Spectrum/Photon send + receive calls in `apps/app` go through an `SmsProvider` interface — no direct Photon SDK calls remain in route handlers or workflows.
+3. `/healthz` continues to report `clerk/database/photonNumber/photonWebhook/spectrumListener` all `true` after the refactor.
+4. v1.1 waitlist + threading flow (WAIT-01..03, THREAD-01) continues to work unchanged in prod — no regression.
+
+**Plans:** TBD (refined during `/rrr:plan-phase 1`)
+
+### Phase 02: Startup Identity, Consent & Roles
+
+**Goal:** Startups can sign up, profile themselves, grant `messaging_on_behalf` consent, and manage their roles — without LinkedIn being required.
+
+**Depends on:** Phase 01
+
+**Requirements:** STARTUP-01, STARTUP-02, ROLE-01
+
+**Success Criteria** (what must be TRUE):
+1. A new startup founder can sign in via email/password, Google, or Microsoft through Clerk (LinkedIn-required is OFF for the startup landing) and lands on a startup dashboard.
+2. Startup onboarding captures company profile + `messaging_on_behalf` consent, creating rows in `startups`, `startup_members`, and `startup_consents`.
+3. Middleware blocks startup users from accessing agent features (e.g., role creation, draft routes) until `messaging_on_behalf` consent is granted.
+4. Startup founder can create, view, edit, and pause roles (title, description, requirements, status, location, comp_range) from the dashboard. Pause sets `status='paused'` (no hard delete).
+
+**Plans:** TBD
+
+### Phase 03: Startup Email Channel (Inbound + Outbound)
+
+**Goal:** Email is the startup channel — both directions are working before the agent core depends on them.
+
+**Depends on:** Phase 02
+
+**Requirements:** EMAIL-01, EMAIL-02
+
+**Success Criteria** (what must be TRUE):
+1. Email sent to startup-facing `internjobs.ai` address is received by a Cloudflare Worker via CF Email Routing, then forwarded (HMAC-signed) to a `/webhooks/email` ingest endpoint on the Fly app.
+2. Inbound email receipt is logged in `audit_events` with `event_type='startup_email_received'`.
+3. An outbound transactional email provider (Resend candidate) is configured with verified SPF + DKIM on `internjobs.ai`, and a test outbound email from `noreply@internjobs.ai` (or equivalent) delivers successfully to a Gmail and an Outlook inbox.
+4. `/healthz` reports `emailWorkerSecret` and outbound-provider-key status keys both `true`.
+
+**Plans:** TBD
+
+### Phase 04: Mastra Agent Core
+
+**Goal:** The agent reads inbound (SMS or email), matches a student to a role, and writes a draft — never sends. Memory is persistent and isolated from application tables.
+
+**Depends on:** Phase 03
+
+**Requirements:** AGENT-01, AGENT-02, AGENT-03
+
+**Success Criteria** (what must be TRUE):
+1. A student inbound SMS (via the Phase 01 `SmsProvider`) triggers a Mastra workflow that reads the student's profile context, matches against active `roles`, and writes a `drafts` row with `status='pending_review'`. No outbound is sent at this phase.
+2. Mastra thread memory persists in a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`) and is queryable by `student_id` and `startup_id` keys.
+3. `vector` extension + HNSW index exist on Neon (created in the migration, not deferred); embeddings are written for student profiles and roles on save/update.
+4. Toggling `USE_VECTOR_MATCH` flips the match step between keyword and cosine similarity without errors; missing-embedding fallback to keyword works.
+
+**Plans:** TBD
+
+### Phase 05: Operator Approval Gate
+
+**Goal:** Every outbound message is operator-reviewed. No auto-send path exists in production.
+
+**Depends on:** Phase 04
+
+**Requirements:** APPROVE-01, APPROVE-02
+
+**Success Criteria** (what must be TRUE):
+1. `/ops/drafts` lists all pending agent drafts (student-side SMS + startup-side email) with conversation context (student, startup, role, prior turns). Auth is `requireOperatorAuth` middleware checking Clerk `publicMetadata.userType === 'operator'` (not a DB flag).
+2. Operator can approve as-is, edit-then-approve, or reject (with optional free-text reason) from the draft detail view.
+3. Approving a draft sends through the correct channel — Spectrum SMS via the Phase 01 `SmsProvider` for students, the Phase 03 outbound provider for startup emails — and updates `drafts.status='sent'`, `sent_at`, and `provider_message_id`.
+4. Rejected drafts appear in a `/ops/feedback` log with their `rejection_reason`, readable by the human prompt-tuner.
+5. No code path exists in production that sends an outbound message without flipping through `drafts.status='approved'` first.
+
+**Plans:** TBD
+
+### Phase 06: Two-Sided Integration Smoke Test
+
+**Goal:** All 11 steps of INTEG-01 pass end-to-end in production without manual DB intervention.
+
+**Depends on:** Phase 05
+
+**Requirements:** INTEG-01
+
+**Success Criteria** (what must be TRUE):
+1. The 11-step smoke test from `.planning/milestones/v1.2-two-sided-agent-mvp/research/FEATURES.md` INTEG-01 executes end-to-end in production: student inbound (Spectrum) → agent draft → operator approve → startup email → startup reply → agent draft → operator approve → student SMS.
+2. Each step produces the expected Neon row(s); no manual DB intervention is required at any step.
+3. No outbound message is observed without a corresponding `drafts.status='sent'` transition.
+4. Test transcript + Neon row snapshots are recorded in `VERIFICATION.md` for the phase (closes the v1.1 audit gap that no RRR verification artifacts existed for v1.0/v1.1 phases).
+
+**Plans:** TBD
+
+## Progress
+
+**Execution order:** 01 → 02 → 03 → 04 → 05 → 06 (sequential; each phase depends on the prior)
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 01. Pre-flight + SMS Abstraction | v1.2 | 0/TBD | Not started | — |
+| 02. Startup Identity, Consent & Roles | v1.2 | 0/TBD | Not started | — |
+| 03. Startup Email Channel | v1.2 | 0/TBD | Not started | — |
+| 04. Mastra Agent Core | v1.2 | 0/TBD | Not started | — |
+| 05. Operator Approval Gate | v1.2 | 0/TBD | Not started | — |
+| 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
+
+## v1.3 Candidates
+
+Named candidates carried over from v1.2 Out of Scope + milestone research. Not in active scope.
+
+See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01, TELNYX-MIGRATE-01, SUNSET-01, COGNEE-ACTIVATE-01, ENRICH-ACTIVATE-01, VOICE-01, SLACK-01, STARTUP-SMS-01, FEEDBACK-LOOP-01, THREAD-SUMMARY-01, CONSENT-INFER-01, MULTI-MEMBER-01.
 
 ---
 
-**Next Steps:**
-
-1. Resolve carry-over from v1.1: Cloudflare DNS proxy on `accounts.internjobs.ai` + `clerk.internjobs.ai` should be DNS-only; run live LinkedIn → Clerk → app sign-in smoke test against prod.
-2. `/rrr:define-requirements` — formalize the v1.2 requirement set already drafted in `PROJECT.md` `### Active`.
-3. `/rrr:create-roadmap` — break v1.2 into phases (~6 phases per scoping).
-4. `/rrr:plan-phase` — plan and execute phase-by-phase.
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage.*

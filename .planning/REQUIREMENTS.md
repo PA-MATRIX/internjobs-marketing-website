@@ -128,28 +128,28 @@ Explicit exclusions. Documented to prevent scope creep.
 
 ## Traceability
 
-Maps current-milestone (v1.2) requirements to roadmap phases. Empty until `/rrr:create-roadmap` runs.
+Maps current-milestone (v1.2) requirements to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | — | Pending |
-| SMS-01 | — | Pending |
-| STARTUP-01 | — | Pending |
-| STARTUP-02 | — | Pending |
-| ROLE-01 | — | Pending |
-| EMAIL-01 | — | Pending |
-| EMAIL-02 | — | Pending |
-| AGENT-01 | — | Pending |
-| AGENT-02 | — | Pending |
-| AGENT-03 | — | Pending |
-| APPROVE-01 | — | Pending |
-| APPROVE-02 | — | Pending |
-| INTEG-01 | — | Pending |
+| SEC-01 | Phase 01 — Pre-flight + SMS Abstraction | Pending |
+| SMS-01 | Phase 01 — Pre-flight + SMS Abstraction | Pending |
+| STARTUP-01 | Phase 02 — Startup Identity, Consent & Roles | Pending |
+| STARTUP-02 | Phase 02 — Startup Identity, Consent & Roles | Pending |
+| ROLE-01 | Phase 02 — Startup Identity, Consent & Roles | Pending |
+| EMAIL-01 | Phase 03 — Startup Email Channel | Pending |
+| EMAIL-02 | Phase 03 — Startup Email Channel | Pending |
+| AGENT-01 | Phase 04 — Mastra Agent Core | Pending |
+| AGENT-02 | Phase 04 — Mastra Agent Core | Pending |
+| AGENT-03 | Phase 04 — Mastra Agent Core | Pending |
+| APPROVE-01 | Phase 05 — Operator Approval Gate | Pending |
+| APPROVE-02 | Phase 05 — Operator Approval Gate | Pending |
+| INTEG-01 | Phase 06 — Two-Sided Integration Smoke Test | Pending |
 
 **Coverage (v1.2):**
 - Active requirements: 13 total
-- Mapped to phases: 0 ⚠️ (run `/rrr:create-roadmap`)
-- Unmapped: 13
+- Mapped to phases: 13 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-16*
