@@ -27,6 +27,7 @@ import {
   renderFeedbackLog,
 } from "./views.mjs";
 import { routeAndSend } from "./outbound.mjs";
+import { handleInteg01Status } from "./routes/admin.mjs";
 
 const config = getConfig();
 const store = createStore(config);
@@ -891,6 +892,18 @@ const server = createServer(async (req, res) => {
           body: `<section class="panel narrow"><p class="eyebrow">Operations</p><h1>Privacy controls before production data.</h1><p class="lede">User deletion/export requests should be handled from audit-backed database records. Do not log profile snapshots, message bodies, provider tokens, or raw webhook payloads.</p></section>`,
         }),
       );
+      return;
+    }
+
+    // ─── Admin read-only endpoints (Phase 06) ────────────────────────────────
+    //
+    // All /admin/* routes require operator auth (requireOperatorAuth gates
+    // the entire block). No mutations live here — read-only DB introspection
+    // only. The handler module is apps/app/src/routes/admin.mjs.
+    if (req.method === "GET" && url.pathname === "/admin/integ-01-status") {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      await handleInteg01Status(req, res, { url, pool: store?.pool ?? null });
       return;
     }
 
