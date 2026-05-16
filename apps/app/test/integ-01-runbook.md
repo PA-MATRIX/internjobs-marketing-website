@@ -97,7 +97,7 @@ Expected output shape (all booleans `true`):
     "photonWebhook": true,
     "spectrumListener": true,
     "emailWorkerSecret": true,
-    "resendApiKey": true
+    "cloudflareEmailReady": true
   },
   "mastraReady": true,
   "pgvectorReady": true,
@@ -107,7 +107,8 @@ Expected output shape (all booleans `true`):
 
 Any `false` value indicates a missing secret. Fix before continuing:
 `PHOTON_FROM_NUMBER`, `PHOTON_WEBHOOK_SECRET`, `EMAIL_WORKER_SECRET`,
-`RESEND_API_KEY`, `OPENAI_API_KEY` — all must be present in Fly secrets.
+`CLOUDFLARE_EMAIL_ACCOUNT_ID`, `CLOUDFLARE_EMAIL_API_TOKEN`,
+`OPENAI_API_KEY` — all must be present in Fly secrets.
 
 ---
 
@@ -344,7 +345,7 @@ Pass condition: At least one row with `recipient_type = 'startup'`,
 locate the startup-side draft (filter by "Startup" if needed). Click the
 row, review the draft body, then click **Approve**.
 
-Wait up to 15 seconds for the Resend API call to complete.
+Wait up to 15 seconds for the Cloudflare Email Service send call to complete.
 
 Observable: The test startup email inbox (the Gmail/Outlook address from
 Pre-Flight 6) receives an email **From:** `noreply@internjobs.ai` with a

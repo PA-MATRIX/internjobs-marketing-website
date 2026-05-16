@@ -30,16 +30,21 @@ export function getConfig(env = process.env) {
     //   (apps/email-worker). The Worker signs the JSON payload with this
     //   secret and includes it in `x-email-worker-secret`; the Fly app
     //   verifies via crypto.timingSafeEqual.
-    // resendApiKey: outbound transactional sending via Resend. Not exercised
-    //   until Phase 05 (operator approval gate) actually triggers a send —
-    //   loaded here so /healthz can report presence.
+    // cloudflareEmailAccountId / cloudflareEmailApiToken: outbound
+    //   transactional sending via Cloudflare Email Service (public beta
+    //   2026-04-17, the "Agent Mail" product). The token is Account-scoped
+    //   with "Email Sending" permission — distinct from any future CF
+    //   Workers / DNS-management token. Not exercised until Phase 05
+    //   (operator approval gate) actually triggers a send — loaded here so
+    //   /healthz can report presence.
     emailWorkerSecret: env.EMAIL_WORKER_SECRET || "",
-    resendApiKey: env.RESEND_API_KEY || "",
+    cloudflareEmailAccountId: env.CLOUDFLARE_EMAIL_ACCOUNT_ID || "",
+    cloudflareEmailApiToken: env.CLOUDFLARE_EMAIL_API_TOKEN || "",
     // v1.2 Phase 05: dry-run guard for outbound send paths. When true,
     // outbound.mjs routes drafts to synthetic provider IDs instead of
     // calling the real SMS/email backends. Used by the smoke suite so
     // tests assert the approve → 'sent' transition without hitting
-    // Photon/Resend. NEVER set this in production.
+    // Photon/Cloudflare. NEVER set this in production.
     outboundDryRun: env.OUTBOUND_DRY_RUN === "true",
   };
 }
@@ -56,7 +61,8 @@ export function getMissingProviderConfig(config) {
   // Phase 03 keys: warnings (not hard blocks) — they become hard blocks in
   // Phase 05 when sends are required and inbound is required end-to-end.
   if (!config.emailWorkerSecret) warnings.push("EMAIL_WORKER_SECRET (warn — required for inbound email in Phase 05)");
-  if (!config.resendApiKey) warnings.push("RESEND_API_KEY (warn — required for outbound email in Phase 05)");
+  if (!config.cloudflareEmailAccountId) warnings.push("CLOUDFLARE_EMAIL_ACCOUNT_ID (warn — required for outbound email in Phase 05)");
+  if (!config.cloudflareEmailApiToken) warnings.push("CLOUDFLARE_EMAIL_API_TOKEN (warn — required for outbound email in Phase 05)");
 
   // Back-compat: callers (e.g. /config/status route) currently expect an
   // array. Append warnings with the "(warn — …)" prefix so they're visible

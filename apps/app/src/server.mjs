@@ -69,9 +69,15 @@ const server = createServer(async (req, res) => {
           photonNumber: Boolean(config.photon.fromNumber),
           photonWebhook: Boolean(config.photon.webhookSecret),
           spectrumListener: Boolean(config.enableSpectrumListener),
-          // v1.2 Phase 03: presence-only checks (we don't call Resend here).
+          // v1.2 Phase 03: presence-only checks (we don't call CF here).
+          // cloudflareEmailReady is true iff BOTH the account id and the
+          // Email-Sending-scoped API token are present — the send call
+          // needs both, so a single boolean keeps the operator-facing
+          // readiness signal honest.
           emailWorkerSecret: Boolean(config.emailWorkerSecret),
-          resendApiKey: Boolean(config.resendApiKey),
+          cloudflareEmailReady: Boolean(
+            config.cloudflareEmailAccountId && config.cloudflareEmailApiToken,
+          ),
         },
         // v1.2 Phase 04 (AGENT-01..03): Mastra readiness surface.
         // mastraReady       — Mastra in-process instance constructed.

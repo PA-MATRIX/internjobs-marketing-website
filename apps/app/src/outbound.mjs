@@ -12,10 +12,12 @@
 //   specifically to drafts table rows.
 //
 // The `sendStartupEmail` import is intentionally OWNED here so server.mjs
-// has no direct line to Resend. The /ops/drafts/:id/approve handler
-// passes `routeAndSend` a `smsProvider` (the same Phase 01 abstraction
-// the welcome path uses) and a config; this module constructs the email
-// provider internally from config.resendApiKey.
+// has no direct line to the email provider. The /ops/drafts/:id/approve
+// handler passes `routeAndSend` a `smsProvider` (the same Phase 01
+// abstraction the welcome path uses) and a config; this module constructs
+// the email call from config.cloudflareEmailAccountId and
+// config.cloudflareEmailApiToken (Cloudflare Email Service, the "Agent
+// Mail" product launched at Agents Week 2026 — public beta 2026-04-17).
 //
 // Send-failure semantics (see Phase 05 PLAN.md success criteria):
 //   - On thrown error: caller (server.mjs /ops/drafts/:id/approve) catches,
@@ -29,7 +31,7 @@
 //   - 'sms' / 'sms_spectrum' / 'sms_telnyx' → smsProvider.sendSms
 //     (Phase 01 abstraction; current backend is Spectrum)
 //   - 'email'                                → sendStartupEmail
-//     (Phase 03 wrapper around Resend)
+//     (Phase 03 wrapper around Cloudflare Email Service)
 //   - anything else                          → throw (unknown channel)
 
 import { sendStartupEmail } from "./email/outbound.mjs";
@@ -70,18 +72,24 @@ export async function routeAndSend(draft, { smsProvider, config }) {
   if (channel === "email") {
     // Email config is missing → fail loudly. The operator sees the
     // 'draft_send_failed' audit row and an error banner; status stays
-    // 'approved' for retry once RESEND_API_KEY is set. The smoke suite
-    // never reaches this branch because OUTBOUND_DRY_RUN=true short-circuits
-    // above.
-    const apiKey = config?.resendApiKey;
-    if (!apiKey) throw new Error("routeAndSend: resendApiKey missing — set RESEND_API_KEY to send email drafts");
+    // 'approved' for retry once the CF Email Service creds are set. The
+    // smoke suite never reaches this branch because OUTBOUND_DRY_RUN=true
+    // short-circuits above.
+    const accountId = config?.cloudflareEmailAccountId;
+    const apiToken = config?.cloudflareEmailApiToken;
+    if (!accountId || !apiToken) {
+      throw new Error(
+        "routeAndSend: cloudflare email service credentials missing — set CLOUDFLARE_EMAIL_ACCOUNT_ID and CLOUDFLARE_EMAIL_API_TOKEN to send email drafts",
+      );
+    }
     const result = await sendStartupEmail({
       to,
       subject: "InternJobs.ai — message about your role",
       body,
-      apiKey,
+      accountId,
+      apiToken,
     });
-    return result?.id ?? null;
+    return result?.providerMessageId ?? null;
   }
 
   throw new Error(`routeAndSend: unknown channel "${draft.channel}"`);
