@@ -39,6 +39,7 @@
 
 import OpenAI from "openai";
 import { logEmbedErr } from "../embeddings.mjs";
+import { buildConversationReplyTo } from "./reply-to.mjs";
 
 const DEFAULT_MODEL = process.env.AGENT_MODEL || "gpt-4o-mini";
 const LAST_N_MESSAGES = 20; // PITFALLS #19
@@ -148,28 +149,40 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
   // 9. Insert drafts row. status='pending_review' — operator queue gate.
   //    agent_metadata captures provenance: match_source + model + a hash of
   //    the prompt for debugging without leaking PII.
+  //
+  // v1.2 EMAIL-03 (scope-add 2026-05-16): buildDraftAgentMetadata stamps
+  // `reply_to = conv-{conversation_id}@internjobs.ai` whenever the draft
+  // is for a startup recipient (so the CF Email Service payload carries
+  // a per-conversation Reply-To and the inbound catch-all Worker can
+  // route replies deterministically). This workflow only emits
+  // recipient_type='student', so the stamp is a no-op for these rows —
+  // the helper exists so future startup-drafting workflows pick up the
+  // behavior for free.
+  const recipientType = "student";
+  const channel = "sms";
+  const agentMetadata = buildDraftAgentMetadata({
+    recipientType,
+    conversationId: conversation.id,
+    matchSource,
+    model: generated.model,
+    prompt,
+    roleId: role.id,
+    startupId: role.startup_id,
+  });
   const { rows: draftRows } = await pool.query(
     `insert into drafts
        (conversation_id, inbound_message_id, recipient_type, channel,
         channel_address, body, status, agent_metadata)
-     values ($1, $2, 'student', $3, $4, $5, 'pending_review', $6)
+     values ($1, $2, $3, $4, $5, $6, 'pending_review', $7)
      returning id`,
     [
       conversation.id,
       inbound.id,
-      // Student's reply will be sent over the same SMS channel they came in on.
-      "sms",
+      recipientType,
+      channel,
       inbound.channel_address || "",
       generated.body,
-      {
-        match_source: matchSource,
-        model: generated.model,
-        promptCharCount: prompt.length,
-        roleId: role.id,
-        startupId: role.startup_id,
-        lastN: LAST_N_MESSAGES,
-        v: 1,
-      },
+      agentMetadata,
     ],
   );
   const draftId = draftRows[0]?.id || null;
@@ -432,6 +445,39 @@ async function markProcessed(pool, inboundId) {
     `update inbound_messages set processed_at = now() where id = $1 and processed_at is null`,
     [inboundId],
   );
+}
+
+// v1.2 EMAIL-03: shared metadata blob builder. Stamps `reply_to` whenever
+// the draft is for a startup recipient, so any future workflow that emits
+// recipient_type='startup' drafts gets the per-conversation Reply-To path
+// for free. For student drafts the `reply_to` key is omitted to keep
+// agent_metadata blobs lean.
+export function buildDraftAgentMetadata({
+  recipientType,
+  conversationId,
+  matchSource,
+  model,
+  prompt,
+  roleId,
+  startupId,
+}) {
+  const meta = {
+    match_source: matchSource,
+    model,
+    promptCharCount: typeof prompt === "string" ? prompt.length : 0,
+    roleId,
+    startupId,
+    lastN: LAST_N_MESSAGES,
+    v: 1,
+  };
+  if (recipientType === "startup" && conversationId) {
+    // Literal prefix `conv-` (single hyphen separator) + full UUID with
+    // hyphens. Lowercased. Parsed by apps/email-worker/src/index.js on
+    // inbound replies.
+    const replyTo = buildConversationReplyTo(conversationId);
+    if (replyTo) meta.reply_to = replyTo;
+  }
+  return meta;
 }
 
 // re-export for convenience: callers that don't want to import a workflow

@@ -30,6 +30,15 @@
 
 const OPERATOR_FALLBACK = "ops@internjobs.ai";
 
+// v1.2 EMAIL-03 (scope-add 2026-05-16): per-conversation Reply-To aliases.
+// Outbound startup emails set `Reply-To: conv-{conversation_id}@internjobs.ai`.
+// The catch-all rule routes every `*@internjobs.ai` to this Worker, so we
+// extract the UUID from the `To:` header and ship it to /webhooks/email in
+// the JSON payload. Fly side validates and writes it into
+// `inbound_messages.metadata.conversation_id`. Absent → legacy From-address
+// lookup keeps working.
+const CONV_ALIAS_REGEX = /^conv-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@internjobs\.ai$/i;
+
 export default {
   /**
    * @param {EmailMessage} message
@@ -55,7 +64,27 @@ export default {
         body = "(body parse failed)";
       }
 
-      const payload = JSON.stringify({ from, to, subject, body, ts: Date.now() });
+      // EMAIL-03: parse the per-conversation alias if present. The `to`
+      // header may be `"Name" <addr@dom>` or plain `addr@dom`; we accept
+      // either by extracting the angle-bracket form when present.
+      let conversationId = null;
+      try {
+        const bracketed = to.match(/<([^>]+)>/);
+        const candidate = (bracketed?.[1] ?? to).trim().toLowerCase();
+        const match = candidate.match(CONV_ALIAS_REGEX);
+        if (match) conversationId = match[1].toLowerCase();
+      } catch (_) {
+        conversationId = null;
+      }
+
+      const payload = JSON.stringify({
+        from,
+        to,
+        subject,
+        body,
+        ts: Date.now(),
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+      });
 
       // HMAC-SHA256 sign the payload with the shared secret.
       const encoder = new TextEncoder();

@@ -43,6 +43,11 @@ class MemoryStore {
     this.conversations = new Map();   // id -> conversation row
     this.startups = new Map();        // id -> startup row
     this.roles = new Map();           // id -> role row
+    // v1.2 EMAIL-03 (scope-add 2026-05-16): in-memory mirror of
+    // inbound_messages rows. Used by the per-conv alias smoke test to
+    // assert that metadata.conversation_id is preserved end-to-end
+    // without standing up Postgres.
+    this.inboundMessages = [];        // chronological log
   }
 
   async upsertStudentFromAuth(auth) {
@@ -249,23 +254,51 @@ class MemoryStore {
     return null;
   }
 
-  // ─── Inbound email pipeline (v1.2 Phase 03) — in-memory mirror ─────────────
+  // ─── Inbound email pipeline (v1.2 Phase 03 + EMAIL-03 scope-add) ───────────
   // Real implementation lives in PostgresStore.recordEmailInbound. This stub
   // exists so dev mode (no DATABASE_URL) doesn't crash the smoke suite if
   // POST /webhooks/email is ever exercised against an in-memory store.
-  async recordEmailInbound({ from, to, subject, body, ts }) {
+  //
+  // v1.2 EMAIL-03 (scope-add 2026-05-16): the optional conversationId
+  // arg, when supplied, is written into the in-memory mirror's
+  // metadata.conversation_id so the smoke suite can assert deterministic
+  // threading without standing up Postgres.
+  async recordEmailInbound({ from, to, subject, body, ts, conversationId }) {
     const channelAddress = String(from || "")
       .match(/<([^>]+)>/)?.[1]
       ?.toLowerCase() ?? String(from || "").trim().toLowerCase();
     const providerEventId = `email:${channelAddress || "unknown"}:${ts || Date.now()}`;
+    const inboundId = randomUUID();
+    const metadata = {
+      from: String(from || ""),
+      to: String(to || ""),
+      subject: String(subject || ""),
+      providerEventId,
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+    };
+    this.inboundMessages.push({
+      id: inboundId,
+      provider: "email",
+      channelAddress,
+      body: String(body || ""),
+      metadata,
+      createdAt: new Date().toISOString(),
+    });
     this.auditEvents.push({
       studentId: null,
       eventType: "startup_email_received",
       actor: "provider",
-      metadata: { provider: "email", channelAddress, subject: String(subject || ""), providerEventId },
+      metadata: { provider: "email", channelAddress, subject: String(subject || ""), providerEventId, conversationId: conversationId || null },
       createdAt: new Date().toISOString(),
     });
-    return { inboundId: null, startupId: null, memberId: null, duplicate: false, eventType: "startup_email_received" };
+    return {
+      inboundId,
+      startupId: null,
+      memberId: null,
+      duplicate: false,
+      eventType: "startup_email_received",
+      conversationId: conversationId || null,
+    };
   }
 
   // ─── v1.2 Phase 05 — operator approval gate (MemoryStore) ──────────────────
@@ -821,7 +854,7 @@ class PostgresStore {
   // upstream message replayed by the Worker doesn't create duplicate rows.
   // The partial unique index inbound_messages_provider_event_uidx enforces
   // this at the DB level.
-  async recordEmailInbound({ from, to, subject, body, ts }) {
+  async recordEmailInbound({ from, to, subject, body, ts, conversationId }) {
     const fromAddr = String(from || "").trim();
     const channelAddress = extractEmailAddress(fromAddr).toLowerCase();
 
@@ -840,7 +873,20 @@ class PostgresStore {
       }
     }
 
+    // v1.2 EMAIL-03: if the Worker passed a conversation_id (parsed from
+    // `conv-{uuid}@internjobs.ai`), prefer it as the deterministic routing
+    // key. We DON'T override startup_id from the conversation row here —
+    // that's the Phase 04 workflow's job; we just stamp the id into
+    // inbound_messages.metadata so the workflow can load the conversation
+    // directly without a From-address lookup.
     const providerEventId = `email:${channelAddress || "unknown"}:${ts || Date.now()}`;
+    const metadata = {
+      from: fromAddr,
+      to: String(to || ""),
+      subject: String(subject || ""),
+      receivedAt: new Date().toISOString(),
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+    };
 
     // Insert the inbound_messages row. on conflict do nothing makes a
     // Worker retry idempotent.
@@ -858,12 +904,7 @@ class PostgresStore {
         channelAddress || null,
         startupId,
         String(body || ""),
-        {
-          from: fromAddr,
-          to: String(to || ""),
-          subject: String(subject || ""),
-          receivedAt: new Date().toISOString(),
-        },
+        metadata,
       ],
     );
 
@@ -872,7 +913,14 @@ class PostgresStore {
 
     // audit_events: student_id-keyed table, so for startup-side events we
     // pass null student_id. The metadata captures startup_id when known.
-    const eventType = startupId ? "startup_email_received" : "unmatched_startup_email";
+    // EMAIL-03: when conversationId is set, emit a distinct event type so
+    // operators can see which inbound emails arrived via the deterministic
+    // per-conv alias path vs the legacy From-address lookup.
+    const eventType = conversationId
+      ? "startup_email_received_by_alias"
+      : startupId
+        ? "startup_email_received"
+        : "unmatched_startup_email";
     await this.pool.query(
       `insert into audit_events (student_id, event_type, actor, metadata)
        values (null, $1, 'provider', $2)`,
@@ -886,11 +934,12 @@ class PostgresStore {
           memberId,
           inboundId,
           duplicate,
+          conversationId: conversationId || null,
         },
       ],
     );
 
-    return { inboundId, startupId, memberId, duplicate, eventType };
+    return { inboundId, startupId, memberId, duplicate, eventType, conversationId: conversationId || null };
   }
 
   // ─── v1.2 Phase 05 — operator approval gate (PostgresStore) ────────────────

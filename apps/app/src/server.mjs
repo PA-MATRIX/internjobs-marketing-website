@@ -414,17 +414,24 @@ const server = createServer(async (req, res) => {
       }
 
       try {
+        // v1.2 EMAIL-03: optional conversation_id from Worker payload.
+        // Validate UUID v4 syntactically; malformed → drop the field
+        // silently so the legacy From-address lookup path still runs.
+        const rawConvId = payload.conversation_id;
+        const conversationId = validateUuidLoose(rawConvId);
         const result = await store.recordEmailInbound({
           from: payload.from,
           to: payload.to,
           subject: payload.subject,
           body: payload.body,
           ts: payload.ts,
+          conversationId,
         });
         sendJson(res, 200, {
           ok: true,
           duplicate: result.duplicate,
           eventType: result.eventType,
+          conversationId: conversationId || null,
         });
       } catch (err) {
         console.error(
@@ -999,6 +1006,21 @@ function flattenRoleForEmbedding(role) {
   if (role.location) parts.push("location: " + role.location);
   if (role.comp_range) parts.push("comp range: " + role.comp_range);
   return parts.join("\n").trim();
+}
+
+// v1.2 EMAIL-03: loose UUID v4 syntactic validator. The catch-all Worker
+// parses `conv-{uuid}@internjobs.ai` and ships the UUID in the JSON
+// payload; we accept it only if it's syntactically a UUID (8-4-4-4-12
+// hex with hyphens). Malformed → null and the legacy From-address lookup
+// runs unchanged. We deliberately don't enforce v4 version/variant bits
+// (gen_random_uuid() emits v4 anyway, but cross-version compat keeps the
+// validator dumb and forgiving).
+function validateUuidLoose(value) {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(trimmed)
+    ? trimmed
+    : null;
 }
 
 // Constant-time string equality. Used by the email webhook to compare both

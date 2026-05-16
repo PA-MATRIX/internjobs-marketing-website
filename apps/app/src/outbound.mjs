@@ -82,10 +82,20 @@ export async function routeAndSend(draft, { smsProvider, config }) {
         "routeAndSend: cloudflare email service credentials missing — set CLOUDFLARE_EMAIL_ACCOUNT_ID and CLOUDFLARE_EMAIL_API_TOKEN to send email drafts",
       );
     }
+    // v1.2 EMAIL-03 (scope-add 2026-05-16): per-conversation Reply-To
+    // alias. The Phase 04 workflow that drafts startup-recipient emails
+    // stamps `agent_metadata.reply_to = conv-{conversation_id}@internjobs.ai`
+    // on the draft row; we pass it through here so the CF Email Service
+    // payload sets `reply_to` and the startup's reply comes back to the
+    // catch-all Worker tagged with its conversation_id. Null/missing → CF
+    // omits reply_to and the inbound path falls back to the From-address
+    // lookup (legacy behavior preserved).
+    const replyTo = draft?.agent_metadata?.reply_to || null;
     const result = await sendStartupEmail({
       to,
       subject: "InternJobs.ai — message about your role",
       body,
+      replyTo,
       accountId,
       apiToken,
     });
