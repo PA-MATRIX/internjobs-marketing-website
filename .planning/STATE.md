@@ -1,21 +1,18 @@
 ---
 schema_version: 2
 milestone: "v1.2"
-phase: 1
-phase_name: "Pre-flight + SMS Provider Abstraction"
+phase: 6
+phase_name: "Two-Sided Integration Smoke Test"
 phase_total: 6
 plan: 0
 plan_total: 0
-status: "ready_to_plan"
-progress: 0
+status: "in_progress"
+progress: 90
 last_activity: "2026-05-16"
 session_last: "2026-05-16"
-resume_file: ""
+resume_file: ".planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md"
 blockers:
-  - "Resolve Cloudflare DNS proxy on accounts.internjobs.ai and clerk.internjobs.ai (should be DNS-only) before live LinkedIn → Clerk → app sign-in smoke test. Now formalized as SEC-01 in Phase 01."
-  - "Rotate CLERK_SECRET_KEY in Clerk dashboard (pasted in chat 2026-05-15); update Infisical prod /internjobs-ai + re-import into Fly. Tracked as SEC-ROTATE-01 in REQUIREMENTS.md backlog; do alongside SEC-01 in Phase 01."
-  - "Pick outbound transactional email provider (Resend candidate) before EMAIL-02 — Cloudflare Email Routing is inbound-only."
-  - "Verify Mastra production-readiness at expected message volume before Phase 04 (AGENT-01). Fallback: custom workflow layer on top of Neon."
+  - "All 6 v1.2 phases code-complete (16 commits on main). Remaining work is user-only: DNS proxy fix, Clerk key rotation, Clerk strategy enablement, operator publicMetadata, CF Email Routing setup, Resend domain verify + API key, OPENAI_API_KEY, migrations applied to prod Neon, fly deploy, INTEG-01 11-step smoke test in prod. See .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md for the ordered checklist."
 ---
 
 # Project State
@@ -25,67 +22,70 @@ blockers:
 See: .planning/PROJECT.md (updated 2026-05-15)
 See: .planning/REQUIREMENTS.md (defined 2026-05-16)
 See: .planning/ROADMAP.md (created 2026-05-16)
+See: .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md (created 2026-05-16)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** v1.2 Phase 01 — Pre-flight + SMS Provider Abstraction (SEC-01, SMS-01).
+**Current focus:** v1.2 — all phase code shipped; user-action checklist (DNS / secrets / Clerk dashboard / CF Email Routing / Resend / deploy / smoke test) is the remaining gate.
 
 ## Current Position
 
 Milestone: v1.2 — Two-Sided Agent MVP
-Phase: 1 of 6 (Pre-flight + SMS Provider Abstraction)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-16 — Roadmap created; 13 v1.2 requirements mapped across 6 phases (100% coverage).
+Phase: 6 of 6 (Two-Sided Integration Smoke Test) — code artifacts committed (runbook + admin endpoint), but the actual smoke test against prod is the user's job and is gated by Sections A–D of USER-ACTIONS.md.
+Plan: —
+Status: All phase code shipped (16 commits across Phases 01–06). Awaiting user actions before INTEG-01 can run.
+Last activity: 2026-05-16 — Phases 01–06 executed end-to-end via parallel planning + sequential execution; all v1.1 smoke tests still pass at every step; structural "no auto-send" invariant verified.
 
-Progress: ░░░░░░░░░░ 0%
+Progress: █████████░ 90% (code 100%, prod-deploy + smoke test pending user actions)
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity (cumulative):**
 
-- Total plans completed: 16 (cumulative across v1.0 + v1.1)
-- Total phases completed: 7 (v1.0: 6, v1.1: 1)
-- Milestones shipped: 2 (v1.0, v1.1)
+- Total plans completed: 22 (v1.0: 15, v1.1: 1, v1.2: 6)
+- Total phases completed: 7 + 6 code-complete = 13 (last 6 awaiting user verification)
+- Milestones shipped: 2 (v1.0, v1.1); v1.2 code-complete, awaiting prod activation
 
 **v1.2 progress:**
 
-| Phase | Plans | Total | Status |
-|-------|-------|-------|--------|
-| 01. Pre-flight + SMS Abstraction | 0 | TBD | Ready to plan |
-| 02. Startup Identity, Consent & Roles | 0 | TBD | Not started |
-| 03. Startup Email Channel | 0 | TBD | Not started |
-| 04. Mastra Agent Core | 0 | TBD | Not started |
-| 05. Operator Approval Gate | 0 | TBD | Not started |
-| 06. Two-Sided Integration Smoke Test | 0 | TBD | Not started |
+| Phase | Plans | Status | Commits |
+|-------|-------|--------|---------|
+| 01. Pre-flight + SMS Abstraction | 1 | Code-complete (USER ACTION blocks: DNS, Clerk rotate, fly deploy) | f8f01bb, 52cf272 |
+| 02. Startup Identity, Consent & Roles | 1 | Code-complete (USER ACTION blocks: Clerk strategy enable, migrate, deploy) | b8aa57b, 90a36c4, 7918567, 182b4f0 |
+| 03. Startup Email Channel | 1 | Code-complete (USER ACTION blocks: CF Email Routing, Resend domain, secrets, wrangler deploy, fly deploy) | 75f809a, e9478b4 |
+| 04. Mastra Agent Core | 1 | Code-complete (USER ACTION blocks: OPENAI_API_KEY, migrate, fly deploy, optional load test) | 4b9706b, b793fd3, 0422272 |
+| 05. Operator Approval Gate | 1 | Code-complete (USER ACTION blocks: set publicMetadata.userType='operator', fly deploy) | e27cc19, 8e19fa9 |
+| 06. Two-Sided Integration Smoke Test | 1 | Code artifacts shipped (runbook + admin endpoint); the actual 11-step prod smoke test is the user's hands | 9f84368, e1c21e9, 0013630 |
 
 ## Accumulated Context
 
-### Decisions
+### Decisions logged this session
 
-Decisions are logged in PROJECT.md Key Decisions table.
+- `SmsProvider` interface lives at `apps/app/src/sms/provider.mjs` (JSDoc contract) + `apps/app/src/sms/spectrum.mjs` (implementation). Wire-through via `smsProvider.{verifyWebhook,parseInbound,sendSms,listen}` in `server.mjs` and `spectrum-listener.mjs`.
+- Single Clerk app + `publicMetadata.userType` discriminator (`student | startup | operator`). No second Clerk app. `requireOperatorAuth` re-fetches `publicMetadata` via Clerk Backend API on every operator request (not the JWT) per PITFALLS #13.
+- Mastra runs in-process inside the existing Express app. Dedicated `mastra` Postgres schema. `@mastra/core@1.35.0` exact pin. `@mastra/pg@1.11.0` adapter. `text-embedding-3-small` (1536 dims) locked in migration.
+- pgvector HNSW indexes created in-transaction (CONCURRENTLY dropped — `migrate.mjs` wraps each migration in BEGIN/COMMIT). Safe at v1.2 data volume.
+- Unified outbound router lives at `apps/app/src/outbound.mjs`. It is the SOLE module that calls `smsProvider.sendSms` or `sendStartupEmail` for agent drafts. Verified by grep at end of Phase 05.
+- v1.1 pairing welcome SMS remains an auto-send (the one pre-existing exception; not an agent draft).
+- CF Email Worker + Fly ingest use HMAC-SHA256 with Node `crypto.timingSafeEqual` for verification. Worker falls back to `message.forward(OPERATOR_FALLBACK)` on Fly failure per PITFALLS #7. Cloudflare Queues deferred (TODO note in Worker code).
+- Phase 04 Flag 2/3 fixes applied: `student_threads.provider='cognee' → 'mastra'` data migration; `confirmPairingCode` parameterized on `provider` (was hardcoded `'photon'`).
 
-### Pending Todos
+### Pending Todos (user-only — see USER-ACTIONS.md for ordered checklist)
 
-- Resolve Cloudflare DNS proxy on `accounts.internjobs.ai` + `clerk.internjobs.ai` (DNS-only) and run live LinkedIn → Clerk → app sign-in smoke test against prod Clerk. — Now formalized as SEC-01 in Phase 01.
-- Rotate `CLERK_SECRET_KEY` (pasted in chat 2026-05-15); update Infisical `prod` `/internjobs-ai` and re-run `flyctl secrets import` for `internjobs-ai-student-app`. Track as SEC-ROTATE-01; do alongside SEC-01.
-- Verify Mastra production-readiness at expected message volume before Phase 04 (AGENT-01). Fallback: custom workflow layer on top of Neon.
-- Pick outbound email provider for startup-facing sends (Resend candidate) before EMAIL-02 execution.
-- Document the activation runbook for transitioning Cognee + Sprite/Bright Data placeholders to real provider calls (deferred to v1.3+; capture trigger criteria).
-
-### Carry-over From v1.1
-
-- Live LinkedIn → Clerk → app sign-in not exercised end-to-end against prod Clerk (blocked by DNS proxy state).
-- No RRR `VERIFICATION.md` artifacts for v1.0 or v1.1 phases — verification was done outside RRR. Audit flagged `gaps_found` on procedural grounds; substance is verified. v1.2 work runs through `/rrr:plan-phase` → `/rrr:execute-phase` → `/rrr:verify-work` so artifacts exist going forward.
+- Section A: Cloudflare DNS proxy fix; rotate `CLERK_SECRET_KEY`; enable email/Google/Microsoft in Clerk; set operator `publicMetadata.userType`; add `OPENAI_API_KEY` to Infisical.
+- Section B: Generate `EMAIL_WORKER_SECRET`; store in Cloudflare Worker AND Infisical; enable CF Email Routing on internjobs.ai; add catch-all rule to Worker; confirm `ops@internjobs.ai` fallback; `wrangler deploy`.
+- Section C: Resend signup; add domain; SPF + DKIM in CF DNS; verify; API key → Infisical.
+- Section D: Apply migrations 0003 + 0003b + 0004 to prod Neon; `fly deploy`; `/healthz` green-check.
+- Section E: Run 11-step INTEG-01 protocol; fill VERIFICATION.md.
+- Section F (optional): `/rrr:audit-milestone` + `/rrr:complete-milestone`.
 
 ### Blockers/Concerns
 
-- LinkedIn browser automation must not become production scraping without explicit legal/compliance approval.
-- App and marketing should deploy separately but stay in one repo until there is a real team/security reason to split.
-- Do not print Infisical secret values into chat, logs, or committed docs.
-- Mastra is a young framework — watch for production-readiness regressions early in v1.2 (Phase 04 risk).
+- `migrate.mjs` has a latent double-insert bug into `schema_migrations` when migrations self-insert. Phase 04 executor noted this but didn't fix (out of scope). Flag for a follow-up hygiene plan if it bites during D1.
+- Mastra is young (`@mastra/core@1.35.0` pinned). 20-concurrent inbound load spike test deferred from week 1 of v1.2 to a post-deploy canary in Phase 06 territory.
+- Tracked but not formally in v1.2: SEC-ROTATE-01 (Clerk key rotation) — backlog in REQUIREMENTS.md; instructions in USER-ACTIONS.md Section A2.
 
 ## Session Continuity
 
 Last session: 2026-05-16
-Stopped at: Roadmap created. v1.2 = 6 phases, 13 requirements, 100% coverage. Phase directories created. Next action: `/rrr:plan-phase 1` (after `/clear`).
-Resume file: None
+Stopped at: All 6 v1.2 phases code-complete (16 commits on `main`). User-action manifest at `.planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md`. Next step is for the user to work through Sections A→D, then run the INTEG-01 smoke test (Section E).
+Resume file: .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md
