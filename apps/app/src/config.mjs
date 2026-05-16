@@ -35,6 +35,12 @@ export function getConfig(env = process.env) {
     //   loaded here so /healthz can report presence.
     emailWorkerSecret: env.EMAIL_WORKER_SECRET || "",
     resendApiKey: env.RESEND_API_KEY || "",
+    // v1.2 Phase 05: dry-run guard for outbound send paths. When true,
+    // outbound.mjs routes drafts to synthetic provider IDs instead of
+    // calling the real SMS/email backends. Used by the smoke suite so
+    // tests assert the approve → 'sent' transition without hitting
+    // Photon/Resend. NEVER set this in production.
+    outboundDryRun: env.OUTBOUND_DRY_RUN === "true",
   };
 }
 

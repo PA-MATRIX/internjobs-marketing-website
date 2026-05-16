@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
-import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
+import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
@@ -22,7 +22,11 @@ import {
   renderStartupOnboarding,
   renderStartupSignIn,
   renderWaitlist,
+  renderDraftQueue,
+  renderDraftDetail,
+  renderFeedbackLog,
 } from "./views.mjs";
+import { routeAndSend } from "./outbound.mjs";
 
 const config = getConfig();
 const store = createStore(config);
@@ -99,9 +103,63 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // v1.2 Phase 05: dev-only seed endpoint for the operator smoke suite.
+    // POST /dev/seed-draft with JSON body { recipient_type, channel, ... }
+    // inserts a pending draft row via store.insertDraftForTest and returns
+    // the new id. Gated by ENABLE_DEV_AUTH so production cannot hit this
+    // even by accident.
+    if (req.method === "POST" && url.pathname === "/dev/seed-draft") {
+      if (!config.enableDevAuth) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      const raw = await readBody(req);
+      let payload = {};
+      try {
+        payload = JSON.parse(raw || "{}");
+      } catch (_) {
+        sendJson(res, 400, { error: "invalid_json" });
+        return;
+      }
+      if (typeof store.insertDraftForTest !== "function") {
+        sendJson(res, 503, { error: "store_does_not_support_seed" });
+        return;
+      }
+      const draft = await store.insertDraftForTest(payload);
+      sendJson(res, 200, { ok: true, draft });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/dev/sign-in") {
       if (!config.enableDevAuth) {
         sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      // v1.2 Phase 05: optional ?role=operator|startup query lets the dev
+      // sign-in mint a non-student identity. Used by the smoke suite to
+      // hit /ops/* without standing up a real Clerk session. Gated by
+      // ENABLE_DEV_AUTH=true; production cannot reach this branch.
+      const role = url.searchParams.get("role");
+      if (role === "operator") {
+        setDevSessionCookie(res, config, {
+          sub: "dev_operator",
+          email: "ops@internjobs.ai",
+          name: "Ops Person",
+          provider: "linkedin",
+          userType: "operator",
+        });
+        redirect(res, "/ops/drafts");
+        return;
+      }
+      if (role === "startup") {
+        setDevSessionCookie(res, config, {
+          sub: "dev_startup_founder",
+          email: "founder@startup.example",
+          name: "Founder Person",
+          provider: "google",
+          userType: "startup",
+        });
+        redirect(res, "/startup/dashboard");
         return;
       }
       setDevSessionCookie(res, config);
@@ -594,6 +652,234 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // ─── Operator approval gate (v1.2 Phase 05) ─────────────────────────────
+    //
+    // All /ops/drafts* and /ops/feedback routes are gated by
+    // requireOperatorAuth (middleware-level per PITFALLS #12, never
+    // in-handler). The middleware re-reads publicMetadata.userType from the
+    // Clerk Backend API on every request — JWT claims are not trusted
+    // (PITFALLS #13). In dev mode the signed dev cookie carries userType
+    // directly; ENABLE_DEV_AUTH gates that branch.
+    //
+    // No code path under /ops/* may call SmsProvider.sendSms or
+    // sendStartupEmail directly. The /approve and /edit handlers below
+    // delegate to outbound.mjs's routeAndSend, which is the sole module
+    // permitted to invoke those provider methods. A grep at deploy time
+    // confirms the structural invariant: only outbound.mjs (plus the
+    // pre-existing Phase 01 welcome-SMS path in this file) imports them.
+
+    if (req.method === "GET" && url.pathname === "/ops/drafts") {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const type = url.searchParams.get("type") || "";
+      const page = Math.max(0, Number.parseInt(url.searchParams.get("page") || "0", 10) || 0);
+      const offset = page * 50;
+      const drafts = await store.listPendingDrafts({ type, limit: 50, offset });
+      // Banner for redirect signals (?approved=1 / ?rejected=1).
+      let banner = "";
+      if (url.searchParams.get("approved") === "1") {
+        banner = '<div class="ops-banner ops-banner-ok">Draft approved and sent.</div>';
+      } else if (url.searchParams.get("rejected") === "1") {
+        banner = '<div class="ops-banner ops-banner-warn">Draft rejected. See <a href="/ops/feedback">feedback log</a>.</div>';
+      } else if (url.searchParams.get("send_failed") === "1") {
+        banner = '<div class="ops-banner ops-banner-error">Send failed for one draft. Status remains approved; retry from the draft detail page.</div>';
+      }
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Operator Queue",
+          config,
+          auth,
+          body: renderDraftQueue({ drafts, filter: type, page, banner }),
+        }),
+      );
+      return;
+    }
+
+    // GET /ops/drafts/:id — detail view
+    if (req.method === "GET" && /^\/ops\/drafts\/[^/]+$/.test(url.pathname)) {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const draftId = url.pathname.split("/")[3];
+      const draft = await store.getDraftById(draftId);
+      if (!draft) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      // Only pending drafts can be reviewed. Approved/sent/rejected drafts
+      // are read via the feedback log (rejected/edited) or a future audit page.
+      if (draft.status !== "pending_review") {
+        sendJson(res, 409, { error: "draft_not_pending", status: draft.status });
+        return;
+      }
+      const priorMessages = await store.getPriorMessages(draft.conversation_id, 10);
+      const errorBanner = url.searchParams.get("send_failed") === "1"
+        ? '<div class="ops-banner ops-banner-error">Send failed — draft is still approved. Try again.</div>'
+        : "";
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Draft Review",
+          config,
+          auth,
+          body: renderDraftDetail({ draft, priorMessages, errorBanner }),
+        }),
+      );
+      return;
+    }
+
+    // POST /ops/drafts/:id/approve — approve-as-is then send
+    if (req.method === "POST" && /^\/ops\/drafts\/[^/]+\/approve$/.test(url.pathname)) {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const draftId = url.pathname.split("/")[3];
+      const draft = await store.getDraftById(draftId);
+      if (!draft) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      if (draft.status !== "pending_review") {
+        sendJson(res, 422, { error: "draft_not_pending", status: draft.status });
+        return;
+      }
+      // 1. Flip to 'approved' and record reviewer first.
+      await store.updateDraftStatus(draftId, {
+        status: "approved",
+        operator_id: auth.clerkUserId,
+      });
+      // 2. Send via outbound.mjs (the sole provider call-site).
+      try {
+        const providerId = await routeAndSend(draft, sendDeps());
+        await store.updateDraftStatus(draftId, {
+          status: "sent",
+          sent_at: new Date().toISOString(),
+          provider_message_id: providerId,
+        });
+        redirect(res, "/ops/drafts?approved=1");
+        return;
+      } catch (err) {
+        await store.writeDraftSendFailedAudit({
+          draftId,
+          channel: draft.channel,
+          error: err?.message || String(err),
+        });
+        redirect(res, `/ops/drafts/${draftId}?send_failed=1`);
+        return;
+      }
+    }
+
+    // POST /ops/drafts/:id/edit — edit-then-approve, then send
+    if (req.method === "POST" && /^\/ops\/drafts\/[^/]+\/edit$/.test(url.pathname)) {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const draftId = url.pathname.split("/")[3];
+      const form = await readForm(req);
+      const editedBody = String(form.edited_body || "").trim();
+      if (!editedBody) {
+        sendJson(res, 400, { error: "edited_body_required" });
+        return;
+      }
+      const draft = await store.getDraftById(draftId);
+      if (!draft) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      if (draft.status !== "pending_review") {
+        sendJson(res, 422, { error: "draft_not_pending", status: draft.status });
+        return;
+      }
+      const originalBody = draft.body;
+      // 1. Update body + status='approved' + reviewer.
+      await store.updateDraftWithEditedBody?.(draftId, { editedBody, operatorId: auth.clerkUserId })
+        ?? await store.updateDraftStatus(draftId, {
+          status: "approved",
+          operator_id: auth.clerkUserId,
+          edited_body: editedBody,
+        });
+      // 2. Record edit in draft_feedback.
+      await store.recordDraftFeedback({
+        draftId,
+        operatorId: auth.clerkUserId,
+        feedbackType: "edited",
+        originalBody,
+        correctedBody: editedBody,
+        reason: null,
+      });
+      // 3. Send with the edited body.
+      const sendDraft = { ...draft, body: editedBody, edited_body: editedBody };
+      try {
+        const providerId = await routeAndSend(sendDraft, sendDeps());
+        await store.updateDraftStatus(draftId, {
+          status: "sent",
+          sent_at: new Date().toISOString(),
+          provider_message_id: providerId,
+        });
+        redirect(res, "/ops/drafts?approved=1");
+        return;
+      } catch (err) {
+        await store.writeDraftSendFailedAudit({
+          draftId,
+          channel: draft.channel,
+          error: err?.message || String(err),
+        });
+        redirect(res, `/ops/drafts/${draftId}?send_failed=1`);
+        return;
+      }
+    }
+
+    // POST /ops/drafts/:id/reject — never sends; just records rejection
+    if (req.method === "POST" && /^\/ops\/drafts\/[^/]+\/reject$/.test(url.pathname)) {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const draftId = url.pathname.split("/")[3];
+      const form = await readForm(req);
+      const reason = String(form.rejection_reason || "").trim() || null;
+      const draft = await store.getDraftById(draftId);
+      if (!draft) {
+        sendJson(res, 404, { error: "not_found" });
+        return;
+      }
+      if (draft.status !== "pending_review") {
+        sendJson(res, 422, { error: "draft_not_pending", status: draft.status });
+        return;
+      }
+      await store.updateDraftStatus(draftId, {
+        status: "rejected",
+        operator_id: auth.clerkUserId,
+        operator_note: reason,
+      });
+      await store.recordDraftFeedback({
+        draftId,
+        operatorId: auth.clerkUserId,
+        feedbackType: "rejected",
+        originalBody: draft.body,
+        correctedBody: null,
+        reason,
+      });
+      redirect(res, "/ops/drafts?rejected=1");
+      return;
+    }
+
+    // GET /ops/feedback — read-only log of rejected/edited drafts
+    if (req.method === "GET" && url.pathname === "/ops/feedback") {
+      const auth = await requireOperatorAuth(req, res);
+      if (!auth) return;
+      const rows = await store.listDraftFeedback({ limit: 100 });
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Operator Feedback Log",
+          config,
+          auth,
+          body: renderFeedbackLog({ rows }),
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/ops/privacy") {
       sendHtml(
         res,
@@ -635,6 +921,21 @@ async function requireAuth(req, res) {
 
   redirect(res, getSignInUrl(config));
   return null;
+}
+
+// v1.2 Phase 05 — thin closure binding the auth.mjs middleware to local
+// config + the request. Mirrors requireAuth above. The Clerk Backend API
+// call (PITFALLS #13) is owned by requireOperatorAuthImpl.
+async function requireOperatorAuth(req, res) {
+  return requireOperatorAuthImpl(req, res, config);
+}
+
+// Shared deps for outbound.mjs's routeAndSend. server.mjs intentionally
+// does NOT import sendStartupEmail — that import lives in outbound.mjs
+// only, so the grep invariant ("provider send methods called only from
+// outbound.mjs") holds structurally.
+function sendDeps() {
+  return { smsProvider, config };
 }
 
 // Onboarding gate: requires an authenticated session that is NOT a student.

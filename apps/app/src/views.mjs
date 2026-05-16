@@ -242,6 +242,191 @@ export function renderRoleForm({ role, action }) {
     </section>`;
 }
 
+// ─── Operator approval gate views (v1.2 Phase 05) ────────────────────────────
+
+export function renderDraftQueue({ drafts, filter, page, banner }) {
+  const safeFilter = filter === "student" || filter === "startup" ? filter : "";
+  const linkFor = (t) => {
+    const params = new URLSearchParams();
+    if (t) params.set("type", t);
+    if (page && page > 0) params.set("page", String(page));
+    const qs = params.toString();
+    return `/ops/drafts${qs ? `?${qs}` : ""}`;
+  };
+
+  const filterBar = `
+    <nav class="ops-filter">
+      <a href="${linkFor("")}" ${!safeFilter ? "aria-current=\"page\"" : ""}>All</a>
+      <a href="${linkFor("student")}" ${safeFilter === "student" ? "aria-current=\"page\"" : ""}>Student</a>
+      <a href="${linkFor("startup")}" ${safeFilter === "startup" ? "aria-current=\"page\"" : ""}>Startup</a>
+    </nav>`;
+
+  if (!drafts.length) {
+    return `
+      <section class="panel">
+        <p class="eyebrow">Operator queue</p>
+        <h1>No drafts pending review.</h1>
+        ${banner || ""}
+        ${filterBar}
+        <p class="lede">The agent has not produced any drafts since the last cycle, or operators have cleared the queue.</p>
+      </section>`;
+  }
+
+  const rows = drafts
+    .map((d) => {
+      const ageMin = Math.max(0, Math.floor((Date.now() - new Date(d.created_at).getTime()) / 60000));
+      const ageLabel = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m ago`;
+      const stale = ageMin > 120;
+      const recipientBadge = `<span class="badge ${d.recipient_type === "student" ? "badge-student" : "badge-startup"}">${escapeHtml((d.recipient_type || "").toUpperCase())}</span>`;
+      const ageBadge = `<span class="badge ${stale ? "badge-stale" : "badge-fresh"}">${escapeHtml(ageLabel)}</span>`;
+      const preview = String(d.body || "").slice(0, 120);
+      return `
+        <tr>
+          <td>${recipientBadge}</td>
+          <td>${escapeHtml(d.student_name || "—")}</td>
+          <td>${escapeHtml(d.startup_name || "—")}</td>
+          <td>${escapeHtml(d.role_title || "—")}</td>
+          <td class="ops-body-cell">${escapeHtml(preview)}${d.body?.length > 120 ? "…" : ""}</td>
+          <td>${ageBadge}</td>
+          <td><a class="button secondary small" href="/ops/drafts/${escapeHtml(d.id)}">Review</a></td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <section class="panel">
+      <p class="eyebrow">Operator queue</p>
+      <h1>Drafts pending review</h1>
+      ${banner || ""}
+      ${filterBar}
+      <table class="ops-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Student</th>
+            <th>Startup</th>
+            <th>Role</th>
+            <th>Preview</th>
+            <th>Age</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
+}
+
+export function renderDraftDetail({ draft, priorMessages = [], errorBanner }) {
+  const ageMin = Math.max(0, Math.floor((Date.now() - new Date(draft.created_at).getTime()) / 60000));
+  const draftedAt = `<p class="fine">Drafted ${ageMin}m ago at ${new Date(draft.created_at).toLocaleString()}</p>`;
+  const priorBlock = priorMessages.length
+    ? priorMessages
+        .map(
+          (m) => `<div class="ops-thread-row ops-thread-${escapeHtml(m.direction)}">
+            <span class="ops-thread-tag">${escapeHtml(m.direction)}</span>
+            <span class="ops-thread-body">${escapeHtml(String(m.body || "").slice(0, 300))}</span>
+            <span class="ops-thread-time">${m.created_at ? new Date(m.created_at).toLocaleString() : ""}</span>
+          </div>`,
+        )
+        .join("")
+    : '<p class="fine">No prior messages in this thread.</p>';
+
+  return `
+    <section class="panel">
+      <p class="eyebrow">Draft review</p>
+      <h1>${escapeHtml(draft.recipient_type === "student" ? "Reply to student" : "Reply to startup")}</h1>
+      ${draftedAt}
+      ${errorBanner || ""}
+
+      <div class="ops-detail-grid">
+        <div>
+          <h2>Context</h2>
+          <dl class="details">
+            <div><dt>Student</dt><dd>${escapeHtml(draft.student_name || "—")}</dd></div>
+            <div><dt>Startup</dt><dd>${escapeHtml(draft.startup_name || "—")}</dd></div>
+            <div><dt>Role</dt><dd>${escapeHtml(draft.role_title || "—")}</dd></div>
+            <div><dt>Channel</dt><dd>${escapeHtml(draft.channel || "—")} → ${escapeHtml(draft.channel_address || "—")}</dd></div>
+            <div><dt>Requirements</dt><dd>${escapeHtml(String(draft.role_requirements || "").slice(0, 300))}</dd></div>
+          </dl>
+          <h2>Prior messages</h2>
+          ${priorBlock}
+        </div>
+
+        <div>
+          <h2>Draft body</h2>
+          <pre class="ops-draft-body">${escapeHtml(draft.body || "")}</pre>
+
+          <div class="ops-actions">
+            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/approve" class="ops-form-inline">
+              <button type="submit" class="button primary">Approve as-is</button>
+            </form>
+
+            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/edit" class="ops-form-stack">
+              <label>Edit then approve
+                <textarea name="edited_body" rows="6" required>${escapeHtml(draft.body || "")}</textarea>
+              </label>
+              <button type="submit" class="button secondary">Edit &amp; Approve</button>
+            </form>
+
+            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/reject" class="ops-form-stack">
+              <label>Reject (optional reason)
+                <input name="rejection_reason" placeholder="Optional reason..." />
+              </label>
+              <button type="submit" class="button warn">Reject</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
+export function renderFeedbackLog({ rows }) {
+  if (!rows.length) {
+    return `
+      <section class="panel">
+        <p class="eyebrow">Operator feedback log</p>
+        <h1>No rejected or edited drafts yet.</h1>
+      </section>`;
+  }
+  const tbody = rows
+    .map((r) => {
+      const original = String(r.original_body || "").slice(0, 200);
+      const corrected = r.feedback_type === "edited" ? String(r.corrected_body || "").slice(0, 200) : "";
+      return `
+        <tr>
+          <td><span class="badge ${r.feedback_type === "rejected" ? "badge-stale" : "badge-fresh"}">${escapeHtml(r.feedback_type)}</span></td>
+          <td>${escapeHtml(r.recipient_type || "—")}</td>
+          <td>${escapeHtml(r.student_name || "—")}</td>
+          <td>${escapeHtml(r.startup_name || "—")}</td>
+          <td>${escapeHtml(r.role_title || "—")}</td>
+          <td class="ops-body-cell">${escapeHtml(original)}${r.original_body?.length > 200 ? "…" : ""}</td>
+          <td class="ops-body-cell">${escapeHtml(corrected || r.reason || "")}</td>
+          <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
+        </tr>`;
+    })
+    .join("");
+  return `
+    <section class="panel">
+      <p class="eyebrow">Operator feedback log</p>
+      <h1>Rejected and edited drafts</h1>
+      <table class="ops-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Recipient</th>
+            <th>Student</th>
+            <th>Startup</th>
+            <th>Role</th>
+            <th>Original</th>
+            <th>Correction / reason</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </section>`;
+}
+
 function styles() {
   return `
     :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#f7f4ed}
@@ -255,6 +440,17 @@ function styles() {
     .thread{display:flex;min-height:32rem;flex-direction:column;justify-content:flex-end;gap:.7rem;padding:1rem;border-radius:2rem;background:#fbfbf8}.thread p{max-width:78%;margin:0;padding:.75rem .9rem;border-radius:1.1rem;font-size:.92rem;line-height:1.35}.agent{align-self:flex-start;background:#e9e9eb}.student{align-self:flex-end;background:#007aff;color:#fff}
     .details{display:grid;gap:.85rem}.details div{padding:.8rem;border-radius:.7rem;background:rgba(0,0,0,.04)}dt{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:#77736b;font-weight:900}dd{margin:.15rem 0 0;overflow-wrap:anywhere;font-weight:800}.qr-wrap{display:grid;place-items:center;margin-top:1.4rem}.qr-wrap img{border-radius:1rem;background:#fff;padding:.8rem}.pair-code{margin:1.2rem 0;font-size:clamp(2.4rem,8vw,5rem);line-height:1;font-weight:1000;letter-spacing:.04em}.message-preview{margin:1rem 0;padding:1rem;border-radius:1rem;background:rgba(255,255,255,.12);color:#fff;font-weight:800;line-height:1.45}.form{display:grid;gap:1rem}label{display:grid;gap:.45rem;font-weight:900}label span{font-size:.75rem;color:#77736b}input,textarea{width:100%;border:1px solid rgba(0,0,0,.12);border-radius:.8rem;background:#fff;padding:.9rem 1rem;font:inherit;color:#111}
     footer{display:flex;justify-content:space-between;gap:1rem;padding:2rem 1.2rem;color:#77736b;font-size:.82rem;font-weight:800}@media(max-width:760px){nav{display:none}main{padding:2.5rem 0}.hero-grid,.panel-grid,.pair-grid{grid-template-columns:1fr}h1{font-size:3.2rem}.thread{min-height:26rem}}
+    /* v1.2 Phase 05 — operator approval gate */
+    .ops-filter{display:flex;gap:.7rem;margin:1rem 0 1.5rem;font-weight:800;font-size:.85rem}.ops-filter a{padding:.4rem .9rem;border-radius:999px;text-decoration:none;background:#eee;color:#333}.ops-filter a[aria-current="page"]{background:#111;color:#fff}
+    .ops-table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.9rem}.ops-table th,.ops-table td{padding:.7rem .8rem;text-align:left;border-bottom:1px solid rgba(0,0,0,.08);vertical-align:top}.ops-table th{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#77736b}.ops-body-cell{max-width:24rem;color:#5f625d}
+    .badge{display:inline-block;padding:.18rem .55rem;border-radius:999px;font-size:.68rem;font-weight:900;letter-spacing:.04em;text-transform:uppercase}.badge-student{background:#dceaff;color:#143a8a}.badge-startup{background:#ffe2c2;color:#7a3f00}.badge-fresh{background:#e0f3df;color:#0f5d2c}.badge-stale{background:#ffd6d6;color:#8a1212}
+    .ops-detail-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:2rem;margin-top:1.5rem}.ops-detail-grid h2{font-size:1.1rem;margin:1.4rem 0 .6rem}
+    .ops-draft-body{padding:1rem;background:#f4f1e8;border-radius:.8rem;border:1px solid rgba(0,0,0,.08);font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9rem;white-space:pre-wrap;word-break:break-word}
+    .ops-actions{display:flex;flex-direction:column;gap:1rem;margin-top:1rem}.ops-form-inline,.ops-form-stack{display:flex;flex-direction:column;gap:.5rem;padding:.9rem 1rem;border-radius:.8rem;background:rgba(0,0,0,.03)}.ops-form-stack textarea{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.85rem}
+    .button.small{min-height:2.2rem;padding:0 .8rem;font-size:.78rem}.button.warn{background:#a01b1b;color:#fff}
+    .ops-thread-row{display:grid;grid-template-columns:5rem 1fr 9rem;gap:.6rem;padding:.55rem .7rem;border-radius:.5rem;background:rgba(0,0,0,.03);margin-bottom:.4rem;font-size:.85rem}.ops-thread-inbound{border-left:3px solid #1462e3}.ops-thread-outbound{border-left:3px solid #0f5d2c}.ops-thread-tag{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#77736b;font-weight:900}.ops-thread-time{font-size:.7rem;color:#77736b;text-align:right}
+    .ops-banner{padding:.85rem 1rem;border-radius:.6rem;font-weight:800;font-size:.88rem;margin:1rem 0}.ops-banner-ok{background:#e0f3df;color:#0f5d2c}.ops-banner-warn{background:#fff2cc;color:#7a5b00}.ops-banner-error{background:#ffd6d6;color:#8a1212}
+    @media(max-width:760px){.ops-detail-grid{grid-template-columns:1fr}.ops-table{font-size:.8rem}}
   `;
 }
 
