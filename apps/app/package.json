@@ -13,6 +13,7 @@
   "dependencies": {
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
+    "resend": "^6.12.3",
     "spectrum-ts": "^1.5.0"
   },
   "engines": {
