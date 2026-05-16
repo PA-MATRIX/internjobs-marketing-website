@@ -1,5 +1,5 @@
 import { createPublicKey, createVerify } from "node:crypto";
-import { parseCookies, signValue, verifySignedValue } from "./http.mjs";
+import { parseCookies, redirect, sendJson, signValue, verifySignedValue } from "./http.mjs";
 
 const devCookie = "internjobs_dev_session";
 
@@ -64,6 +64,33 @@ export function getSignInUrl(config) {
   return "#configuration-needed";
 }
 
+// Returns the normalized auth object only if publicMetadata.userType === 'startup'.
+// If authenticated but wrong type, sends 403. If unauthenticated, redirects to startup sign-in.
+// Authorization MUST be enforced here (middleware level), never inside handlers.
+export async function requireStartupAuth(req, res, config) {
+  const auth = await getAuth(req, config);
+  if (!auth?.clerkUserId) {
+    redirect(res, getStartupSignInUrl(config));
+    return null;
+  }
+  if (auth.userType !== "startup") {
+    sendJson(res, 403, { error: "forbidden", reason: "not_startup" });
+    return null;
+  }
+  return auth;
+}
+
+export function getStartupSignInUrl(config) {
+  if (config.clerk.signInUrl) {
+    const url = new URL(config.clerk.signInUrl, config.appUrl);
+    url.searchParams.set("redirect_url", `${config.appUrl}/auth/callback`);
+    url.searchParams.set("after_sign_in_url", `${config.appUrl}/startup/onboarding`);
+    return url.toString();
+  }
+  if (config.enableDevAuth) return "/dev/sign-in";
+  return "#configuration-needed";
+}
+
 function bearerToken(req) {
   const header = req.headers.authorization;
   if (typeof header !== "string") return "";
@@ -79,6 +106,7 @@ function normalizeClaims(claims, source) {
     imageUrl: claims.picture || claims.image_url || "",
     linkedinProfileUrl: claims.linkedinProfileUrl || claims.linkedin_profile_url || claims.profile || "",
     provider: claims.provider || "linkedin",
+    userType: claims.publicMetadata?.userType || claims.public_metadata?.userType || claims.userType || "",
     source,
     raw: redactClaims(claims),
   };

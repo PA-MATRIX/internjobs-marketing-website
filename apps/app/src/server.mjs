@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
-import { getAuth, getSignInUrl, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
+import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
@@ -68,6 +68,40 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/auth/callback") {
+      const auth = await getAuth(req, config);
+      if (!auth?.clerkUserId) {
+        redirect(res, getSignInUrl(config));
+        return;
+      }
+
+      // Set userType only if not already set (idempotent). LinkedIn sign-in
+      // infers 'student'. Non-LinkedIn sign-in is routed to startup onboarding,
+      // where userType='startup' is set after consent. Per PITFALLS #13:
+      // userType is set via Clerk Backend API (server-side), never trusted
+      // from a client-writable column.
+      if (!auth.userType && config.clerk.secretKey) {
+        const inferredType = auth.provider === "linkedin" ? "student" : null;
+        if (inferredType) {
+          await fetch(`${config.clerk.backendApiUrl}/v1/users/${auth.clerkUserId}`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${config.clerk.secretKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ public_metadata: { userType: inferredType } }),
+          });
+        } else {
+          // Non-LinkedIn sign-in with no userType — route to startup onboarding.
+          redirect(res, "/startup/onboarding");
+          return;
+        }
+      }
+
+      // Existing students land on /pairing; startups on /startup/dashboard.
+      if (auth.userType === "startup") {
+        redirect(res, "/startup/dashboard");
+        return;
+      }
       redirect(res, "/pairing");
       return;
     }

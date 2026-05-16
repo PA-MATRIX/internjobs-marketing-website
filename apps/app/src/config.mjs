@@ -12,6 +12,7 @@ export function getConfig(env = process.env) {
     clerk: {
       publishableKey: env.CLERK_PUBLISHABLE_KEY || env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "",
       secretKey: env.CLERK_SECRET_KEY || "",
+      backendApiUrl: env.CLERK_BACKEND_API_URL || "https://api.clerk.com",
       signInUrl: env.CLERK_SIGN_IN_URL || env.NEXT_PUBLIC_CLERK_SIGN_IN_URL || "",
       signUpUrl: env.CLERK_SIGN_UP_URL || env.NEXT_PUBLIC_CLERK_SIGN_UP_URL || "",
       jwksUrl: env.CLERK_JWKS_URL || env.NEON_AUTH_JWKS_URL || "",
