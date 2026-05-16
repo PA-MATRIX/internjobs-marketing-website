@@ -3,12 +3,14 @@ import { getConfig, getMissingProviderConfig } from "./config.mjs";
 import { getAuth, getSignInUrl, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore } from "./store.mjs";
-import { parseInboundMessage, sendWelcomeMessage, verifyPhotonWebhook } from "./messaging.mjs";
+import { createWelcomeText } from "./messaging.mjs";
+import { createSpectrumSmsProvider } from "./sms/spectrum.mjs";
 import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
 import { renderLayout, renderOnboarding, renderPairing, renderPairingConfirmed, renderProfile, renderSavedProfile, renderWaitlist } from "./views.mjs";
 
 const config = getConfig();
 const store = createStore(config);
+const smsProvider = createSpectrumSmsProvider(config);
 
 const server = createServer(async (req, res) => {
   try {
@@ -130,18 +132,18 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/webhooks/photon") {
       const rawBody = await readBody(req);
-      const verified = verifyPhotonWebhook(req, rawBody, config);
+      const verified = smsProvider.verifyWebhook(req, rawBody);
       if (!verified.ok) {
         sendJson(res, 401, { error: "unauthorized" });
         return;
       }
 
       const payload = JSON.parse(rawBody || "{}");
-      const inbound = parseInboundMessage(payload);
+      const inbound = smsProvider.parseInbound(payload);
       const confirmation = inbound.code ? await store.confirmPairingCode(inbound) : await store.recordInboundMessage(inbound);
 
       if (confirmation.student && confirmation.welcomeNeeded) {
-        const welcome = await sendWelcomeMessage(confirmation.student, config);
+        const welcome = await smsProvider.sendSms(confirmation.student.channelAddress, createWelcomeText(confirmation.student));
         await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
       }
 
@@ -187,7 +189,7 @@ server.listen(config.port, config.host, () => {
   console.log(`InternJobs.ai app listening on ${config.host}:${config.port}`);
 });
 
-startSpectrumWaitlistListener({ config, store });
+startSpectrumWaitlistListener({ config, store, smsProvider });
 
 async function requireAuth(req, res) {
   const auth = await getAuth(req, config);
