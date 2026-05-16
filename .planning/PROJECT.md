@@ -50,20 +50,20 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 
 ### Active
 
-<!-- Current scope for v1.2 — Two-Sided Agent MVP. -->
+<!-- Current scope for v1.2 — Two-Sided Agent MVP. Student SMS stays on Spectrum/Photon (v1.1 implementation). -->
 
-- [ ] **TELNYX-01**: Provision one Telnyx SMS number for students and route new student signups through it.
-- [ ] **TELNYX-02**: Keep the existing Spectrum number live in parallel; existing students stay on Spectrum until a one-time migration SMS moves them.
+- [ ] **SMS-01**: Refactor the existing Spectrum/Photon send/receive path behind an `SmsProvider` interface so a Telnyx (or other) adapter can drop in later without touching call-sites. v1.2 ships one implementation (Spectrum).
 - [ ] **STARTUP-01**: New startup auth flow (Clerk, email-first or Google/Microsoft — *not* LinkedIn-required).
 - [ ] **STARTUP-02**: Startup profile + founder identity + consent capture, with schema for `startups` and `startup_members`.
 - [ ] **ROLE-01**: New `roles` schema (`startup_id`, `title`, `description`, `requirements`, `status`, `location`, `comp_range`, `created_at`) with simple in-app CRUD.
 - [ ] **EMAIL-01**: Cloudflare Email Routing on `internjobs.ai` for startup-facing addresses; Worker validates and forwards to a Mastra ingest endpoint.
+- [ ] **EMAIL-02**: Outbound transactional email provider for sending agent drafts to startups (Cloudflare Email Routing is inbound-only). Provider TBD (Resend candidate).
 - [ ] **AGENT-01**: Mastra agent core with workflows for the student → match → draft → approve → send loop.
 - [ ] **AGENT-02**: Mastra thread memory keyed by `student_id` and separately by `startup_id` for full conversation history.
 - [ ] **AGENT-03**: pgvector semantic memory on Neon for long-term cross-conversation recall.
 - [ ] **APPROVE-01**: Human-in-the-loop operator dashboard lists agent-produced drafts (student-side SMS replies + startup-side emails) for approve/edit/reject.
 - [ ] **APPROVE-02**: No auto-send in v1.2 — every outbound message is human-approved; rejected drafts feed back into a training/feedback log.
-- [ ] **INTEG-01**: Two-sided smoke test — student inbound → agent draft → operator approve → startup email send → startup reply → agent draft → operator approve → student SMS.
+- [ ] **INTEG-01**: Two-sided smoke test — student inbound (Spectrum) → agent draft → operator approve → startup email send → startup reply → agent draft → operator approve → student SMS (Spectrum).
 
 ### Out of Scope
 
@@ -73,10 +73,10 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - **ATS or recruiter dashboard** — wrong product feel; the app stays messaging-first and lightweight.
 - **Auto-send of agent-drafted messages** — breaks the product promise and legal posture; every outbound message is human-approved in v1.2.
 - **Cognee in v1.2** — agent memory lives in Mastra thread + pgvector. Cognee placeholders from v1.1 stay durable but inert. Revisit in v1.3+ only if matching quality plateaus.
-- **Hard Spectrum sunset in v1.2** — Telnyx runs in parallel; full migration is gated on ≥30 days stable with zero student-SMS regressions.
-- **Voice (Telnyx voice)** — held for v1.3, gated on >10% inbound asks for voice.
+- **Telnyx activation in v1.2** — v1.2 ships only the `SmsProvider` interface seam (SMS-01). The existing Spectrum/Photon path stays the sole active SMS implementation. Telnyx provisioning, A2P 10DLC registration, soft cutover state machine, and migration SMS are all held for v1.3+ as a drop-in adapter.
+- **Voice (any provider)** — held for v1.3, gated on >10% inbound asks for voice.
 - **Slack integration for startups** — held for v1.3, gated on first 5-10 startups indicating Slack > email.
-- **2nd Telnyx number for startup SMS** — held for v1.3, gated on startup feedback that email isn't enough.
+- **2nd SMS number for startup SMS** — held for v1.3, gated on startup feedback that email isn't enough.
 - **Sprite.dev + Bright Data browser enrichment activation** — placeholders from v1.1 stay inert until legal/compliance approval.
 
 ## Context
@@ -85,7 +85,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - Clerk account `rraj@growthpods.io`; production app `Internjobs.ai` (`app_38BrRDRKnvbo7vlE2ZZtMc7hFPC`); prod LinkedIn provider live since 2026-05-15.
 - Neon is system of record. Migrations `0001_waitlist_foundation` and `0002_waitlist_threads_and_enrichment` applied in prod. Schema includes `students`, `pairing_codes`, `student_threads`, `profile_enrichment_jobs`, `consents`, and audit events.
 - v1.1 shipped 2026-05-15; `/healthz` reports `clerk/database/photonNumber/photonWebhook/spectrumListener` all `true`; `/config/status` returns `{"missing":[]}`.
-- Photon/Spectrum is the current student SMS path (shared number with normalized phone-thread routing). v1.2 introduces Telnyx in parallel; no port required (fresh provision).
+- Photon/Spectrum is the active student SMS path (shared number with normalized phone-thread routing) and stays so through v1.2. v1.2 wraps it in an `SmsProvider` interface so v1.3+ can swap in Telnyx as a drop-in adapter.
 - Infisical is the source of truth for secrets: project `26995afd-9a6f-4690-912f-01cbcebb76d5`, org `2c12f042-e98f-4fb3-8b40-16aec29f9b91`, env `prod`, path `/internjobs-ai`. The older `0484b3ce` Infisical project is dead.
 - v1.2 introduces a second user type (startups) and an operator user type (approval dashboard) — two new identity flows and two new UX surfaces.
 - Carry-over from v1.1: live LinkedIn → Clerk → app sign-in not exercised end-to-end against prod Clerk; blocked by Cloudflare DNS proxy on `accounts.internjobs.ai` and `clerk.internjobs.ai` (should be DNS-only). Resolve before v1.2 execution.
@@ -98,8 +98,8 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - **Identity (startups, v1.2)**: Email-first or Google/Microsoft through Clerk — *not* LinkedIn-required.
 - **Database**: Neon Postgres is the primary application database; pgvector hosts agent semantic memory.
 - **Agent framework (v1.2)**: Mastra owns workflows + thread memory + vector memory orchestration. Cognee is out for v1.2.
-- **Messaging (students)**: Telnyx (new student signups) + Spectrum (existing students) run in parallel through v1.2.
-- **Messaging (startups, v1.2)**: Cloudflare Email Routing → Worker → Mastra ingest. Email is the primary startup channel.
+- **Messaging (students)**: Spectrum/Photon stays the active SMS path through v1.2, behind a new `SmsProvider` interface that v1.3+ can swap (e.g., Telnyx adapter) without touching call-sites.
+- **Messaging (startups, v1.2)**: Cloudflare Email Routing → Worker → Mastra ingest for inbound. Outbound via separate transactional email provider (CF Email Routing is inbound-only).
 - **Safety**: No auto-send. Every outbound message in v1.2 goes through the operator approval gate.
 - **Compliance**: LinkedIn data collection must be user-authorized — no credential capture, anti-bot bypass, or private-surface scraping. Sprite.dev + Bright Data placeholders stay inert.
 - **Secrets**: Provider secrets live in Infisical, not repo files or plain local notes; never print secret values into chat, logs, or docs.
@@ -118,11 +118,11 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 | Use Infisical `prod`/`/internjobs-ai` (project `26995afd`) as the sole secret source | One source of truth across Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, Telnyx (v1.2), Fly runtime | ✓ Good |
 | Keep Cognee + Sprite/Bright Data as durable placeholder rows | Write the data shape now, light up provider calls behind a compliance gate later | ✓ Good — v1.1 shipped placeholders; Cognee deferred to v1.3+ |
 | Normalize phone-number routing on a single shared Spectrum number | Lets the v1.1 single-number model thread correctly without dedicating a number per student | ✓ Good — v1.1 verified |
-| Soft cutover Telnyx alongside Spectrum (no hard sunset in v1.2) | De-risks platform shift; no number porting; existing student threads stay on Spectrum until migration is proven | — Pending v1.2 execution |
+| Keep Spectrum/Photon as the active v1.2 SMS path; ship only an `SmsProvider` interface seam for future swap | Avoid stacking an unfamiliar SMS platform on top of an unfamiliar agent framework in one milestone; v1.1 implementation is verified in prod; Telnyx work moves to v1.3 once Mastra + operator gate are proven | — Pending v1.2 execution |
 | Mastra for agent core, Cognee out for v1.2 | Single coherent agent framework with thread + pgvector memory keeps v1.2 scope tight; revisit Cognee only if matching quality plateaus | — Pending v1.2 execution |
 | Cloudflare Email Routing → Worker → Mastra for startup inbound | Email is the primary startup channel; Worker validation keeps the Fly app loosely coupled to inbound | — Pending v1.2 execution |
+| Separate transactional email provider for outbound (Resend candidate) | Cloudflare Email Routing is inbound-only; outbound startup-facing emails need a real SMTP/API provider with deliverability/DKIM/SPF | — Pending v1.2 execution |
 | Operator approval gate; no auto-send in v1.2 | Safety + learning constraint while agent quality is unproven; rejected drafts feed back into training | — Pending v1.2 execution |
-| Two-number model dissolves the number-porting concern | v1.2's change is one-shared-number → role-specific numbers, not porting the same number to a new carrier | — Pending v1.2 execution |
 
 ---
-*Last updated: 2026-05-15 after v1.1 milestone completion and v1.2 milestone definition*
+*Last updated: 2026-05-15 after v1.1 milestone completion and v1.2 scope revision (Telnyx held for v1.3, Spectrum stays active behind `SmsProvider` seam).*

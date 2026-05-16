@@ -30,7 +30,7 @@
 - `CLERK_SECRET_KEY` rotation pending (value was pasted in chat 2026-05-15); user accepted residual risk.
 - Cognee + Sprite/Bright Data placeholders intentionally inert until compliance review.
 
-**What's next:** v1.2 — Two-Sided Agent MVP (Telnyx student SMS in parallel with Spectrum, Mastra agent core with thread + pgvector memory, Cloudflare Email Routing for startup inbound, startup onboarding + roles model, operator approval gate UI).
+**What's next:** v1.2 — Two-Sided Agent MVP (Spectrum/Photon stays the active SMS path behind a new `SmsProvider` seam; Mastra agent core with thread + pgvector memory; Cloudflare Email Routing for startup inbound + outbound email provider; startup onboarding + roles model; operator approval gate UI). Telnyx held for v1.3.
 
 ---
 

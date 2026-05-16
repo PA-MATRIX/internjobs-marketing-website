@@ -16,6 +16,7 @@ blockers:
   - "Rotate CLERK_SECRET_KEY in Clerk dashboard (pasted in chat 2026-05-15); update Infisical prod /internjobs-ai + re-import into Fly."
   - "Need Cognee hosted credentials/API contract — placeholders remain inert in v1.2; revisit in v1.3+."
   - "Need Sprite.dev + Bright Data credentials/API contract gated on compliance review — placeholders remain inert in v1.2."
+  - "Pick outbound transactional email provider (Resend candidate) before EMAIL-02 — Cloudflare Email Routing is inbound-only."
 ---
 
 # Project State
@@ -25,15 +26,15 @@ blockers:
 See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** v1.2 — Two-Sided Agent MVP (Telnyx + Mastra + Cloudflare Email + startup onboarding + operator approval gate)
+**Current focus:** v1.2 — Two-Sided Agent MVP (SMS provider abstraction over existing Spectrum + Mastra agent core + Cloudflare Email Routing + startup onboarding + operator approval gate). Telnyx held for v1.3.
 
 ## Current Position
 
 Milestone: v1.2 — Two-Sided Agent MVP
 Phase: Not started (run `/rrr:create-roadmap` after `/rrr:define-requirements`)
 Plan: —
-Status: Defining requirements — v1.2 scope captured in PROJECT.md `### Active`; ready for `/rrr:define-requirements` to formalize.
-Last activity: 2026-05-15 — v1.2 milestone started (Telnyx student SMS in parallel with Spectrum, Mastra agent core with thread + pgvector memory, Cloudflare Email Routing for startup inbound, startup onboarding + roles model, operator approval gate UI).
+Status: Defining requirements — v1.2 scope captured in PROJECT.md `### Active`. Telnyx removed from v1.2 (held for v1.3); Spectrum/Photon stays active behind an `SmsProvider` interface seam. Ready for `/rrr:define-requirements` to formalize.
+Last activity: 2026-05-15 — v1.2 scope revised: Telnyx held for v1.3, Spectrum/Photon stays active SMS path; v1.2 ships `SmsProvider` abstraction + Mastra agent core (thread + pgvector memory) + Cloudflare Email Routing for startup inbound + outbound email provider + startup onboarding + roles catalog + operator approval gate UI.
 
 Progress: 7 phases, 16 plans shipped across 2 milestones (v1.0: 6 phases / 15 plans, v1.1: 1 phase / 1 plan).
 
@@ -55,8 +56,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 - Resolve Cloudflare DNS proxy on `accounts.internjobs.ai` + `clerk.internjobs.ai` (should be DNS-only); then run live LinkedIn → Clerk → app sign-in smoke test against prod Clerk.
 - Rotate `CLERK_SECRET_KEY` in Clerk dashboard (pasted in chat 2026-05-15); update Infisical `prod` `/internjobs-ai` and re-run `flyctl secrets import` for `internjobs-ai-student-app`. — User accepted residual risk in v1.1; carry into v1.2 hygiene.
-- Provision Telnyx account + 1 student SMS number for v1.2 (no port; fresh provision).
 - Verify Mastra production-readiness at expected message volume before week 2 of v1.2 execution. Fallback: custom workflow layer on top of Neon.
+- Pick outbound email provider for startup-facing sends (CF Email Routing is inbound-only). Resend is the v1.2 research recommendation; confirm before EMAIL-02 execution.
 - Document the activation runbook for transitioning Cognee + Sprite/Bright Data placeholders to real provider calls (deferred to v1.3+ but capture trigger criteria).
 
 ### Carry-over From v1.1

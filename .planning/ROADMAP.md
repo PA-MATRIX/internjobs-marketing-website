@@ -13,13 +13,13 @@
 
 **v1.2 — Two-Sided Agent MVP**
 
-Stand up a Mastra-powered agent that drafts both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel — every outbound message human-approved. See `.planning/PROJECT.md` (`### Active`) for v1.2 requirement set.
+Stand up a Mastra-powered agent that drafts both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel — every outbound message human-approved. Student SMS stays on the existing Spectrum/Photon path; v1.2 only ships an `SmsProvider` interface seam so v1.3+ can swap in Telnyx without touching call-sites. See `.planning/PROJECT.md` (`### Active`) for v1.2 requirement set.
 
 Rough phase shape (will be refined by `/rrr:create-roadmap`):
 
-1. Telnyx student-SMS integration (parallel with Spectrum, soft cutover)
+1. Pre-flight + SMS provider abstraction (fix Cloudflare DNS proxy; rotate `CLERK_SECRET_KEY`; wrap Spectrum send/receive behind `SmsProvider`)
 2. Startup auth + onboarding + roles data model
-3. Cloudflare Email Routing inbound pipeline for startups
+3. Cloudflare Email Routing inbound pipeline for startups + outbound email provider (Resend candidate)
 4. Mastra agent core — workflows, thread memory, pgvector memory
 5. Approval/safety gate UI (operator dashboard for draft review)
 6. Two-sided integration + smoke test
