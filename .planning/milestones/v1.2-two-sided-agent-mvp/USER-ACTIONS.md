@@ -1,6 +1,8 @@
 # v1.2 — User Actions Manifest
 
-**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, plus the 2026-05-16 Resend → Cloudflare Email Service swap). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, AND the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+
+**Pending blocker (2026-05-16):** SEC-ROTATE-CF-EMAIL-01 — the Cloudflare Email Service API token pasted in chat 2026-05-16 should be rotated AFTER Section E smoke-test passes. Same posture as SEC-ROTATE-01 (Clerk). Update Infisical `prod`/`/internjobs-ai` → `CLOUDFLARE_EMAIL_API_TOKEN`; re-run `flyctl secrets import`.
 
 ---
 
@@ -68,6 +70,46 @@
 
 - `cd apps/email-worker && npx wrangler deploy`
 - Worker URL doesn't matter (it's an Email event handler, not an HTTP endpoint).
+
+---
+
+## Section B2 — R2 storage scaffold (STORAGE-01 scope-add 2026-05-16)
+
+Cloudflare R2 (S3-compatible) for the agent's per-entity artifact tree.
+**Private bucket + signed-URL-only sharing** (matches the Mala posture from
+SuperIntelligence). v1.2 ships only the storage layer at
+`apps/app/src/storage/r2.mjs`; ingestion lands in v1.3 (STORAGE-02 for
+email + MMS attachment writes; STORAGE-03 for permanent short links).
+
+### B2.1. Create the R2 bucket
+
+- Cloudflare dashboard → **R2 Object Storage** → **Create bucket**.
+- Name: `internjobs-agent-store` (must match `R2_BUCKET` default in `config.mjs`).
+- Storage class: Standard. **Public access: OFF** (never enable — every share is signed-URL only).
+
+### B2.2. Create an R2 API token scoped to the bucket
+
+- Cloudflare dashboard → R2 → **Manage R2 API Tokens** → **Create API token**.
+- Permissions: **Object Read & Write**.
+- Specify Bucket(s): scope to `internjobs-agent-store` ONLY (do NOT give account-wide access).
+- TTL: leave default (no expiry) or set to ~1 year — your call. Note this in your rotation log.
+- Save the **Access Key ID** and **Secret Access Key** (both shown once).
+- Your **Account ID** is `0fffd3dc637bdb26d4963df445a69fd3` (the only account `rentalaraj@gmail.com` has access to).
+
+### B2.3. Store credentials in Infisical
+
+- Infisical `prod` `/internjobs-ai` → add:
+  - `R2_ACCOUNT_ID` = `0fffd3dc637bdb26d4963df445a69fd3`
+  - `R2_ACCESS_KEY_ID` = from B2.2
+  - `R2_SECRET_ACCESS_KEY` = from B2.2
+  - `R2_BUCKET` = `internjobs-agent-store`
+- Re-run the Fly secrets import (same command as A2).
+
+### B2.4. Verify
+
+After D2 (Fly deploy), `/healthz` should include `"r2Ready": true`. If false:
+- All four `R2_*` envs present in Fly? (`fly secrets list --app internjobs-ai-student-app`)
+- The R2 client fails soft (returns null) on any missing env — partial config shows up in `/config/status` as a warning.
 
 ---
 
@@ -139,6 +181,7 @@ Expect every key TRUE:
 - `clerk`, `database`, `photonNumber`, `photonWebhook`, `spectrumListener` (v1.0/1.1 keys)
 - `emailWorkerSecret`, `cloudflareEmailReady` (Phase 03 — `cloudflareEmailReady` is true iff BOTH `CLOUDFLARE_EMAIL_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` are set)
 - `mastraReady`, `pgvectorReady`, `openaiKeyPresent` (Phase 04)
+- `r2Ready` (STORAGE-01 scope-add — true iff `R2_ACCOUNT_ID` + `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` all set AND the singleton constructed without error)
 
 ```
 curl https://app.internjobs.ai/config/status | jq .

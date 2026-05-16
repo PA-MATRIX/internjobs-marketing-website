@@ -10,9 +10,11 @@ status: "in_progress"
 progress: 90
 last_activity: "2026-05-16"
 session_last: "2026-05-16"
+# 2026-05-16: STORAGE-01 + EMAIL-03 scope-add (R2 scaffold + per-conversation Reply-To aliases). Modeled on SuperIntelligence patterns.
 resume_file: ".planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md"
 blockers:
-  - "All 6 v1.2 phases code-complete (16 commits on main) + 2026-05-16 Resend → Cloudflare Email Service swap. Remaining work is user-only: DNS proxy fix, Clerk key rotation, Clerk strategy enablement, operator publicMetadata, CF Email Routing setup, Cloudflare Email Service onboarding (Account ID + Email-Sending-scoped API token), OPENAI_API_KEY, migrations applied to prod Neon, fly deploy, INTEG-01 11-step smoke test in prod. See .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md for the ordered checklist."
+  - "All 6 v1.2 phases code-complete (18 commits + 2 swap commits + 2 scope-add commits on main) + 2026-05-16 Resend → Cloudflare Email Service swap + 2026-05-16 STORAGE-01 + EMAIL-03 scope-add. Remaining work is user-only: DNS proxy fix, Clerk key rotation, Clerk strategy enablement, operator publicMetadata, CF Email Routing setup, Cloudflare Email Service onboarding (Account ID + Email-Sending-scoped API token), R2 bucket creation (`internjobs-agent-store`) + R2 API token + four R2_* envs in Infisical, OPENAI_API_KEY, migrations applied to prod Neon, fly deploy, INTEG-01 11-step smoke test in prod. See .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md for the ordered checklist (Section B2 covers R2 setup)."
+  - "SEC-ROTATE-CF-EMAIL-01: rotate the Cloudflare Email Service API token pasted in chat 2026-05-16. Same posture as SEC-ROTATE-01 (Clerk). Update Infisical `prod`/`/internjobs-ai` → `CLOUDFLARE_EMAIL_API_TOKEN` and re-run flyctl secrets import. Do AFTER Section E smoke-test passes."
 ---
 
 # Project State
@@ -55,6 +57,8 @@ Progress: █████████░ 90% (code 100%, prod-deploy + smoke tes
 | 04. Mastra Agent Core | 1 | Code-complete (USER ACTION blocks: OPENAI_API_KEY, migrate, fly deploy, optional load test) | 4b9706b, b793fd3, 0422272 |
 | 05. Operator Approval Gate | 1 | Code-complete (USER ACTION blocks: set publicMetadata.userType='operator', fly deploy) | e27cc19, 8e19fa9 |
 | 06. Two-Sided Integration Smoke Test | 1 | Code artifacts shipped (runbook + admin endpoint); the actual 11-step prod smoke test is the user's hands | 9f84368, e1c21e9, 0013630 |
+| Scope-add (STORAGE-01) — R2 storage scaffold | — | Code-complete (USER ACTION blocks: B2 bucket + token + envs). Smoke tests pass (16 unit + 4 integration). | 830aa0f |
+| Scope-add (EMAIL-03) — per-conversation Reply-To aliases | — | Code-complete. Smoke tests pass (9 unit + 5 integration). No new USER ACTION (reuses Phase 03 B5 catch-all rule). | f3b5a8f |
 
 ## Accumulated Context
 
@@ -69,24 +73,29 @@ Progress: █████████░ 90% (code 100%, prod-deploy + smoke tes
 - CF Email Worker + Fly ingest use HMAC-SHA256 with Node `crypto.timingSafeEqual` for verification. Worker falls back to `message.forward(OPERATOR_FALLBACK)` on Fly failure per PITFALLS #7. Cloudflare Queues deferred (TODO note in Worker code).
 - Phase 04 Flag 2/3 fixes applied: `student_threads.provider='cognee' → 'mastra'` data migration; `confirmPairingCode` parameterized on `provider` (was hardcoded `'photon'`).
 - 2026-05-16: EMAIL-02 outbound provider swapped from Resend to Cloudflare Email Service (the "Agent Mail" product, public beta 2026-04-17). Rationale: internjobs.ai is already on Cloudflare DNS (the hard prereq), already uses CF Email Routing for inbound, and standardizing on one vendor for email cuts an integration. Implementation: `apps/app/src/email/outbound.mjs` rewritten as a `fetch()` call to `POST /accounts/{account_id}/email/sending/send` (no SDK, no new npm dep — `resend` removed). Config keys swapped to `CLOUDFLARE_EMAIL_ACCOUNT_ID` + `CLOUDFLARE_EMAIL_API_TOKEN`; `/healthz` now reports `cloudflareEmailReady`. Future v1.3 could move the call into a Worker binding — out of scope here.
+- 2026-05-16: **STORAGE-01 scope-add** — R2 storage scaffold ported (and trimmed) from SuperIntelligence `r2-uploads-client.ts`. Private bucket `internjobs-agent-store` with per-entity folder convention (`students/{id}/`, `startups/{id}/`, `conversations/{id}/`, `startups/{id}/roles/{role_id}/`). Signed-URL-only sharing (Mala posture — every share is auditable + time-bounded). Client at `apps/app/src/storage/r2.mjs` fails soft (returns null) on missing envs; `/healthz` reports `r2Ready`. NO ingestion wired yet — STORAGE-02 (v1.3) lands attachment ingest; STORAGE-03 (v1.3) lands permanent short links via mapping bucket. Rationale: row-level partition via student_id/startup_id is sufficient for InternJobs's volume; per-user Postgres schemas (SuperIntelligence's stronger isolation) are too heavyweight here.
+- 2026-05-16: **EMAIL-03 scope-add** — per-conversation Reply-To aliases (`conv-{conversation_id}@internjobs.ai`) become the PRIMARY inbound startup identification path. Catch-all CF Email Routing rule (Phase 03 B5) already routes any `*@internjobs.ai` to the Worker; we now parse the `conv-` prefix and ship the UUID in the signed JSON payload. Fly /webhooks/email validates and writes it into `inbound_messages.metadata.conversation_id`. Replaces fragile From-address lookup; legacy lookup stays as fallback. Stamped onto outbound drafts via `agent_metadata.reply_to` (read by `outbound.mjs` and passed through to CF's `reply_to` field). New audit event_type `startup_email_received_by_alias` distinguishes the deterministic path.
 
 ### Pending Todos (user-only — see USER-ACTIONS.md for ordered checklist)
 
 - Section A: Cloudflare DNS proxy fix; rotate `CLERK_SECRET_KEY`; enable email/Google/Microsoft in Clerk; set operator `publicMetadata.userType`; add `OPENAI_API_KEY` to Infisical.
 - Section B: Generate `EMAIL_WORKER_SECRET`; store in Cloudflare Worker AND Infisical; enable CF Email Routing on internjobs.ai; add catch-all rule to Worker; confirm `ops@internjobs.ai` fallback; `wrangler deploy`.
+- **Section B2 (NEW 2026-05-16):** Create R2 bucket `internjobs-agent-store` (Standard, no public access); create bucket-scoped "Object Read & Write" R2 API token; store `R2_ACCOUNT_ID=0fffd3dc637bdb26d4963df445a69fd3` + `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` + `R2_BUCKET=internjobs-agent-store` in Infisical; re-run Fly secrets import. Verify `r2Ready: true` in /healthz after D2.
 - Section C: Cloudflare Email Service onboard `internjobs.ai` (Email Sending → Onboard Domain → adds `cf-bounce` MX + SPF + DKIM + DMARC); create Account-scoped "Email Sending" API token; store `CLOUDFLARE_EMAIL_ACCOUNT_ID` + `CLOUDFLARE_EMAIL_API_TOKEN` in Infisical.
-- Section D: Apply migrations 0003 + 0003b + 0004 to prod Neon; `fly deploy`; `/healthz` green-check.
+- Section D: Apply migrations 0003 + 0003b + 0004 to prod Neon; `fly deploy`; `/healthz` green-check (now including `r2Ready`).
 - Section E: Run 11-step INTEG-01 protocol; fill VERIFICATION.md.
 - Section F (optional): `/rrr:audit-milestone` + `/rrr:complete-milestone`.
+- Post-E: SEC-ROTATE-CF-EMAIL-01 (rotate CF Email API token after Section E passes).
 
 ### Blockers/Concerns
 
 - `migrate.mjs` has a latent double-insert bug into `schema_migrations` when migrations self-insert. Phase 04 executor noted this but didn't fix (out of scope). Flag for a follow-up hygiene plan if it bites during D1.
 - Mastra is young (`@mastra/core@1.35.0` pinned). 20-concurrent inbound load spike test deferred from week 1 of v1.2 to a post-deploy canary in Phase 06 territory.
 - Tracked but not formally in v1.2: SEC-ROTATE-01 (Clerk key rotation) — backlog in REQUIREMENTS.md; instructions in USER-ACTIONS.md Section A2.
+- New 2026-05-16: SEC-ROTATE-CF-EMAIL-01 (Cloudflare Email Service token rotation) — backlog in REQUIREMENTS.md; do after Section E smoke-test passes.
 
 ## Session Continuity
 
 Last session: 2026-05-16
-Stopped at: All 6 v1.2 phases code-complete (16 commits on `main`). User-action manifest at `.planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md`. Next step is for the user to work through Sections A→D, then run the INTEG-01 smoke test (Section E).
+Stopped at: All 6 v1.2 phases code-complete (16 commits on `main`) PLUS 2 swap commits (Resend → Cloudflare Email Service) PLUS 2 scope-add commits (STORAGE-01 R2 scaffold + EMAIL-03 per-conversation Reply-To aliases). User-action manifest at `.planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md` (new Section B2 for R2 bucket setup). Next step is for the user to work through Sections A→B→B2→C→D, then run the INTEG-01 smoke test (Section E), then rotate the CF Email API token (SEC-ROTATE-CF-EMAIL-01).
 Resume file: .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md

@@ -79,6 +79,11 @@ Spectrum/Photon stays the only active student SMS path. v1.2 adds startups + an 
 - [ ] **APPROVE-01**: Operator dashboard at `/ops/drafts` (single Clerk app with `publicMetadata.userType = 'operator'`, not a DB flag) lists all pending agent drafts (student-side SMS replies + startup-side emails) with conversation context, and supports approve / edit-then-approve / reject (with optional free-text reason) on each draft.
 - [ ] **APPROVE-02**: No auto-send in v1.2 — every outbound message is operator-approved. Approving sends through the correct channel (Spectrum SMS for students via the `SmsProvider`, outbound email provider for startups) and records `status='sent'` + `provider_message_id`. Rejected drafts feed a feedback log readable by the human prompt-tuner.
 
+### Storage & Threading
+
+- [ ] **EMAIL-03**: Outbound startup emails set `Reply-To: conv-{conversation_id}@internjobs.ai`. The catch-all Worker parses the `conv-` prefix on inbound, extracts the UUID, and the Fly app writes it into `inbound_messages.metadata.conversation_id`. Replaces fragile From-address lookup as the PRIMARY inbound startup identification path; legacy lookup stays as fallback when the alias is absent.
+- [ ] **STORAGE-01**: R2 bucket `internjobs-agent-store` (private, signed-URL-only) scaffolded. Per-entity folder convention (`students/{id}/`, `startups/{id}/`, `conversations/{id}/`, `startups/{id}/roles/{role_id}/`). R2 client at `apps/app/src/storage/r2.mjs` with fail-soft singleton (`getR2Client()` returns null when envs unset). NO ingestion wired yet — just the storage layer.
+
 ### Integration Acceptance
 
 - [ ] **INTEG-01**: Two-sided smoke test executes end-to-end in production without manual DB intervention: student inbound (Spectrum) → agent draft → operator approve → startup email send → startup reply (CF Email Routing → Worker → Mastra ingest) → agent draft → operator approve → student SMS (Spectrum). All 11 steps from `.planning/milestones/v1.2-two-sided-agent-mvp/research/FEATURES.md` INTEG-01 pass.
@@ -103,10 +108,14 @@ Named candidates for v1.3+. No checkboxes — these become Active when promoted 
 - **THREAD-SUMMARY-01**: Background job that summarizes Mastra threads exceeding ~50 messages so context windows don't bloat — *Source: PITFALLS #19*
 - **CONSENT-INFER-01**: Extend `consents` table with `agent_inference_consent` so the agent can persist inferences derived from startup emails about students (TCPA/CAN-SPAM surface) — *Source: PITFALLS #15*
 - **MULTI-MEMBER-01**: Multi-member invites for startups (v1.2 ships one founder per startup only) — *Source: v1.2 research*
+- **STORAGE-02**: Email attachment ingest + MMS attachment ingest. Phase 03 Worker writes attachments to R2 per-entity folders; Mastra workflow reads referenced files into thread context — *Source: v1.2 STORAGE-01 scope-add*
+- **STORAGE-03**: Permanent short links via mapping bucket + redirector Worker (STAB-02 pattern from SuperIntelligence) — replaces 1h presigned URL TTL in outbound channel messages — *Source: v1.2 STORAGE-01 scope-add*
+- **EMAIL-04**: Per-startup vanity addresses (e.g. `acme@internjobs.ai` forwards to the startup's real email) — branding nicety, not load-bearing — *Source: v1.2 EMAIL-03 scope-add*
 
 ### Backlog (Unassigned)
 
 - **SEC-ROTATE-01**: Rotate `CLERK_SECRET_KEY` (pasted in chat 2026-05-15); update Infisical `prod`/`/internjobs-ai` and re-run `flyctl secrets import`. *(Currently tracked as STATE.md blocker; not formally promoted to v1.2 requirement.)*
+- **SEC-ROTATE-CF-EMAIL-01**: Rotate the Cloudflare Email Service API token pasted in chat 2026-05-16 (same posture as SEC-ROTATE-01). Update Infisical `prod`/`/internjobs-ai` `CLOUDFLARE_EMAIL_API_TOKEN` and re-run `flyctl secrets import`. Tracked as STATE.md blocker pending the v1.2 INTEG-01 smoke run.
 
 ## Out of Scope
 
@@ -144,13 +153,15 @@ Maps current-milestone (v1.2) requirements to roadmap phases.
 | AGENT-03 | Phase 04 — Mastra Agent Core | Pending |
 | APPROVE-01 | Phase 05 — Operator Approval Gate | Pending |
 | APPROVE-02 | Phase 05 — Operator Approval Gate | Pending |
+| EMAIL-03 | Phase 03/04 enhancement (scope-add 2026-05-16) | Pending |
+| STORAGE-01 | Phase 04 enhancement (scope-add 2026-05-16) | Pending |
 | INTEG-01 | Phase 06 — Two-Sided Integration Smoke Test | Pending |
 
 **Coverage (v1.2):**
-- Active requirements: 13 total
-- Mapped to phases: 13 ✓
+- Active requirements: 15 total
+- Mapped to phases: 15 ✓
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-16*
-*Last updated: 2026-05-16 — Resend → Cloudflare Email Service swap for EMAIL-02 outbound (already on CF DNS, one less vendor); prior 2026-05-16 update covered v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam) and milestone research consumption.*
+*Last updated: 2026-05-16 — STORAGE-01 + EMAIL-03 scope-add (R2 per-entity folder scaffold + per-conversation Reply-To aliases for deterministic threading; modeled on SuperIntelligence patterns); SEC-ROTATE-CF-EMAIL-01 added to backlog; v1.3 candidates extended with STORAGE-02, STORAGE-03, EMAIL-04. Prior 2026-05-16 updates: Resend → Cloudflare Email Service swap for EMAIL-02; v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam).*

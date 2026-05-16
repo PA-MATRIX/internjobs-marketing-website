@@ -63,6 +63,8 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - [ ] **AGENT-03**: pgvector semantic memory on Neon for long-term cross-conversation recall.
 - [ ] **APPROVE-01**: Human-in-the-loop operator dashboard lists agent-produced drafts (student-side SMS replies + startup-side emails) for approve/edit/reject.
 - [ ] **APPROVE-02**: No auto-send in v1.2 — every outbound message is human-approved; rejected drafts feed back into a training/feedback log.
+- [ ] **EMAIL-03**: Per-conversation Reply-To aliases (`conv-{conversation_id}@internjobs.ai`) for deterministic inbound startup threading. Catch-all Worker parses the `conv-` prefix; Fly writes the UUID into `inbound_messages.metadata.conversation_id`. Replaces From-address lookup as the primary path.
+- [ ] **STORAGE-01**: R2 storage scaffold — private bucket `internjobs-agent-store`, per-entity folder convention, signed-URL-only sharing (Mala posture). Client at `apps/app/src/storage/r2.mjs` fails soft when envs unset. NO ingestion wired (deferred to v1.3 STORAGE-02).
 - [ ] **INTEG-01**: Two-sided smoke test — student inbound (Spectrum) → agent draft → operator approve → startup email send → startup reply → agent draft → operator approve → student SMS (Spectrum).
 
 ### Out of Scope
@@ -123,6 +125,8 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 | Cloudflare Email Routing → Worker → Mastra for startup inbound | Email is the primary startup channel; Worker validation keeps the Fly app loosely coupled to inbound | — Pending v1.2 execution |
 | Cloudflare Email Service for outbound (public beta as of 2026-04-17) | Already on Cloudflare DNS (hard prereq); already using CF Email Routing for inbound; one less vendor to operate; native agent-targeted product launched at Agents Week 2026 | — Code shipped 2026-05-16; pending CF dashboard onboarding |
 | Operator approval gate; no auto-send in v1.2 | Safety + learning constraint while agent quality is unproven; rejected drafts feed back into training | — Pending v1.2 execution |
+| R2 storage scaffold in v1.2: per-entity folders inside one private bucket (`internjobs-agent-store`), signed-URL-only access (STORAGE-01) | Matches SuperIntelligence's Mala-aligned auditability posture (every share is time-bounded + signed); row-level partition via student_id/startup_id is sufficient for InternJobs (no per-user Postgres schema like SuperIntelligence — too heavyweight for this volume) | — Pending v1.2 execution |
+| Per-conversation email aliases (`conv-{conversation_id}@internjobs.ai`) as the primary inbound startup identification path (EMAIL-03) | Deterministic threading; eliminates fragile from-address lookup; reuses the existing Phase 03 catch-all Worker rule with zero schema cost (lives in `inbound_messages.metadata` jsonb); legacy From-address lookup stays as fallback | — Pending v1.2 execution |
 
 ---
-*Last updated: 2026-05-16 — Resend → Cloudflare Email Service swap for EMAIL-02 outbound (already on CF DNS, one less vendor; CF "Agent Mail" public beta 2026-04-17). Prior update 2026-05-15 after v1.1 completion and v1.2 scope revision (Telnyx held for v1.3, Spectrum stays active behind `SmsProvider` seam).*
+*Last updated: 2026-05-16 — STORAGE-01 + EMAIL-03 scope-add (private R2 bucket scaffold with per-entity folders + per-conversation Reply-To aliases for deterministic threading; modeled on SuperIntelligence patterns). Prior 2026-05-16 update: Resend → Cloudflare Email Service swap for EMAIL-02 outbound (already on CF DNS, one less vendor; CF "Agent Mail" public beta 2026-04-17). 2026-05-15 update: v1.1 completion and v1.2 scope revision (Telnyx held for v1.3, Spectrum stays active behind `SmsProvider` seam).*

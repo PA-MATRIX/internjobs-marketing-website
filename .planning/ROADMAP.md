@@ -73,6 +73,7 @@ Stand up a Mastra-powered agent that drafts both sides of the student↔startup 
 2. Inbound email receipt is logged in `audit_events` with `event_type='startup_email_received'`.
 3. An outbound transactional email provider (Resend candidate) is configured with verified SPF + DKIM on `internjobs.ai`, and a test outbound email from `noreply@internjobs.ai` (or equivalent) delivers successfully to a Gmail and an Outlook inbox.
 4. `/healthz` reports `emailWorkerSecret` and outbound-provider-key status keys both `true`.
+5. Per-conversation Reply-To aliases (`conv-{id}@internjobs.ai`) parsed by Worker on inbound; deterministic thread routing (the UUID is shipped in the JSON payload and written into `inbound_messages.metadata.conversation_id`). EMAIL-03 scope-add 2026-05-16.
 
 **Plans:** TBD
 
@@ -89,6 +90,7 @@ Stand up a Mastra-powered agent that drafts both sides of the student↔startup 
 2. Mastra thread memory persists in a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`) and is queryable by `student_id` and `startup_id` keys.
 3. `vector` extension + HNSW index exist on Neon (created in the migration, not deferred); embeddings are written for student profiles and roles on save/update.
 4. Toggling `USE_VECTOR_MATCH` flips the match step between keyword and cosine similarity without errors; missing-embedding fallback to keyword works.
+5. R2 storage scaffold ready (private bucket + signed URL client at `apps/app/src/storage/r2.mjs`); no attachment ingestion (deferred to v1.3 STORAGE-02). STORAGE-01 scope-add 2026-05-16.
 
 **Plans:** TBD
 
