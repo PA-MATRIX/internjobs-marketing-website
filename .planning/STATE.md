@@ -1,47 +1,49 @@
 ---
 schema_version: 2
-milestone: "v1.1"
-phase: 7
-phase_name: "Seamless Student Waitlist"
-phase_total: 7
-plan: 1
-plan_total: 1
-status: "implemented_pending_clerk_production_and_graph_provider_credentials"
-progress: 93
-last_activity: "2026-05-09"
-session_last: "2026-05-09"
+milestone: "Between milestones"
+phase: 0
+phase_name: ""
+phase_total: 0
+plan: 0
+plan_total: 0
+status: "v1_1_archived_v1_2_pending_definition"
+progress: 0
+last_activity: "2026-05-15"
+session_last: "2026-05-15"
 resume_file: ""
 blockers:
-  - "Need LinkedIn OAuth app client ID/secret for Clerk provider configuration."
-  - "Need Clerk production instance and LinkedIn OAuth production configuration."
-  - "Need Cognee hosted credentials/API contract before writing real graph nodes."
-  - "Need Sprite.dev and Bright Data credentials/API contract before executing LinkedIn enrichment jobs."
+  - "Resolve Cloudflare DNS proxy on accounts.internjobs.ai and clerk.internjobs.ai (should be DNS-only) before live LinkedIn → Clerk → app sign-in smoke test."
+  - "Rotate CLERK_SECRET_KEY in Clerk dashboard (pasted in chat 2026-05-15); update Infisical prod /internjobs-ai + re-import into Fly."
+  - "Need Cognee hosted credentials/API contract — placeholders remain inert in v1.2; revisit in v1.3+."
+  - "Need Sprite.dev + Bright Data credentials/API contract gated on compliance review — placeholders remain inert in v1.2."
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-09)
+See: .planning/PROJECT.md (updated 2026-05-15)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** Seamless LinkedIn-to-Spectrum waitlist and durable student threading
+**Current focus:** v1.2 — Two-Sided Agent MVP (Telnyx + Mastra + Cloudflare Email + startup onboarding + operator approval gate)
 
 ## Current Position
 
-Milestone: v1.1
-Phase: Seamless Student Waitlist
-Plan: 1 of 1 complete
-Status: Implemented with Clerk production and graph/enrichment provider activation still pending
-Last activity: 2026-05-09 - Moved Fly app to InternJobs-SIOS-ORG, added exact QR/SMS verification copy, normalized phone-thread routing, Cognee thread placeholders, and Sprite/Bright Data enrichment placeholders.
+Milestone: Between milestones
+Phase: —
+Plan: —
+Status: v1.1 archived; v1.2 (Two-Sided Agent MVP) defined in PROJECT.md `### Active`. Ready for `/rrr:define-requirements`.
+Last activity: 2026-05-15 — v1.1 milestone archived (`.planning/milestones/v1.1-seamless-waitlist/`); tagged `v1.1`; PROJECT.md evolved with v1.2 active requirements.
 
-Progress: 93%
+Progress: 7 phases, 16 plans shipped across 2 milestones (v1.0: 6 phases / 15 plans, v1.1: 1 phase / 1 plan).
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
-- Total phases completed: 3
+
+- Total plans completed: 16
+- Total phases completed: 7
+- Milestones shipped: 2 (v1.0, v1.1)
 
 ## Accumulated Context
 
@@ -51,37 +53,26 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-- Configure Clerk production instance, LinkedIn provider, production redirect, and JWKS URLs.
-- Add Cognee hosted credentials/API contract and replace `pending_provider_setup` thread placeholders with real graph writes.
-- Add Sprite.dev + Bright Data credentials/API contract and execute `profile_enrichment_jobs` safely after compliance review.
-- Deploy v1.1 app changes, run migration `0002_waitlist_threads_and_enrichment`, then run production smoke checks.
-- `app.internjobs.ai` DNS points to the InternJobs-SIOS Fly app and returns `/healthz` successfully over HTTPS.
-- Use Infisical as the secrets source of truth for Cloudflare DNS/API, Clerk, LinkedIn OAuth, Neon, Photon/Spectrum, and Fly runtime secrets.
-- InternJobs.ai production secrets live in Projecta/MATRIX Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`, environment `prod`, path `/internjobs-ai`.
-- Checked `/Users/rajren/MATRIX/.infisical.json`: it points at Infisical project `0484b3ce-9ecc-48d8-a822-c2e86921d9bc`.
-- Checked `/Users/rajren/MATRIX/.env.local`: Cloudflare variable names exist there, but the local values are empty placeholders.
-- Do not use GrowthPods/SIOS/SuperIntelligence Cloudflare secrets for InternJobs.ai; this project should use Projecta Labs / InternJobs.ai credentials only.
-- Saved and verified secret name `CLOUDFLARE_API_TOKEN` in Projecta/MATRIX Infisical `prod` path `/internjobs-ai`.
-- Implemented app routes: `/waitlist`, `/onboarding`, `/pairing`, `/profile`, `/webhooks/photon`, `/healthz`, `/config/status`, and `/ops/privacy`.
-- Moved Fly app ownership to `internjobs-sios-org`.
-- Added exact QR/SMS verification message and 8-character code flow.
-- Added normalized phone-number routing for follow-up messages sent to the shared Spectrum number.
-- Added `student_threads` placeholders for Cognee hosted graph/thread handoff.
-- Added `profile_enrichment_jobs` placeholders for Sprite.dev + Bright Data handoff.
-- Added Neon-ready migration `apps/app/db/migrations/0001_waitlist_foundation.sql`.
-- Added Photon/Spectrum contract doc, LinkedIn enrichment gate doc, privacy operations doc, and Fly deployment doc.
-- Added marketing asset verification plus hero phone animation guardrail.
-- Captured browser proof in `.planning/artifacts/browser-v1.0/`.
+- Resolve Cloudflare DNS proxy on `accounts.internjobs.ai` + `clerk.internjobs.ai` (should be DNS-only); then run live LinkedIn → Clerk → app sign-in smoke test against prod Clerk.
+- Rotate `CLERK_SECRET_KEY` in Clerk dashboard (pasted in chat 2026-05-15); update Infisical `prod` `/internjobs-ai` and re-run `flyctl secrets import` for `internjobs-ai-student-app`. — User accepted residual risk in v1.1; carry into v1.2 hygiene.
+- Provision Telnyx account + 1 student SMS number for v1.2 (no port; fresh provision).
+- Verify Mastra production-readiness at expected message volume before week 2 of v1.2 execution. Fallback: custom workflow layer on top of Neon.
+- Document the activation runbook for transitioning Cognee + Sprite/Bright Data placeholders to real provider calls (deferred to v1.3+ but capture trigger criteria).
+
+### Carry-over From v1.1
+
+- Live LinkedIn → Clerk → app sign-in not exercised end-to-end against prod Clerk (blocked by DNS proxy state).
+- No RRR `VERIFICATION.md` artifacts for v1.0 or v1.1 phases — verification was done outside RRR. Audit flagged `gaps_found` on procedural grounds; substance is verified. v1.2 work should run through `/rrr:plan-phase` → `/rrr:execute-phase` → `/rrr:verify-work` so artifacts exist going forward.
 
 ### Blockers/Concerns
 
 - LinkedIn browser automation must not become production scraping without explicit legal/compliance approval.
-- App and marketing should deploy separately, but stay in one repo until there is a real team/security reason to split repositories.
+- App and marketing should deploy separately but stay in one repo until there is a real team/security reason to split.
 - Do not print Infisical secret values into chat, logs, or committed docs.
-- Production waitlist data collection should remain gated until Clerk/Neon/Photon secrets are present and verified.
+- Mastra is a young framework — watch for production-readiness regressions early in v1.2.
 
 ## Session Continuity
 
-Last session: 2026-05-09
-Stopped at: v1.1 app implementation complete; ready to deploy, migrate, and activate remaining providers.
+Last session: 2026-05-15
+Stopped at: v1.1 archived; v1.2 scope documented in PROJECT.md. Next action is `/rrr:define-requirements` for v1.2 (after `/clear`).
 Resume file: None

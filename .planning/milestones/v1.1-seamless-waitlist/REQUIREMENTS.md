@@ -1,12 +1,19 @@
+# Requirements Archive: v1.1 Seamless Waitlist and Student Threading
+
+**Archived:** 2026-05-15
+**Status:** ✅ SHIPPED
+
+This is the archived requirements specification for v1.1. For current requirements, see `.planning/REQUIREMENTS.md` (created for next milestone).
+
+---
+
 # Requirements: InternJobs.ai
 
 **Defined:** 2026-05-09
 **Core Value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current Milestone:** v1.1
+**Milestone:** v1.1
 
-## Validated
-
-### Marketing Foundation
+## Validated (Marketing Foundation)
 
 - [x] **MKT-01**: Public student landing page is available at `/`.
 - [x] **MKT-02**: Public startup page is available at `/startups`.
@@ -14,9 +21,7 @@
 - [x] **LEGAL-02**: Terms page is available at `/terms`.
 - [x] **DEPLOY-01**: Marketing deployment verifies production CSS and JS assets after deploy.
 
-## v1.0 — Waitlist Identity and Messaging Foundation (Active)
-
-**Implementation note:** The app foundation is implemented and verified. Neon and Photon/Spectrum are configured in Infisical/Fly. Clerk production LinkedIn activation remains the main external identity dependency.
+## v1.0 — Waitlist Identity and Messaging Foundation
 
 ### Repo and Deployment
 
@@ -27,7 +32,7 @@
 
 ### Identity and Waitlist
 
-- [ ] **AUTH-01**: Student waitlist signup uses Clerk with LinkedIn as the primary sign-in method. Code is ready; live Clerk provider activation is pending.
+- [x] **AUTH-01**: Student waitlist signup uses Clerk with LinkedIn as the primary sign-in method. — Activated 2026-05-15 during v1.1 deploy; live OAuth round-trip carried to v1.2 pre-flight (Cloudflare DNS proxy).
 - [x] **AUTH-02**: Email/password signup is not presented in the student waitlist flow.
 - [x] **AUTH-03**: After LinkedIn sign-in, the student lands on channel pairing instead of another marketing page.
 - [x] **AUTH-04**: Clerk user ID is stored with the waitlist profile in Neon.
@@ -61,11 +66,7 @@
 - [x] **OPS-03**: Sensitive data is not logged.
 - [x] **OPS-04**: User deletion/export paths are planned for privacy compliance before collecting production data.
 
-## Future Milestones
-
-### v1.1 Candidates
-
-### v1.1 — Seamless Waitlist and Student Threading
+## v1.1 — Seamless Waitlist and Student Threading
 
 - [x] **WAIT-01**: Authenticated waitlist users land directly on QR/SMS pairing.
 - [x] **WAIT-02**: QR opens the exact verification text: `Hey internjobs.ai! My verification code is {CODE}. What's next?`
@@ -74,22 +75,15 @@
 - [x] **GRAPH-01**: App creates a durable student thread placeholder for Cognee hosted graph integration.
 - [x] **ENRICH-01**: App creates a durable Sprite.dev + Bright Data enrichment job placeholder after LinkedIn URL capture.
 
-### v1.2 Candidates
-
-- **MATCH-01**: Use student profile data to draft first internship recommendations.
-- **AGENT-01**: Let students approve drafts before messages or intros send.
-- **START-01**: Build startup access onboarding and startup role intake inside the app.
-- **ADMIN-01**: Add a private operator view for waitlist review and webhook support.
-
-## Out of Scope
+## Out of Scope (as of v1.1)
 
 | Feature | Reason | Revisit? |
 |---------|--------|----------|
 | LinkedIn credential capture | High legal/security risk and unnecessary for first waitlist version | Never |
 | Automated private LinkedIn scraping | Likely violates platform expectations and can break users' trust | Only after legal review and approved API/provider path |
 | ATS dashboard | Wrong product feel; founders and students should use messages first | v2 if proven necessary |
-| Multi-provider social login | LinkedIn-only keeps the first student waitlist simple | v1.1 |
-| Production automated intros | Current milestone is waitlist and pairing, not full matching automation | v1.1 |
+| Multi-provider social login for students | LinkedIn-only keeps the student waitlist simple (v1.2 introduces email-first/Google for *startups* only) | Re-evaluated v1.2 |
+| Production automated intros | Current milestone is waitlist and pairing, not full matching automation | v1.2 introduces agent drafts behind operator approval — still no auto-send |
 
 ## Traceability
 
@@ -99,7 +93,7 @@
 | ARCH-02 | Phase 1 | Complete |
 | ARCH-03 | Phase 1 | Complete |
 | ARCH-04 | Phase 1 | Complete |
-| AUTH-01 | Phase 2 | External activation pending |
+| AUTH-01 | Phase 2 | Complete (activated 2026-05-15) |
 | AUTH-02 | Phase 2 | Complete |
 | AUTH-03 | Phase 2 | Complete |
 | AUTH-04 | Phase 2 | Complete |
@@ -127,13 +121,18 @@
 | GRAPH-01 | Phase 7 | Complete |
 | ENRICH-01 | Phase 7 | Complete |
 
-**Coverage (v1.0):**
-- Active requirements: 31 total
-- Complete in code/local verification: 30
-- External activation pending: 1
-- Mapped to phases: 31
-- Unmapped: 0
+---
+
+## Milestone Summary
+
+**Shipped:** 31 of 31 requirements (25 from v1.0 + 6 from v1.1).
+**Adjusted:** AUTH-01 was carried over from v1.0 as "external activation pending"; activated as part of the v1.1 deploy session on 2026-05-15.
+**Dropped:** None.
+
+**Deferred to v1.2 pre-flight (not requirements gaps, but live-flow validations):**
+
+- Live LinkedIn → Clerk → app sign-in not exercised end-to-end against prod Clerk; blocked by Cloudflare DNS proxy on `accounts.internjobs.ai` and `clerk.internjobs.ai` (should be DNS-only).
 
 ---
-*Requirements defined: 2026-05-09*
-*Last updated: 2026-05-09 after v1.1 seamless waitlist implementation*
+
+*Archived: 2026-05-15 as part of v1.1 milestone completion*
