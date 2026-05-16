@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { escapeHtml } from "./http.mjs";
 import { getMissingProviderConfig } from "./config.mjs";
-import { getSignInUrl } from "./auth.mjs";
+import { getSignInUrl, getStartupSignInUrl } from "./auth.mjs";
 
 export function renderLayout({ title, body, config, auth }) {
   const missing = getMissingProviderConfig(config);
@@ -143,6 +143,102 @@ export function renderSavedProfile() {
       <h1>Profile context updated.</h1>
       <p class="lede">InternJobs.ai will use this to make internship texts feel more relevant and less random.</p>
       <a class="button light" href="/pairing">Continue to pairing</a>
+    </section>`;
+}
+
+// ─── Startup views (v1.2) ────────────────────────────────────────────────────
+
+export function renderStartupSignIn(config) {
+  const signInUrl = getStartupSignInUrl(config);
+  return `
+    <section class="hero-grid">
+      <div>
+        <p class="eyebrow">Startup access</p>
+        <h1>Reach students through natural messages.</h1>
+        <p class="lede">Sign in with email, Google, or Microsoft to set up your company profile and start posting roles.</p>
+        <div class="actions">
+          <a class="button primary" href="${escapeHtml(signInUrl)}">Get started</a>
+        </div>
+      </div>
+    </section>`;
+}
+
+export function renderStartupOnboarding({ startup }) {
+  const name = escapeHtml(startup?.name || "");
+  const website = escapeHtml(startup?.website || "");
+  return `
+    <section class="panel narrow">
+      <p class="eyebrow">Company profile</p>
+      <h1>Tell us about your startup.</h1>
+      <form method="POST" action="/startup/onboarding">
+        <label>Company name <input name="name" required value="${name}" /></label>
+        <label>Website (optional) <input name="website" type="url" value="${website}" /></label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="consent_messaging" value="1" required />
+          I agree that InternJobs.ai will draft messages to students on behalf of my company.
+          A human operator reviews every message before it is sent.
+        </label>
+        <button type="submit" class="button primary">Save and continue</button>
+      </form>
+    </section>`;
+}
+
+export function renderStartupDashboard({ startup, roles }) {
+  const rows = roles
+    .map(
+      (r) => `
+    <tr>
+      <td>${escapeHtml(r.title)}</td>
+      <td>${escapeHtml(r.status)}</td>
+      <td>${new Date(r.created_at).toLocaleDateString()}</td>
+      <td>
+        <a href="/startup/roles/${escapeHtml(r.id)}/edit">Edit</a>
+        ${
+          r.status !== "paused"
+            ? `<form method="POST" action="/startup/roles/${escapeHtml(r.id)}/pause" style="display:inline"><button type="submit">Pause</button></form>`
+            : ""
+        }
+      </td>
+    </tr>`,
+    )
+    .join("");
+  return `
+    <section class="panel">
+      <p class="eyebrow">Dashboard</p>
+      <h1>${escapeHtml(startup.name)}</h1>
+      <p><a class="button primary" href="/startup/roles/new">+ Add role</a></p>
+      ${
+        roles.length
+          ? `<table><thead><tr><th>Title</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+          : '<p class="lede">No roles yet. Add your first role to get started.</p>'
+      }
+    </section>`;
+}
+
+export function renderRoleForm({ role, action }) {
+  const v = (field) => escapeHtml(role?.[field] || "");
+  return `
+    <section class="panel narrow">
+      <p class="eyebrow">Role</p>
+      <h1>${role?.id ? "Edit role" : "New role"}</h1>
+      <form method="POST" action="${escapeHtml(action)}">
+        <label>Title * <input name="title" required value="${v("title")}" /></label>
+        <label>Description * <textarea name="description" required rows="4">${v("description")}</textarea></label>
+        <label>Requirements * <textarea name="requirements" required rows="4"
+          placeholder="e.g. Python, React, 10hr/week commitment">${v("requirements")}</textarea></label>
+        <label>Location <select name="location">
+          <option value="">— optional —</option>
+          ${["Remote", "Onsite", "Hybrid"]
+            .map(
+              (o) =>
+                `<option value="${o.toLowerCase()}" ${role?.location === o.toLowerCase() ? "selected" : ""}>${o}</option>`,
+            )
+            .join("")}
+        </select></label>
+        <label>Comp range <input name="comp_range" value="${v("comp_range")}" placeholder="e.g. $20-$25/hr" /></label>
+        <button type="submit" class="button primary">Save</button>
+        <a href="/startup/dashboard">Cancel</a>
+      </form>
     </section>`;
 }
 

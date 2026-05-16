@@ -492,6 +492,116 @@ class PostgresStore {
     }
     return result.rows[0];
   }
+
+  // ─── Startup identity (v1.2) ───────────────────────────────────────────────
+
+  async getStartupByClerkUserId(clerkUserId) {
+    const { rows } = await this.pool.query(
+      `select s.*, sm.role as member_role, sm.id as member_id
+       from startups s
+       join startup_members sm on sm.startup_id = s.id
+       where sm.clerk_user_id = $1 limit 1`,
+      [clerkUserId],
+    );
+    return rows[0] || null;
+  }
+
+  async createStartupWithFounder({ clerkUserId, name, website, email, founderName }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const {
+        rows: [startup],
+      } = await client.query(
+        `insert into startups (name, website, status)
+         values ($1, $2, 'onboarding')
+         returning *`,
+        [name, website || null],
+      );
+      await client.query(
+        `insert into startup_members (startup_id, clerk_user_id, role, email, name)
+         values ($1, $2, 'founder', $3, $4)
+         on conflict (clerk_user_id) do nothing`,
+        [startup.id, clerkUserId, email, founderName || null],
+      );
+      await client.query("commit");
+      return startup;
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async recordStartupConsent({ startupId, consentType, granted, grantedByClerkUserId }) {
+    await this.pool.query(
+      `insert into startup_consents (startup_id, consent_type, granted, granted_by_clerk_user_id)
+       values ($1, $2, $3, $4)
+       on conflict (startup_id, consent_type) do update set granted = $3`,
+      [startupId, consentType, granted, grantedByClerkUserId],
+    );
+  }
+
+  async hasStartupConsent(startupId, consentType) {
+    const { rows } = await this.pool.query(
+      `select id from startup_consents
+       where startup_id = $1 and consent_type = $2 and granted = true limit 1`,
+      [startupId, consentType],
+    );
+    return rows.length > 0;
+  }
+
+  async activateStartup(startupId) {
+    await this.pool.query(
+      `update startups set status = 'active', updated_at = now() where id = $1`,
+      [startupId],
+    );
+  }
+
+  // ─── Roles catalog (v1.2) ──────────────────────────────────────────────────
+
+  async getRolesByStartup(startupId) {
+    const { rows } = await this.pool.query(
+      `select * from roles where startup_id = $1 order by created_at desc`,
+      [startupId],
+    );
+    return rows;
+  }
+
+  async getRoleById(roleId, startupId) {
+    const { rows } = await this.pool.query(
+      `select * from roles where id = $1 and startup_id = $2 limit 1`,
+      [roleId, startupId],
+    );
+    return rows[0] || null;
+  }
+
+  async createRole({ startupId, title, description, requirements, location, compRange }) {
+    const { rows } = await this.pool.query(
+      `insert into roles (startup_id, title, description, requirements, location, comp_range, status)
+       values ($1, $2, $3, $4, $5, $6, 'active') returning *`,
+      [startupId, title, description || "", requirements || "", location || null, compRange || null],
+    );
+    return rows[0];
+  }
+
+  async updateRole(roleId, startupId, { title, description, requirements, location, compRange }) {
+    const { rows } = await this.pool.query(
+      `update roles set title=$3, description=$4, requirements=$5, location=$6, comp_range=$7,
+       updated_at=now()
+       where id=$1 and startup_id=$2 returning *`,
+      [roleId, startupId, title, description || "", requirements || "", location || null, compRange || null],
+    );
+    return rows[0] || null;
+  }
+
+  async pauseRole(roleId, startupId) {
+    await this.pool.query(
+      `update roles set status='paused', updated_at=now() where id=$1 and startup_id=$2`,
+      [roleId, startupId],
+    );
+  }
 }
 
 function normalizeAddress(value) {

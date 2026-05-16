@@ -6,7 +6,19 @@ import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
 import { createSpectrumSmsProvider } from "./sms/spectrum.mjs";
 import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
-import { renderLayout, renderOnboarding, renderPairing, renderPairingConfirmed, renderProfile, renderSavedProfile, renderWaitlist } from "./views.mjs";
+import {
+  renderLayout,
+  renderOnboarding,
+  renderPairing,
+  renderPairingConfirmed,
+  renderProfile,
+  renderRoleForm,
+  renderSavedProfile,
+  renderStartupDashboard,
+  renderStartupOnboarding,
+  renderStartupSignIn,
+  renderWaitlist,
+} from "./views.mjs";
 
 const config = getConfig();
 const store = createStore(config);
@@ -190,6 +202,104 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // ─── Startup sign-in landing ─────────────────────────────────────────────
+    if (req.method === "GET" && url.pathname === "/startup") {
+      sendHtml(
+        res,
+        200,
+        renderLayout({ title: "Startup Access", config, auth: null, body: renderStartupSignIn(config) }),
+      );
+      return;
+    }
+
+    // ─── Startup onboarding ──────────────────────────────────────────────────
+    if (req.method === "GET" && url.pathname === "/startup/onboarding") {
+      const auth = await requireStartupAuthOrRedirect(req, res);
+      if (!auth) return;
+      const existing = await store.getStartupByClerkUserId(auth.clerkUserId);
+      if (existing?.status === "active") {
+        redirect(res, "/startup/dashboard");
+        return;
+      }
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Company Profile",
+          config,
+          auth,
+          body: renderStartupOnboarding({ auth, startup: existing }),
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/startup/onboarding") {
+      const auth = await requireStartupAuthOrRedirect(req, res);
+      if (!auth) return;
+      const form = await readForm(req);
+      if (!form.name || !form.consent_messaging) {
+        redirect(res, "/startup/onboarding");
+        return;
+      }
+      const startup = await store.createStartupWithFounder({
+        clerkUserId: auth.clerkUserId,
+        name: String(form.name).slice(0, 200),
+        website: String(form.website || "").slice(0, 500),
+        email: auth.email,
+        founderName: auth.name,
+      });
+      await store.recordStartupConsent({
+        startupId: startup.id,
+        consentType: "messaging_on_behalf",
+        granted: true,
+        grantedByClerkUserId: auth.clerkUserId,
+      });
+      // Set userType='startup' in Clerk publicMetadata now that onboarding is
+      // complete. Per PITFALLS #13: server-side only, via Clerk Backend API.
+      if (config.clerk.secretKey) {
+        await fetch(`${config.clerk.backendApiUrl}/v1/users/${auth.clerkUserId}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${config.clerk.secretKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ public_metadata: { userType: "startup" } }),
+        });
+      }
+      await store.activateStartup(startup.id);
+      redirect(res, "/startup/dashboard");
+      return;
+    }
+
+    // ─── Startup dashboard ───────────────────────────────────────────────────
+    if (req.method === "GET" && url.pathname === "/startup/dashboard") {
+      const auth = await requireStartupAuth(req, res, config);
+      if (!auth) return;
+      const startup = await store.getStartupByClerkUserId(auth.clerkUserId);
+      if (!startup || startup.status === "onboarding") {
+        redirect(res, "/startup/onboarding");
+        return;
+      }
+      const hasConsent = await store.hasStartupConsent(startup.id, "messaging_on_behalf");
+      if (!hasConsent) {
+        redirect(res, "/startup/onboarding");
+        return;
+      }
+      const roles = await store.getRolesByStartup(startup.id);
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: startup.name,
+          config,
+          auth,
+          body: renderStartupDashboard({ startup, roles }),
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/ops/privacy") {
       sendHtml(
         res,
@@ -231,4 +341,21 @@ async function requireAuth(req, res) {
 
   redirect(res, getSignInUrl(config));
   return null;
+}
+
+// Onboarding gate: requires an authenticated session that is NOT a student.
+// Used by /startup/onboarding GET/POST where userType='startup' is set after
+// the consent form is submitted. Authorization is enforced at this middleware
+// layer (PITFALLS #12), not inside handlers.
+async function requireStartupAuthOrRedirect(req, res) {
+  const auth = await getAuth(req, config);
+  if (!auth?.clerkUserId) {
+    redirect(res, getStartupSignInUrl(config));
+    return null;
+  }
+  if (auth.userType === "student") {
+    sendJson(res, 403, { error: "forbidden", reason: "not_startup" });
+    return null;
+  }
+  return auth;
 }
