@@ -18,7 +18,11 @@ const child = spawn(process.execPath, ["src/server.mjs"], {
 });
 
 try {
-  await delay(450);
+  // v1.2 Phase 04: Mastra (@mastra/core + @mastra/pg) imports add ~300ms
+  // to cold-start. The previous 450ms delay flakes on the first run after
+  // a clean install. 1000ms gives headroom for cold ESM resolution without
+  // making the suite noticeably slower.
+  await delay(1000);
 
   const health = await fetch(`${baseUrl}/healthz`);
   assert(health.ok, `health check returned ${health.status}`);

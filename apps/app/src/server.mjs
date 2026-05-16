@@ -7,6 +7,9 @@ import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
 import { createSpectrumSmsProvider } from "./sms/spectrum.mjs";
 import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
+import { initMastra, isMastraReady } from "./mastra.mjs";
+import { runStudentInboundWorkflow } from "./workflows/student-inbound.mjs";
+import { writeRoleEmbedding, logEmbedErr } from "./embeddings.mjs";
 import {
   renderLayout,
   renderOnboarding,
@@ -25,11 +28,33 @@ const config = getConfig();
 const store = createStore(config);
 const smsProvider = createSpectrumSmsProvider(config);
 
+// v1.2 Phase 04: initialize Mastra in-process. Idempotent + side-effect-light
+// (Mastra defers actual schema creation until first memory/workflow API call).
+// Without DATABASE_URL this returns null and /healthz reports mastraReady=false
+// — used during the verify-app.mjs smoke suite where ENABLE_DEV_AUTH=true.
+initMastra(config);
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
     if (req.method === "GET" && url.pathname === "/healthz") {
+      // v1.2 Phase 04 (Flag 5): pgvectorReady checks the actual extension
+      // installation rather than just config presence, so it reflects DB
+      // state. Cheap (single row in pg_extension), kept on the hot path.
+      // Failure (no DB, no pool) → false, not throw.
+      let pgvectorReady = false;
+      try {
+        if (store?.pool) {
+          const { rows } = await store.pool.query(
+            "select 1 from pg_extension where extname='vector' limit 1",
+          );
+          pgvectorReady = rows.length > 0;
+        }
+      } catch (_err) {
+        pgvectorReady = false;
+      }
+
       sendJson(res, 200, {
         ok: true,
         service: "internjobs-app",
@@ -43,6 +68,13 @@ const server = createServer(async (req, res) => {
           emailWorkerSecret: Boolean(config.emailWorkerSecret),
           resendApiKey: Boolean(config.resendApiKey),
         },
+        // v1.2 Phase 04 (AGENT-01..03): Mastra readiness surface.
+        // mastraReady       — Mastra in-process instance constructed.
+        // pgvectorReady     — vector extension actually installed in Postgres.
+        // openaiKeyPresent  — key loaded (we don't ping OpenAI on /healthz).
+        mastraReady: isMastraReady(),
+        pgvectorReady,
+        openaiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
       });
       return;
     }
@@ -190,11 +222,68 @@ const server = createServer(async (req, res) => {
 
       const payload = JSON.parse(rawBody || "{}");
       const inbound = smsProvider.parseInbound(payload);
-      const confirmation = inbound.code ? await store.confirmPairingCode(inbound) : await store.recordInboundMessage(inbound);
+      // v1.2 Phase 04, Flag 3 fix: parameterize provider so the Spectrum
+      // path stays explicitly 'spectrum' (matches messaging_events writes
+      // elsewhere and unblocks the future Telnyx adapter without code
+      // changes in confirmPairingCode).
+      const confirmation = inbound.code
+        ? await store.confirmPairingCode({ ...inbound, provider: "spectrum" })
+        : await store.recordInboundMessage(inbound);
 
       if (confirmation.student && confirmation.welcomeNeeded) {
         const welcome = await smsProvider.sendSms(confirmation.student.channelAddress, createWelcomeText(confirmation.student));
         await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
+      }
+
+      // v1.2 Phase 04 (AGENT-01): on a regular student reply (not a pairing
+      // confirmation), write to inbound_messages and trigger the agent
+      // workflow FIRE-AND-FORGET. The HTTP 200 returns immediately; the
+      // workflow continues in the background and writes a drafts row.
+      // PHASE 04 NEVER SENDS — the workflow's terminal state is drafts row
+      // with status='pending_review'. Phase 05 owns the send path.
+      if (
+        !confirmation.error &&
+        confirmation.eventType === "student_reply" &&
+        confirmation.student &&
+        typeof store.writeInboundMessage === "function"
+      ) {
+        try {
+          const messageId = await store.writeInboundMessage({
+            provider: "spectrum",
+            providerEventId: inbound.providerEventId,
+            channelType: inbound.channelType,
+            channelAddress: inbound.channelAddress,
+            studentId: confirmation.student.id,
+            body: inbound.text,
+            metadata: inbound.metadata || {},
+          });
+          if (messageId && store?.pool) {
+            // Fire-and-forget: don't await, don't block the 200 response.
+            // Errors are logged but never surface to the SMS provider —
+            // operator dashboards (audit_events) are the primary recovery
+            // surface, not a 5xx that would trigger SMS retries.
+            runStudentInboundWorkflow({ pool: store.pool, messageId }).catch((err) => {
+              console.error(
+                JSON.stringify({
+                  level: "error",
+                  message: "student_inbound_workflow_failed",
+                  messageId,
+                  error: err?.message ?? String(err),
+                }),
+              );
+            });
+          }
+        } catch (err) {
+          // writeInboundMessage failures are non-fatal for the webhook:
+          // messaging_events already captured the inbound for ops review.
+          console.error(
+            JSON.stringify({
+              level: "error",
+              message: "write_inbound_message_failed",
+              error: err?.message ?? String(err),
+            }),
+          );
+        }
       }
 
       sendJson(res, confirmation.error ? 422 : 200, {
@@ -419,7 +508,7 @@ const server = createServer(async (req, res) => {
         redirect(res, "/startup/roles/new");
         return;
       }
-      await store.createRole({
+      const role = await store.createRole({
         startupId: ctx.startup.id,
         title: String(form.title).slice(0, 200),
         description: String(form.description).slice(0, 4000),
@@ -427,6 +516,17 @@ const server = createServer(async (req, res) => {
         location: String(form.location || "").slice(0, 100),
         compRange: String(form.comp_range || "").slice(0, 100),
       });
+      // v1.2 Phase 04 (AGENT-03): background role embedding write. Same
+      // contract as the student-profile hook in store.saveProfileContext —
+      // .catch(logEmbedErr), never inline await. A failing OpenAI call must
+      // not block the user-visible "role created" redirect.
+      if (role?.id && store?.pool) {
+        writeRoleEmbedding(
+          store.pool,
+          role.id,
+          flattenRoleForEmbedding(role),
+        ).catch(logEmbedErr);
+      }
       redirect(res, "/startup/dashboard");
       return;
     }
@@ -474,13 +574,22 @@ const server = createServer(async (req, res) => {
         redirect(res, `/startup/roles/${roleId}/edit`);
         return;
       }
-      await store.updateRole(roleId, ctx.startup.id, {
+      const updated = await store.updateRole(roleId, ctx.startup.id, {
         title: String(form.title).slice(0, 200),
         description: String(form.description).slice(0, 4000),
         requirements: String(form.requirements).slice(0, 4000),
         location: String(form.location || "").slice(0, 100),
         compRange: String(form.comp_range || "").slice(0, 100),
       });
+      // v1.2 Phase 04 (AGENT-03): re-embed on edit so the role-side vector
+      // tracks the latest description/requirements. Background, same as create.
+      if (updated?.id && store?.pool) {
+        writeRoleEmbedding(
+          store.pool,
+          updated.id,
+          flattenRoleForEmbedding(updated),
+        ).catch(logEmbedErr);
+      }
       redirect(res, "/startup/dashboard");
       return;
     }
@@ -543,6 +652,21 @@ async function requireStartupAuthOrRedirect(req, res) {
     return null;
   }
   return auth;
+}
+
+// v1.2 Phase 04 (AGENT-03): build the text we embed for a role row. We
+// concatenate the discoverable fields with labels so the embedding captures
+// "title is X, requirements are Y" rather than a bag of words. Mirrors
+// flattenProfileForEmbedding in store.mjs.
+function flattenRoleForEmbedding(role) {
+  if (!role) return "";
+  const parts = [];
+  if (role.title) parts.push("title: " + role.title);
+  if (role.description) parts.push("description: " + role.description);
+  if (role.requirements) parts.push("requirements: " + role.requirements);
+  if (role.location) parts.push("location: " + role.location);
+  if (role.comp_range) parts.push("comp range: " + role.comp_range);
+  return parts.join("\n").trim();
 }
 
 // Constant-time string equality. Used by the email webhook to compare both

@@ -1,5 +1,6 @@
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import pg from "pg";
+import { writeStudentEmbedding, logEmbedErr } from "./embeddings.mjs";
 
 const { Pool } = pg;
 
@@ -230,6 +231,16 @@ class MemoryStore {
     this.auditEvents.push({ studentId, eventType, actor, metadata, createdAt: new Date().toISOString() });
   }
 
+  // v1.2 Phase 04 (AGENT-01) — in-memory mirror of writeInboundMessage.
+  // Used by dev/test mode (no DATABASE_URL). Returns null so the Spectrum
+  // handler's fire-and-forget triggerWorkflow path is a no-op without DB.
+  // The verify-app.mjs smoke suite never hits this — it tests against
+  // /webhooks/photon which uses PostgresStore — but defensive coverage
+  // prevents a crash if someone wires it up in a memory-only environment.
+  async writeInboundMessage(_args) {
+    return null;
+  }
+
   // ─── Inbound email pipeline (v1.2 Phase 03) — in-memory mirror ─────────────
   // Real implementation lives in PostgresStore.recordEmailInbound. This stub
   // exists so dev mode (no DATABASE_URL) doesn't crash the smoke suite if
@@ -325,8 +336,14 @@ class PostgresStore {
     throw new Error("pairing_code_generation_failed");
   }
 
-  async confirmPairingCode({ code, providerEventId, channelType, channelAddress, metadata }) {
-    const duplicate = await this.pool.query("select id from messaging_events where provider = 'photon' and provider_event_id = $1", [providerEventId]);
+  async confirmPairingCode({ code, providerEventId, channelType, channelAddress, metadata, provider = "spectrum" }) {
+    // v1.2 Phase 04, Flag 3 fix: previously the dedup SELECT and the
+    // messaging_events INSERT both hardcoded provider='photon'. Now the
+    // provider is parameterized so a Telnyx adapter (or any future SMS
+    // provider seam) can use the same store path without cross-provider
+    // dedup collisions. Default 'spectrum' preserves current v1.1/v1.2
+    // call sites that omit the parameter.
+    const duplicate = await this.pool.query("select id from messaging_events where provider = $1 and provider_event_id = $2", [provider, providerEventId]);
     if (duplicate.rows[0]) return { duplicate: true, student: null, welcomeNeeded: false };
 
     const client = await this.pool.connect();
@@ -353,8 +370,8 @@ class PostgresStore {
       );
       await client.query(
         `insert into messaging_events (provider, provider_event_id, student_id, direction, channel_type, channel_address, event_type, delivery_status, metadata)
-         values ('photon', $1, $2, 'inbound', $3, $4, 'pairing_confirmed', 'received', $5)`,
-        [providerEventId, pairing.student_id, channelType, channelAddress, metadata],
+         values ($1, $2, $3, 'inbound', $4, $5, 'pairing_confirmed', 'received', $6)`,
+        [provider, providerEventId, pairing.student_id, channelType, channelAddress, metadata],
       );
       await client.query(
         `insert into audit_events (student_id, event_type, actor, metadata)
@@ -448,7 +465,50 @@ class PostgresStore {
       [studentId, context.interests, context.projects, context.preferredWork, context.notes],
     );
     await this.writeAuditEvent(studentId, "profile_context_updated", "student", {});
+
+    // v1.2 Phase 04 (AGENT-03): fire student embedding write as background.
+    // .catch(logEmbedErr), NOT awaited — a failing OpenAI call must not block
+    // the user-visible profile save. PITFALLS-aware: keeps the hot path fast.
+    const flattened = flattenProfileForEmbedding(context);
+    if (flattened) {
+      writeStudentEmbedding(this.pool, studentId, flattened).catch(logEmbedErr);
+    }
+
     return result.rows[0];
+  }
+
+  // v1.2 Phase 04 (AGENT-01): canonical entry point for inbound messages that
+  // the agent workflow will consume. Coexists with recordInboundMessage (the
+  // v1.1/Phase 02 path that writes messaging_events) — both fire on the
+  // Spectrum handler so:
+  //   • messaging_events still captures observability + dedup as before
+  //     (Phase 01/02 reports, audit trail).
+  //   • inbound_messages becomes the agent-consumer queue (Phase 04+).
+  // Idempotency is enforced by inbound_messages_provider_event_uidx (partial
+  // unique on provider+provider_event_id where provider_event_id is set).
+  // Returns the inserted id, or null when on-conflict skips the insert.
+  async writeInboundMessage({ provider, providerEventId, channelType, channelAddress, studentId, startupId, body, metadata }) {
+    const r = await this.pool.query(
+      `insert into inbound_messages
+         (provider, provider_event_id, channel_type, channel_address,
+          student_id, startup_id, body, metadata)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       on conflict (provider, provider_event_id)
+         where provider_event_id is not null
+         do nothing
+       returning id`,
+      [
+        provider,
+        providerEventId || null,
+        channelType,
+        channelAddress || null,
+        studentId || null,
+        startupId || null,
+        String(body || ""),
+        metadata || {},
+      ],
+    );
+    return r.rows[0]?.id || null;
   }
 
   async storeProfileSnapshot(studentId, auth) {
@@ -726,6 +786,22 @@ function extractEmailAddress(headerValue) {
 
 function normalizeAddress(value) {
   return String(value || "").replace(/[^\d+]/g, "");
+}
+
+// v1.2 Phase 04: text used to embed a student's profile context. We
+// concatenate the structured fields with labels so the embedding captures
+// both content and field role (a project description means something
+// different from a notes field).
+function flattenProfileForEmbedding(context) {
+  if (!context) return "";
+  const parts = [];
+  if (Array.isArray(context.interests) && context.interests.length) {
+    parts.push("interests: " + context.interests.join(", "));
+  }
+  if (context.projects) parts.push("projects: " + context.projects);
+  if (context.preferredWork) parts.push("preferred work: " + context.preferredWork);
+  if (context.notes) parts.push("notes: " + context.notes);
+  return parts.join("\n").trim();
 }
 
 function mapStudent(row) {
