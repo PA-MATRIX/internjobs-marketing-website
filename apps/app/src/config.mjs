@@ -46,6 +46,18 @@ export function getConfig(env = process.env) {
     // tests assert the approve → 'sent' transition without hitting
     // Photon/Cloudflare. NEVER set this in production.
     outboundDryRun: env.OUTBOUND_DRY_RUN === "true",
+    // v1.2 STORAGE-01 (scope-add 2026-05-16): R2 storage scaffold.
+    // Cloudflare R2 (S3-compatible) for per-entity artifact tree. Private
+    // bucket + signed-URL-only sharing (Mala posture from SuperIntelligence).
+    // Fail-soft: callers must check getR2Client() for null on missing envs.
+    // Account-ID fallback CF_ACCOUNT_ID matches SuperIntelligence convention
+    // for repos that already have a CF Account ID env in the shell.
+    r2: {
+      accountId: env.R2_ACCOUNT_ID || env.CF_ACCOUNT_ID || "",
+      accessKeyId: env.R2_ACCESS_KEY_ID || "",
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY || "",
+      bucket: env.R2_BUCKET || "internjobs-agent-store",
+    },
   };
 }
 
@@ -63,6 +75,16 @@ export function getMissingProviderConfig(config) {
   if (!config.emailWorkerSecret) warnings.push("EMAIL_WORKER_SECRET (warn — required for inbound email in Phase 05)");
   if (!config.cloudflareEmailAccountId) warnings.push("CLOUDFLARE_EMAIL_ACCOUNT_ID (warn — required for outbound email in Phase 05)");
   if (!config.cloudflareEmailApiToken) warnings.push("CLOUDFLARE_EMAIL_API_TOKEN (warn — required for outbound email in Phase 05)");
+
+  // STORAGE-01: R2 envs are entirely optional in v1.2 (no ingestion is
+  // wired). Warn ONLY when the operator partially set them (so a missing
+  // SECRET_ACCESS_KEY next to a present ACCESS_KEY_ID is loud), not when
+  // all four are unset.
+  const r2 = config.r2 || {};
+  const r2Set = [r2.accountId, r2.accessKeyId, r2.secretAccessKey].filter(Boolean).length;
+  if (r2Set > 0 && r2Set < 3) {
+    warnings.push("R2_* (warn — partial R2 config: set R2_ACCOUNT_ID + R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY together, or none)");
+  }
 
   // Back-compat: callers (e.g. /config/status route) currently expect an
   // array. Append warnings with the "(warn — …)" prefix so they're visible

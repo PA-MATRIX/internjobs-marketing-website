@@ -28,6 +28,7 @@ import {
 } from "./views.mjs";
 import { routeAndSend } from "./outbound.mjs";
 import { handleInteg01Status } from "./routes/admin.mjs";
+import { getR2Client } from "./storage/r2.mjs";
 
 const config = getConfig();
 const store = createStore(config);
@@ -86,6 +87,17 @@ const server = createServer(async (req, res) => {
         mastraReady: isMastraReady(),
         pgvectorReady,
         openaiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
+        // v1.2 STORAGE-01 (scope-add 2026-05-16): r2Ready is true iff all
+        // four R2 envs are set (accountId + accessKeyId + secretAccessKey)
+        // AND the client constructed without error. Unset envs are NOT a
+        // failure — STORAGE-01 ships the scaffold only; ingestion lands in
+        // v1.3. We do not call R2 here (no network hit on /healthz).
+        r2Ready: Boolean(
+          config.r2?.accountId &&
+            config.r2?.accessKeyId &&
+            config.r2?.secretAccessKey &&
+            getR2Client() !== null,
+        ),
       });
       return;
     }
