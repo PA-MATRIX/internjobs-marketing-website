@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
 import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
@@ -38,6 +39,9 @@ const server = createServer(async (req, res) => {
           photonNumber: Boolean(config.photon.fromNumber),
           photonWebhook: Boolean(config.photon.webhookSecret),
           spectrumListener: Boolean(config.enableSpectrumListener),
+          // v1.2 Phase 03: presence-only checks (we don't call Resend here).
+          emailWorkerSecret: Boolean(config.emailWorkerSecret),
+          resendApiKey: Boolean(config.resendApiKey),
         },
       });
       return;
@@ -199,6 +203,75 @@ const server = createServer(async (req, res) => {
         error: confirmation.error,
         eventType: confirmation.eventType,
       });
+      return;
+    }
+
+    // ─── Inbound email webhook (v1.2 Phase 03 EMAIL-01) ──────────────────────
+    //
+    // Receives HMAC-signed payloads from the CF Email Worker
+    // (apps/email-worker). The Worker signs payload bytes with EMAIL_WORKER_SECRET
+    // using Web Crypto HMAC-SHA256; we verify here with Node crypto. Two
+    // checks happen:
+    //   1. Fast-fail: shared-secret header equals config.emailWorkerSecret
+    //      (constant-time compare via timingSafeEqual).
+    //   2. HMAC: recompute HMAC over the raw bytes and timingSafeEqual the hex.
+    //
+    // If either check fails → 401. If body parse fails → 400. On success we
+    // call store.recordEmailInbound which writes an inbound_messages row +
+    // an audit_events row, then return 200 quickly so the Worker doesn't
+    // fall back to the operator-forward path (PITFALLS #7).
+    if (req.method === "POST" && url.pathname === "/webhooks/email") {
+      if (!config.emailWorkerSecret) {
+        sendJson(res, 503, { error: "email_worker_secret_not_configured" });
+        return;
+      }
+
+      const rawBody = await readBody(req);
+      const providedSecret = String(req.headers["x-email-worker-secret"] || "");
+      const providedSig = String(req.headers["x-email-hmac-sha256"] || "");
+
+      const secretOk = safeStringEqual(providedSecret, config.emailWorkerSecret);
+      const expectedSig = createHmac("sha256", config.emailWorkerSecret).update(rawBody).digest("hex");
+      const sigOk = safeStringEqual(providedSig, expectedSig);
+
+      if (!secretOk || !sigOk) {
+        sendJson(res, 401, { error: "unauthorized" });
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(rawBody || "{}");
+      } catch (_) {
+        sendJson(res, 400, { error: "invalid_json" });
+        return;
+      }
+
+      try {
+        const result = await store.recordEmailInbound({
+          from: payload.from,
+          to: payload.to,
+          subject: payload.subject,
+          body: payload.body,
+          ts: payload.ts,
+        });
+        sendJson(res, 200, {
+          ok: true,
+          duplicate: result.duplicate,
+          eventType: result.eventType,
+        });
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "email_inbound_persist_failed",
+            error: err?.message ?? String(err),
+          }),
+        );
+        // Return 500 so the Worker falls back to operator-forward — the
+        // email is not lost; operator sees it in ops@internjobs.ai.
+        sendJson(res, 500, { error: "internal_error" });
+      }
       return;
     }
 
@@ -470,4 +543,15 @@ async function requireStartupAuthOrRedirect(req, res) {
     return null;
   }
   return auth;
+}
+
+// Constant-time string equality. Used by the email webhook to compare both
+// the shared-secret header and the HMAC hex string in a timing-safe way.
+// Returns false on any length mismatch (timingSafeEqual throws on unequal
+// lengths, which would leak length via timing through the throw path).
+function safeStringEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

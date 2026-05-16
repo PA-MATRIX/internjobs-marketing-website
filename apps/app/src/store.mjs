@@ -229,6 +229,25 @@ class MemoryStore {
   async writeAuditEvent(studentId, eventType, actor, metadata = {}) {
     this.auditEvents.push({ studentId, eventType, actor, metadata, createdAt: new Date().toISOString() });
   }
+
+  // ─── Inbound email pipeline (v1.2 Phase 03) — in-memory mirror ─────────────
+  // Real implementation lives in PostgresStore.recordEmailInbound. This stub
+  // exists so dev mode (no DATABASE_URL) doesn't crash the smoke suite if
+  // POST /webhooks/email is ever exercised against an in-memory store.
+  async recordEmailInbound({ from, to, subject, body, ts }) {
+    const channelAddress = String(from || "")
+      .match(/<([^>]+)>/)?.[1]
+      ?.toLowerCase() ?? String(from || "").trim().toLowerCase();
+    const providerEventId = `email:${channelAddress || "unknown"}:${ts || Date.now()}`;
+    this.auditEvents.push({
+      studentId: null,
+      eventType: "startup_email_received",
+      actor: "provider",
+      metadata: { provider: "email", channelAddress, subject: String(subject || ""), providerEventId },
+      createdAt: new Date().toISOString(),
+    });
+    return { inboundId: null, startupId: null, memberId: null, duplicate: false, eventType: "startup_email_received" };
+  }
 }
 
 class PostgresStore {
@@ -602,6 +621,107 @@ class PostgresStore {
       [roleId, startupId],
     );
   }
+
+  // ─── Inbound email pipeline (v1.2 Phase 03) ────────────────────────────────
+  //
+  // recordEmailInbound is the canonical Fly-side handler for inbound email
+  // events that arrive from the CF Email Worker via POST /webhooks/email.
+  // It:
+  //   1. Writes an inbound_messages row (provider='email', channel_type='email').
+  //   2. Looks up startup_id by matching the sender's From: address against
+  //      startup_members.email (case-insensitive). Unknown senders are NOT
+  //      a failure — they get a null startup_id and the audit event records
+  //      'unmatched_startup_email' so the operator can resolve manually.
+  //   3. Writes an audit_events row with event_type='startup_email_received'.
+  //
+  // Idempotency: provider_event_id is built from (from + ts) so the same
+  // upstream message replayed by the Worker doesn't create duplicate rows.
+  // The partial unique index inbound_messages_provider_event_uidx enforces
+  // this at the DB level.
+  async recordEmailInbound({ from, to, subject, body, ts }) {
+    const fromAddr = String(from || "").trim();
+    const channelAddress = extractEmailAddress(fromAddr).toLowerCase();
+
+    // Lookup the startup whose member has this email (case-insensitive).
+    let startupId = null;
+    let memberId = null;
+    if (channelAddress) {
+      const { rows } = await this.pool.query(
+        `select id, startup_id from startup_members
+         where lower(email) = $1 limit 1`,
+        [channelAddress],
+      );
+      if (rows[0]) {
+        startupId = rows[0].startup_id;
+        memberId = rows[0].id;
+      }
+    }
+
+    const providerEventId = `email:${channelAddress || "unknown"}:${ts || Date.now()}`;
+
+    // Insert the inbound_messages row. on conflict do nothing makes a
+    // Worker retry idempotent.
+    const inserted = await this.pool.query(
+      `insert into inbound_messages
+         (provider, provider_event_id, channel_type, channel_address,
+          startup_id, direction, body, metadata)
+       values ('email', $1, 'email', $2, $3, 'inbound', $4, $5)
+       on conflict (provider, provider_event_id)
+         where provider_event_id is not null
+         do nothing
+       returning id`,
+      [
+        providerEventId,
+        channelAddress || null,
+        startupId,
+        String(body || ""),
+        {
+          from: fromAddr,
+          to: String(to || ""),
+          subject: String(subject || ""),
+          receivedAt: new Date().toISOString(),
+        },
+      ],
+    );
+
+    const inboundId = inserted.rows[0]?.id || null;
+    const duplicate = !inboundId;
+
+    // audit_events: student_id-keyed table, so for startup-side events we
+    // pass null student_id. The metadata captures startup_id when known.
+    const eventType = startupId ? "startup_email_received" : "unmatched_startup_email";
+    await this.pool.query(
+      `insert into audit_events (student_id, event_type, actor, metadata)
+       values (null, $1, 'provider', $2)`,
+      [
+        eventType,
+        {
+          provider: "email",
+          channelAddress,
+          subject: String(subject || ""),
+          startupId,
+          memberId,
+          inboundId,
+          duplicate,
+        },
+      ],
+    );
+
+    return { inboundId, startupId, memberId, duplicate, eventType };
+  }
+}
+
+// Parse an RFC 5322 From: value down to the bare addr-spec. We don't need
+// a full grammar — the two common shapes are:
+//   "Jane Doe <jane@example.com>"
+//   "jane@example.com"
+// We pull anything inside angle brackets if present, otherwise return the
+// trimmed input. Lower-casing is the caller's responsibility.
+function extractEmailAddress(headerValue) {
+  const s = String(headerValue || "").trim();
+  const angle = s.match(/<([^>]+)>/);
+  if (angle) return angle[1].trim();
+  return s;
 }
 
 function normalizeAddress(value) {

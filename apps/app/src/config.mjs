@@ -25,16 +25,35 @@ export function getConfig(env = process.env) {
       fromNumber: env.PHOTON_FROM_NUMBER || env.SPECTRUM_FROM_NUMBER || "",
       webhookSecret: env.PHOTON_WEBHOOK_SECRET || env.SPECTRUM_WEBHOOK_SECRET || "",
     },
+    // v1.2 Phase 03 — startup email channel.
+    // emailWorkerSecret: shared HMAC secret with the CF Email Worker
+    //   (apps/email-worker). The Worker signs the JSON payload with this
+    //   secret and includes it in `x-email-worker-secret`; the Fly app
+    //   verifies via crypto.timingSafeEqual.
+    // resendApiKey: outbound transactional sending via Resend. Not exercised
+    //   until Phase 05 (operator approval gate) actually triggers a send —
+    //   loaded here so /healthz can report presence.
+    emailWorkerSecret: env.EMAIL_WORKER_SECRET || "",
+    resendApiKey: env.RESEND_API_KEY || "",
   };
 }
 
 export function getMissingProviderConfig(config) {
   const missing = [];
+  const warnings = [];
 
   if (!config.clerk.publishableKey && !config.clerk.signInUrl) missing.push("CLERK_PUBLISHABLE_KEY or CLERK_SIGN_IN_URL");
   if (!config.databaseUrl) missing.push("DATABASE_URL");
   if (!config.photon.fromNumber) missing.push("PHOTON_FROM_NUMBER");
   if (!config.photon.webhookSecret) missing.push("PHOTON_WEBHOOK_SECRET or SPECTRUM_WEBHOOK_SECRET");
 
-  return missing;
+  // Phase 03 keys: warnings (not hard blocks) — they become hard blocks in
+  // Phase 05 when sends are required and inbound is required end-to-end.
+  if (!config.emailWorkerSecret) warnings.push("EMAIL_WORKER_SECRET (warn — required for inbound email in Phase 05)");
+  if (!config.resendApiKey) warnings.push("RESEND_API_KEY (warn — required for outbound email in Phase 05)");
+
+  // Back-compat: callers (e.g. /config/status route) currently expect an
+  // array. Append warnings with the "(warn — …)" prefix so they're visible
+  // but distinguishable from hard misses. The return type stays string[].
+  return [...missing, ...warnings];
 }

@@ -1,0 +1,16 @@
+name = "internjobs-email-ingest"
+main = "src/index.js"
+compatibility_date = "2026-05-16"
+
+[vars]
+FLY_INGEST_URL = "https://app.internjobs.ai/webhooks/email"
+
+# EMAIL_WORKER_SECRET is set as an encrypted secret via:
+#   cd apps/email-worker && npx wrangler secret put EMAIL_WORKER_SECRET
+# Never put it in this file — wrangler.toml is committed to git.
+
+# Cloudflare Email Routing rule (configured in CF Dashboard, not here):
+#   catch-all *@internjobs.ai → Send to Worker → internjobs-email-ingest
+# A catch-all is used so both the v1.2 entry address (startups@internjobs.ai)
+# and the Phase-04 reply-to pattern (conv_{conversation_id}@internjobs.ai)
+# are handled without a wrangler.toml change.

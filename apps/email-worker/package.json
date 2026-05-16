@@ -1,0 +1,19 @@
+{
+  "name": "@internjobs/email-worker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cloudflare Email Worker — receives inbound mail for *@internjobs.ai, HMAC-signs the parsed payload, POSTs it to the Fly app's /webhooks/email endpoint, and falls back to forwarding raw mail to ops@internjobs.ai if the POST fails.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail internjobs-email-ingest",
+    "check": "node --check src/index.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
