@@ -1,6 +1,6 @@
 # v1.2 — User Actions Manifest
 
-**Status as of 2026-05-16:** All v1.2 code is committed across 16 commits on `main` (Phases 01–06). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Resend API key must exist before Fly redeploys with the key in scope).
+**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, plus the 2026-05-16 Resend → Cloudflare Email Service swap). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
 
 ---
 
@@ -71,28 +71,43 @@
 
 ---
 
-## Section C — Resend domain verification (Phase 03 outbound)
+## Section C — Cloudflare Email Service onboarding (Phase 03 outbound)
 
-### C1. Sign up + add domain
+Cloudflare Email Service (the "Agent Mail" product launched at Agents Week 2026,
+public beta as of 2026-04-17) is the v1.2 outbound provider. Hard prereq:
+`internjobs.ai` must be on Cloudflare DNS (it already is — same zone where the
+Email Routing MX from B4 lives).
 
-- Sign up at `resend.com` (use `rentalaraj@gmail.com`).
-- Dashboard → Domains → Add `internjobs.ai`.
+### C1. Onboard `internjobs.ai` for Email Sending
 
-### C2. Add DNS records in Cloudflare
+- Cloudflare dashboard → `internjobs.ai` zone → Email → **Email Sending** → **Onboard Domain**.
+- Select `internjobs.ai`. Cloudflare will display a set of DNS records to add:
+  - **MX bounce** on `cf-bounce.internjobs.ai`
+  - **SPF TXT** (an `include:` entry — make sure it merges with the existing SPF from B4 if any; don't end up with two SPF TXTs on the apex)
+  - **DKIM TXT**
+  - **DMARC TXT** on `_dmarc.internjobs.ai`
+- Click **Add records** (Cloudflare adds them automatically since the zone is in the same account). Wait a few minutes for propagation.
+- These coexist with the inbound MX from B4 — different record names (`internjobs.ai` MX → Email Routing; `cf-bounce.internjobs.ai` MX → Email Sending bounce handling), no conflict.
 
-- Resend will show SPF + DKIM + (optionally) DMARC records.
-- Add them as TXT / CNAME records in Cloudflare DNS for `internjobs.ai` zone.
-- These coexist with the inbound MX from B4 — different record types, no conflict.
+### C2. Wait for verification
 
-### C3. Verify in Resend
+- The Email Sending dashboard shows each record status. Wait until all turn green / verified. (If a single record stays red after 10 min, click "Re-check"; if it persists, check that the SPF wasn't duplicated.)
 
-- Resend dashboard → click "Verify DNS" until all records turn green.
+### C3. Create an API token
 
-### C4. Generate API key + store
+- Cloudflare dashboard → top-right user menu → **My Profile** → **API Tokens** → **Create Token**.
+- Use a **Custom Token**:
+  - Permissions: **Account** → **Email Sending** → **Edit**.
+  - Account Resources: include your account that owns `internjobs.ai`.
+  - Name it `internjobs-fly-prod-email-sending`.
+- Save the token value (one-time visible) and grab the **Account ID** from the dashboard sidebar.
 
-- Resend → API Keys → Create. Name `internjobs-fly-prod`, "Sending" scope.
-- Infisical `prod` `/internjobs-ai` → add `RESEND_API_KEY`.
-- Re-run Fly secrets import.
+### C4. Store credentials
+
+- Infisical `prod` `/internjobs-ai`:
+  - Add `CLOUDFLARE_EMAIL_ACCOUNT_ID` = the Account ID from C3.
+  - Add `CLOUDFLARE_EMAIL_API_TOKEN` = the token from C3.
+- Re-run the Fly secrets import (same command as A2).
 
 ---
 
@@ -122,7 +137,7 @@ curl https://app.internjobs.ai/healthz | jq .
 ```
 Expect every key TRUE:
 - `clerk`, `database`, `photonNumber`, `photonWebhook`, `spectrumListener` (v1.0/1.1 keys)
-- `emailWorkerSecret`, `resendApiKey` (Phase 03)
+- `emailWorkerSecret`, `cloudflareEmailReady` (Phase 03 — `cloudflareEmailReady` is true iff BOTH `CLOUDFLARE_EMAIL_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` are set)
 - `mastraReady`, `pgvectorReady`, `openaiKeyPresent` (Phase 04)
 
 ```
@@ -164,7 +179,7 @@ INTEG-01 passes when:
 - **A2 + A5** load the secrets so deploy doesn't restart with stale `CLERK_SECRET_KEY` or no `OPENAI_API_KEY`.
 - **A3** unlocks startup sign-in; **A4** unlocks `/ops/*` for you.
 - **B** lights up inbound email (Worker exists; needs CF Email Routing + secret in two places).
-- **C** lights up outbound email (Resend account + domain + API key).
+- **C** lights up outbound email (Cloudflare Email Sending domain onboard + API token).
 - **D** ships the code with migrations applied.
 - **E** is the acceptance test — INTEG-01 is the v1.2 contract.
 - **F** archives and rolls into v1.3.

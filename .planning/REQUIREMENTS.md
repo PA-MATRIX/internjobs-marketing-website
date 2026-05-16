@@ -66,7 +66,7 @@ Spectrum/Photon stays the only active student SMS path. v1.2 adds startups + an 
 ### Startup Email Channel
 
 - [ ] **EMAIL-01**: Email sent to `internjobs.ai` startup-facing addresses is received by a Cloudflare Worker via Cloudflare Email Routing. Worker validates and forwards a signed payload (HMAC / shared secret) to a Mastra ingest endpoint on the Fly app. Receipt is logged in `audit_events`.
-- [ ] **EMAIL-02**: Outbound transactional email provider (Resend candidate) is configured for sending operator-approved agent drafts to startups, with SPF + DKIM verified on `internjobs.ai`. `noreply@internjobs.ai` (or equivalent) deliverable to Gmail/Outlook end-to-end. CF Email Routing is inbound-only; outbound goes through this provider.
+- [ ] **EMAIL-02**: Outbound transactional email via Cloudflare Email Service (public beta 2026-04-17, the "Agent Mail" product) is configured for sending operator-approved agent drafts to startups, with SPF + DKIM + DMARC + `cf-bounce.internjobs.ai` MX verified on the `internjobs.ai` zone. `noreply@internjobs.ai` (or equivalent) deliverable to Gmail/Outlook end-to-end. CF Email Routing handles inbound; CF Email Service handles outbound — same vendor, one less integration to operate.
 
 ### Agent Core (Mastra)
 
@@ -153,4 +153,4 @@ Maps current-milestone (v1.2) requirements to roadmap phases.
 
 ---
 *Requirements defined: 2026-05-16*
-*Last updated: 2026-05-16 after v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam) and milestone research consumption.*
+*Last updated: 2026-05-16 — Resend → Cloudflare Email Service swap for EMAIL-02 outbound (already on CF DNS, one less vendor); prior 2026-05-16 update covered v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam) and milestone research consumption.*

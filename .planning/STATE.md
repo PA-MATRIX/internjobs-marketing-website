@@ -12,7 +12,7 @@ last_activity: "2026-05-16"
 session_last: "2026-05-16"
 resume_file: ".planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md"
 blockers:
-  - "All 6 v1.2 phases code-complete (16 commits on main). Remaining work is user-only: DNS proxy fix, Clerk key rotation, Clerk strategy enablement, operator publicMetadata, CF Email Routing setup, Resend domain verify + API key, OPENAI_API_KEY, migrations applied to prod Neon, fly deploy, INTEG-01 11-step smoke test in prod. See .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md for the ordered checklist."
+  - "All 6 v1.2 phases code-complete (16 commits on main) + 2026-05-16 Resend → Cloudflare Email Service swap. Remaining work is user-only: DNS proxy fix, Clerk key rotation, Clerk strategy enablement, operator publicMetadata, CF Email Routing setup, Cloudflare Email Service onboarding (Account ID + Email-Sending-scoped API token), OPENAI_API_KEY, migrations applied to prod Neon, fly deploy, INTEG-01 11-step smoke test in prod. See .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md for the ordered checklist."
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/ROADMAP.md (created 2026-05-16)
 See: .planning/milestones/v1.2-two-sided-agent-mvp/USER-ACTIONS.md (created 2026-05-16)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** v1.2 — all phase code shipped; user-action checklist (DNS / secrets / Clerk dashboard / CF Email Routing / Resend / deploy / smoke test) is the remaining gate.
+**Current focus:** v1.2 — all phase code shipped (plus 2026-05-16 Resend → Cloudflare Email Service swap); user-action checklist (DNS / secrets / Clerk dashboard / CF Email Routing / CF Email Sending onboard / deploy / smoke test) is the remaining gate.
 
 ## Current Position
 
@@ -51,7 +51,7 @@ Progress: █████████░ 90% (code 100%, prod-deploy + smoke tes
 |-------|-------|--------|---------|
 | 01. Pre-flight + SMS Abstraction | 1 | Code-complete (USER ACTION blocks: DNS, Clerk rotate, fly deploy) | f8f01bb, 52cf272 |
 | 02. Startup Identity, Consent & Roles | 1 | Code-complete (USER ACTION blocks: Clerk strategy enable, migrate, deploy) | b8aa57b, 90a36c4, 7918567, 182b4f0 |
-| 03. Startup Email Channel | 1 | Code-complete (USER ACTION blocks: CF Email Routing, Resend domain, secrets, wrangler deploy, fly deploy) | 75f809a, e9478b4 |
+| 03. Startup Email Channel | 1 | Code-complete (USER ACTION blocks: CF Email Routing, CF Email Sending onboard, secrets, wrangler deploy, fly deploy). 2026-05-16: outbound provider swapped from Resend to Cloudflare Email Service. | 75f809a, e9478b4 |
 | 04. Mastra Agent Core | 1 | Code-complete (USER ACTION blocks: OPENAI_API_KEY, migrate, fly deploy, optional load test) | 4b9706b, b793fd3, 0422272 |
 | 05. Operator Approval Gate | 1 | Code-complete (USER ACTION blocks: set publicMetadata.userType='operator', fly deploy) | e27cc19, 8e19fa9 |
 | 06. Two-Sided Integration Smoke Test | 1 | Code artifacts shipped (runbook + admin endpoint); the actual 11-step prod smoke test is the user's hands | 9f84368, e1c21e9, 0013630 |
@@ -68,12 +68,13 @@ Progress: █████████░ 90% (code 100%, prod-deploy + smoke tes
 - v1.1 pairing welcome SMS remains an auto-send (the one pre-existing exception; not an agent draft).
 - CF Email Worker + Fly ingest use HMAC-SHA256 with Node `crypto.timingSafeEqual` for verification. Worker falls back to `message.forward(OPERATOR_FALLBACK)` on Fly failure per PITFALLS #7. Cloudflare Queues deferred (TODO note in Worker code).
 - Phase 04 Flag 2/3 fixes applied: `student_threads.provider='cognee' → 'mastra'` data migration; `confirmPairingCode` parameterized on `provider` (was hardcoded `'photon'`).
+- 2026-05-16: EMAIL-02 outbound provider swapped from Resend to Cloudflare Email Service (the "Agent Mail" product, public beta 2026-04-17). Rationale: internjobs.ai is already on Cloudflare DNS (the hard prereq), already uses CF Email Routing for inbound, and standardizing on one vendor for email cuts an integration. Implementation: `apps/app/src/email/outbound.mjs` rewritten as a `fetch()` call to `POST /accounts/{account_id}/email/sending/send` (no SDK, no new npm dep — `resend` removed). Config keys swapped to `CLOUDFLARE_EMAIL_ACCOUNT_ID` + `CLOUDFLARE_EMAIL_API_TOKEN`; `/healthz` now reports `cloudflareEmailReady`. Future v1.3 could move the call into a Worker binding — out of scope here.
 
 ### Pending Todos (user-only — see USER-ACTIONS.md for ordered checklist)
 
 - Section A: Cloudflare DNS proxy fix; rotate `CLERK_SECRET_KEY`; enable email/Google/Microsoft in Clerk; set operator `publicMetadata.userType`; add `OPENAI_API_KEY` to Infisical.
 - Section B: Generate `EMAIL_WORKER_SECRET`; store in Cloudflare Worker AND Infisical; enable CF Email Routing on internjobs.ai; add catch-all rule to Worker; confirm `ops@internjobs.ai` fallback; `wrangler deploy`.
-- Section C: Resend signup; add domain; SPF + DKIM in CF DNS; verify; API key → Infisical.
+- Section C: Cloudflare Email Service onboard `internjobs.ai` (Email Sending → Onboard Domain → adds `cf-bounce` MX + SPF + DKIM + DMARC); create Account-scoped "Email Sending" API token; store `CLOUDFLARE_EMAIL_ACCOUNT_ID` + `CLOUDFLARE_EMAIL_API_TOKEN` in Infisical.
 - Section D: Apply migrations 0003 + 0003b + 0004 to prod Neon; `fly deploy`; `/healthz` green-check.
 - Section E: Run 11-step INTEG-01 protocol; fill VERIFICATION.md.
 - Section F (optional): `/rrr:audit-milestone` + `/rrr:complete-milestone`.

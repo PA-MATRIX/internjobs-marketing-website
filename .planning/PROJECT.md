@@ -57,7 +57,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - [ ] **STARTUP-02**: Startup profile + founder identity + consent capture, with schema for `startups` and `startup_members`.
 - [ ] **ROLE-01**: New `roles` schema (`startup_id`, `title`, `description`, `requirements`, `status`, `location`, `comp_range`, `created_at`) with simple in-app CRUD.
 - [ ] **EMAIL-01**: Cloudflare Email Routing on `internjobs.ai` for startup-facing addresses; Worker validates and forwards to a Mastra ingest endpoint.
-- [ ] **EMAIL-02**: Outbound transactional email provider for sending agent drafts to startups (Cloudflare Email Routing is inbound-only). Provider TBD (Resend candidate).
+- [ ] **EMAIL-02**: Outbound transactional email via Cloudflare Email Service ("Agent Mail", public beta 2026-04-17) for sending agent drafts to startups. CF Email Routing handles inbound; CF Email Service handles outbound — same vendor.
 - [ ] **AGENT-01**: Mastra agent core with workflows for the student → match → draft → approve → send loop.
 - [ ] **AGENT-02**: Mastra thread memory keyed by `student_id` and separately by `startup_id` for full conversation history.
 - [ ] **AGENT-03**: pgvector semantic memory on Neon for long-term cross-conversation recall.
@@ -99,7 +99,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - **Database**: Neon Postgres is the primary application database; pgvector hosts agent semantic memory.
 - **Agent framework (v1.2)**: Mastra owns workflows + thread memory + vector memory orchestration. Cognee is out for v1.2.
 - **Messaging (students)**: Spectrum/Photon stays the active SMS path through v1.2, behind a new `SmsProvider` interface that v1.3+ can swap (e.g., Telnyx adapter) without touching call-sites.
-- **Messaging (startups, v1.2)**: Cloudflare Email Routing → Worker → Mastra ingest for inbound. Outbound via separate transactional email provider (CF Email Routing is inbound-only).
+- **Messaging (startups, v1.2)**: Cloudflare Email Routing → Worker → Mastra ingest for inbound. Outbound via Cloudflare Email Service ("Agent Mail", public beta 2026-04-17) — same vendor as inbound. Hard prereq: `internjobs.ai` is on Cloudflare DNS.
 - **Safety**: No auto-send. Every outbound message in v1.2 goes through the operator approval gate.
 - **Compliance**: LinkedIn data collection must be user-authorized — no credential capture, anti-bot bypass, or private-surface scraping. Sprite.dev + Bright Data placeholders stay inert.
 - **Secrets**: Provider secrets live in Infisical, not repo files or plain local notes; never print secret values into chat, logs, or docs.
@@ -121,8 +121,8 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 | Keep Spectrum/Photon as the active v1.2 SMS path; ship only an `SmsProvider` interface seam for future swap | Avoid stacking an unfamiliar SMS platform on top of an unfamiliar agent framework in one milestone; v1.1 implementation is verified in prod; Telnyx work moves to v1.3 once Mastra + operator gate are proven | — Pending v1.2 execution |
 | Mastra for agent core, Cognee out for v1.2 | Single coherent agent framework with thread + pgvector memory keeps v1.2 scope tight; revisit Cognee only if matching quality plateaus | — Pending v1.2 execution |
 | Cloudflare Email Routing → Worker → Mastra for startup inbound | Email is the primary startup channel; Worker validation keeps the Fly app loosely coupled to inbound | — Pending v1.2 execution |
-| Separate transactional email provider for outbound (Resend candidate) | Cloudflare Email Routing is inbound-only; outbound startup-facing emails need a real SMTP/API provider with deliverability/DKIM/SPF | — Pending v1.2 execution |
+| Cloudflare Email Service for outbound (public beta as of 2026-04-17) | Already on Cloudflare DNS (hard prereq); already using CF Email Routing for inbound; one less vendor to operate; native agent-targeted product launched at Agents Week 2026 | — Code shipped 2026-05-16; pending CF dashboard onboarding |
 | Operator approval gate; no auto-send in v1.2 | Safety + learning constraint while agent quality is unproven; rejected drafts feed back into training | — Pending v1.2 execution |
 
 ---
-*Last updated: 2026-05-15 after v1.1 milestone completion and v1.2 scope revision (Telnyx held for v1.3, Spectrum stays active behind `SmsProvider` seam).*
+*Last updated: 2026-05-16 — Resend → Cloudflare Email Service swap for EMAIL-02 outbound (already on CF DNS, one less vendor; CF "Agent Mail" public beta 2026-04-17). Prior update 2026-05-15 after v1.1 completion and v1.2 scope revision (Telnyx held for v1.3, Spectrum stays active behind `SmsProvider` seam).*
