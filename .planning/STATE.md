@@ -1,12 +1,12 @@
 ---
 schema_version: 2
-milestone: "Between milestones"
+milestone: "v1.2"
 phase: 0
 phase_name: ""
 phase_total: 0
 plan: 0
 plan_total: 0
-status: "v1_1_archived_v1_2_pending_definition"
+status: "v1_2_started_pending_requirements"
 progress: 0
 last_activity: "2026-05-15"
 session_last: "2026-05-15"
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 
 ## Current Position
 
-Milestone: Between milestones
-Phase: —
+Milestone: v1.2 — Two-Sided Agent MVP
+Phase: Not started (run `/rrr:create-roadmap` after `/rrr:define-requirements`)
 Plan: —
-Status: v1.1 archived; v1.2 (Two-Sided Agent MVP) defined in PROJECT.md `### Active`. Ready for `/rrr:define-requirements`.
-Last activity: 2026-05-15 — v1.1 milestone archived (`.planning/milestones/v1.1-seamless-waitlist/`); tagged `v1.1`; PROJECT.md evolved with v1.2 active requirements.
+Status: Defining requirements — v1.2 scope captured in PROJECT.md `### Active`; ready for `/rrr:define-requirements` to formalize.
+Last activity: 2026-05-15 — v1.2 milestone started (Telnyx student SMS in parallel with Spectrum, Mastra agent core with thread + pgvector memory, Cloudflare Email Routing for startup inbound, startup onboarding + roles model, operator approval gate UI).
 
 Progress: 7 phases, 16 plans shipped across 2 milestones (v1.0: 6 phases / 15 plans, v1.1: 1 phase / 1 plan).
 
