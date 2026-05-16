@@ -22,11 +22,12 @@
 //      The contract surface (conversation row created, draft row written)
 //      is unchanged.
 //   7. Compose prompt: system + profile + history + matched role + new body.
-//   8. Call LLM → returns generated body. In v1.2 we keep this behind an
-//      OPENAI_API_KEY check; without a key (or with LLM_PROVIDER=stub for
-//      tests) we synthesize a deterministic canned draft so the rest of the
-//      pipeline stays exercised. Phase 06 canary will validate the real
-//      LLM path.
+//   8. Call LLM → returns generated body. In v1.2 (post 2026-05-16 swap)
+//      this is a POST to the internjobs-ai-proxy Worker (/chat) using the
+//      Workers AI binding. Without AI_WORKER_URL + AI_WORKER_SECRET (or
+//      with LLM_PROVIDER=stub for tests) we synthesize a deterministic
+//      canned draft so the rest of the pipeline stays exercised. Phase 06
+//      canary validates the real LLM path.
 //   9. Insert drafts row with status='pending_review', recipient_type='student',
 //      channel='sms'. agent_metadata captures match_source, model, and a
 //      compact prompt summary.
@@ -37,21 +38,18 @@
 // HARD CONSTRAINT: This workflow MUST NOT send any outbound message. It
 // writes to drafts and stops. Phase 05 owns send.
 
-import OpenAI from "openai";
 import { logEmbedErr } from "../embeddings.mjs";
 import { buildConversationReplyTo } from "./reply-to.mjs";
 
-const DEFAULT_MODEL = process.env.AGENT_MODEL || "gpt-4o-mini";
+// v1.2 2026-05-16 swap: chat completion now goes through the
+// internjobs-ai-proxy Worker (Cloudflare Workers AI binding). The Node
+// app never sees a CF API token; auth is the shared AI_WORKER_SECRET.
+//
+// Default model identifier flows through to drafts.agent_metadata.model.
+// The proxy Worker pins the actual CF model name (@cf/meta/llama-3.1-8b-
+// instruct); AGENT_MODEL is kept as a label override for traceability.
+const DEFAULT_MODEL = process.env.AGENT_MODEL || "@cf/meta/llama-3.1-8b-instruct";
 const LAST_N_MESSAGES = 20; // PITFALLS #19
-
-let _openai = null;
-function getOpenAI() {
-  if (_openai) return _openai;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  _openai = new OpenAI({ apiKey });
-  return _openai;
-}
 
 /**
  * Execute one turn of the student inbound workflow.
@@ -60,9 +58,10 @@ function getOpenAI() {
  * @param {import('pg').Pool} deps.pool   Postgres pool from PostgresStore.
  * @param {object}            [deps.llm]  Optional LLM stub used by tests.
  *                                         { complete: async ({prompt, model}) => string }.
- *                                         If omitted, the real OpenAI client
- *                                         is used when OPENAI_API_KEY is set,
- *                                         else a canned-string stub is used.
+ *                                         If omitted, the internjobs-ai-proxy
+ *                                         Worker is called when AI_WORKER_URL
+ *                                         + AI_WORKER_SECRET are set, else a
+ *                                         canned-string stub is used.
  * @param {string}            deps.messageId  The inbound_messages.id to process.
  *
  * @returns {Promise<{
@@ -143,7 +142,7 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
     inboundBody: inbound.body,
   });
 
-  // 8. Call LLM (real OpenAI, or test stub, or deterministic canned fallback).
+  // 8. Call LLM (proxy Worker → Workers AI, test stub, or canned fallback).
   const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
 
   // 9. Insert drafts row. status='pending_review' — operator queue gate.
@@ -383,10 +382,14 @@ async function runLLM({ llm, prompt, model }) {
     return { body: String(body || ""), model: model + "+stub" };
   }
 
-  // 2. LLM_PROVIDER=stub forces a deterministic canned response (no API call).
-  //    Used by the Phase 04 smoke test so the workflow contract is exercised
-  //    end-to-end without burning quota.
-  if (process.env.LLM_PROVIDER === "stub" || !process.env.OPENAI_API_KEY) {
+  // 2. Canned-stub mode (used by the Phase 04 smoke test). Active when:
+  //    - LLM_PROVIDER=stub is set explicitly, OR
+  //    - AI_WORKER_URL / AI_WORKER_SECRET are missing (no live proxy).
+  //    This preserves the dev/test contract from the OpenAI era so nothing
+  //    in the smoke suite needs a network egress.
+  const aiUrl = process.env.AI_WORKER_URL;
+  const aiSecret = process.env.AI_WORKER_SECRET;
+  if (process.env.LLM_PROVIDER === "stub" || !aiUrl || !aiSecret) {
     return {
       body:
         "Hi! Thanks for reaching out — I'd love to chat about the role. " +
@@ -395,23 +398,43 @@ async function runLLM({ llm, prompt, model }) {
     };
   }
 
-  // 3. Real OpenAI path.
-  const client = getOpenAI();
-  if (!client) {
-    return { body: "(agent unavailable)", model: "canned-stub" };
-  }
-
+  // 3. Real path: POST to the internjobs-ai-proxy Worker (Workers AI binding).
+  //    Default provider name `workers-ai-proxy` is the swap-mode marker.
   try {
-    const res = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: "Draft concise SMS replies." },
-        { role: "user", content: prompt },
-      ],
-      max_completion_tokens: 200,
+    const res = await fetch(`${aiUrl.replace(/\/$/, "")}/chat`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-ai-worker-secret": aiSecret,
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: "Draft concise SMS replies." },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+      }),
     });
-    const body = res?.choices?.[0]?.message?.content ?? "";
-    return { body: String(body), model };
+    if (!res.ok) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "llm_call_non_2xx",
+          status: res.status,
+          model,
+        }),
+      );
+      return {
+        body: "(automated draft unavailable — operator review required)",
+        model: model + "+error",
+      };
+    }
+    const json = await res.json().catch(() => null);
+    const body = typeof json?.response === "string" ? json.response : "";
+    // Surface the actual model the proxy used (it may pin a newer version
+    // than the env-provided label).
+    return { body, model: json?.model || model };
   } catch (err) {
     console.error(
       JSON.stringify({

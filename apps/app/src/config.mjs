@@ -46,6 +46,17 @@ export function getConfig(env = process.env) {
     // tests assert the approve → 'sent' transition without hitting
     // Photon/Cloudflare. NEVER set this in production.
     outboundDryRun: env.OUTBOUND_DRY_RUN === "true",
+    // v1.2 (swap 2026-05-16): Cloudflare Workers AI via internjobs-ai-proxy.
+    // aiWorker.url    — public Worker URL (https://internjobs-ai-proxy.<acct>.workers.dev)
+    // aiWorker.secret — shared bearer in x-ai-worker-secret header; the
+    //                   Worker constant-time compares it against its
+    //                   wrangler-stored AI_WORKER_SECRET.
+    // The Fly app never holds a Cloudflare API token — all AI calls flow
+    // through the Worker, which uses its native env.AI binding.
+    aiWorker: {
+      url: env.AI_WORKER_URL || "",
+      secret: env.AI_WORKER_SECRET || "",
+    },
     // v1.2 STORAGE-01 (scope-add 2026-05-16): R2 storage scaffold.
     // Cloudflare R2 (S3-compatible) for per-entity artifact tree. Private
     // bucket + signed-URL-only sharing (Mala posture from SuperIntelligence).
@@ -75,6 +86,17 @@ export function getMissingProviderConfig(config) {
   if (!config.emailWorkerSecret) warnings.push("EMAIL_WORKER_SECRET (warn — required for inbound email in Phase 05)");
   if (!config.cloudflareEmailAccountId) warnings.push("CLOUDFLARE_EMAIL_ACCOUNT_ID (warn — required for outbound email in Phase 05)");
   if (!config.cloudflareEmailApiToken) warnings.push("CLOUDFLARE_EMAIL_API_TOKEN (warn — required for outbound email in Phase 05)");
+
+  // v1.2 swap 2026-05-16: Workers AI proxy. Warning, not hard block — the
+  // workflow falls back to canned-stub when both are missing so dev/test
+  // boots still work. Treat as a paired warning (either both or neither).
+  const ai = config.aiWorker || {};
+  const aiSet = [ai.url, ai.secret].filter(Boolean).length;
+  if (aiSet === 1) {
+    warnings.push("AI_WORKER_* (warn — partial Workers AI proxy config: set AI_WORKER_URL + AI_WORKER_SECRET together, or neither)");
+  } else if (aiSet === 0) {
+    warnings.push("AI_WORKER_URL + AI_WORKER_SECRET (warn — agent workflow runs in canned-stub mode until both set)");
+  }
 
   // STORAGE-01: R2 envs are entirely optional in v1.2 (no ingestion is
   // wired). Warn ONLY when the operator partially set them (so a missing

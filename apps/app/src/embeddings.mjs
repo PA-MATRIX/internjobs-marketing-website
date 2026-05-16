@@ -1,60 +1,74 @@
-// ─── Embedding hooks (v1.2 Phase 04, AGENT-03) ───────────────────────────────
+// ─── Embedding hooks (v1.2 Phase 04, AGENT-03 — 2026-05-16 Workers AI swap) ─
 //
-// Locked model + dimension (matches migration 0004 student_embeddings and
-// role_embeddings vector(1536) shape). Per PITFALLS #18.
+// Locked model + dimension (matches migration 0005 student_embeddings and
+// role_embeddings vector(768) shape). Per PITFALLS #18.
 //
-//   model:     text-embedding-3-small
-//   dimension: 1536
+//   provider:  Cloudflare Workers AI (via internjobs-ai-proxy Worker)
+//   model:     @cf/baai/bge-base-en-v1.5
+//   dimension: 768
+//   transport: HTTPS fetch to AI_WORKER_URL with x-ai-worker-secret header
 //
 // Background-only contract: callers MUST fire embedding writes WITHOUT
-// awaiting (`.catch(logErr)`), not inline. A failing OpenAI call must NOT
+// awaiting (`.catch(logErr)`), not inline. A failing proxy call must NOT
 // block a profile save or role create. See store.mjs saveProfileContext
 // and server.mjs roles handlers.
 //
 // Test seam:
-//   • If OPENAI_API_KEY is missing, openaiEmbed returns null (no throw).
-//     writeStudentEmbedding / writeRoleEmbedding silently no-op when given
-//     a null vector. This lets dev/test runs proceed without secrets.
+//   • If AI_WORKER_URL or AI_WORKER_SECRET is missing, workersAiEmbed
+//     returns null (no throw). writeStudentEmbedding / writeRoleEmbedding
+//     silently no-op when given a null vector. This lets dev/test runs
+//     proceed without secrets — same fail-soft posture as the old OpenAI
+//     path.
 //   • For deterministic testing, set EMBED_PROVIDER=stub. The stub returns
-//     a 1536-dim float array seeded by a hash of the input — same input
+//     a 768-dim float array seeded by a hash of the input — same input
 //     always yields the same vector, different inputs yield different
 //     vectors. Used by the Phase 04 smoke test.
+//
+// Naming: the exported function is still called `openaiEmbed` for
+// import-site back-compat (workflows + hooks). It now talks to the proxy
+// Worker, not OpenAI. Renaming the symbol is a future hygiene pass.
 
-import OpenAI from "openai";
 import { createHash } from "node:crypto";
 
-const EMBED_MODEL = "text-embedding-3-small";
-const EMBED_DIM = 1536;
-
-let _openai = null;
-function getClient() {
-  if (_openai) return _openai;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  _openai = new OpenAI({ apiKey });
-  return _openai;
-}
+const EMBED_MODEL = "@cf/baai/bge-base-en-v1.5";
+const EMBED_DIM = 768;
 
 export async function openaiEmbed(text) {
   if (process.env.EMBED_PROVIDER === "stub") return stubEmbed(text);
 
-  const client = getClient();
-  if (!client) return null;
+  const url = process.env.AI_WORKER_URL;
+  const secret = process.env.AI_WORKER_SECRET;
+  if (!url || !secret) return null;
 
   const trimmed = String(text || "").slice(0, 8000);
   if (!trimmed.trim()) return null;
 
   try {
-    const res = await client.embeddings.create({
-      model: EMBED_MODEL,
-      input: trimmed,
+    const res = await fetch(`${url.replace(/\/$/, "")}/embed`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-ai-worker-secret": secret,
+      },
+      body: JSON.stringify({ text: trimmed }),
     });
-    const vec = res?.data?.[0]?.embedding;
+    if (!res.ok) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "ai_worker_embed_non_2xx",
+          status: res.status,
+        }),
+      );
+      return null;
+    }
+    const json = await res.json().catch(() => null);
+    const vec = json?.embedding;
     if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
       console.error(
         JSON.stringify({
           level: "error",
-          message: "openai_embed_bad_shape",
+          message: "ai_worker_embed_bad_shape",
           got: vec?.length ?? null,
           expected: EMBED_DIM,
         }),
@@ -66,7 +80,7 @@ export async function openaiEmbed(text) {
     console.error(
       JSON.stringify({
         level: "error",
-        message: "openai_embed_failed",
+        message: "ai_worker_embed_failed",
         error: err?.message ?? String(err),
       }),
     );
@@ -126,7 +140,7 @@ function toPgVectorLiteral(vec) {
 }
 
 // Deterministic stub vector for tests. Hashes the input with sha-256, then
-// expands the 32 hash bytes into 1536 normalized floats. Same input → same
+// expands the 32 hash bytes into 768 normalized floats. Same input → same
 // vector (idempotent); different inputs → different vectors (discriminative).
 function stubEmbed(text) {
   const seed = createHash("sha256").update(String(text || "")).digest();
@@ -134,7 +148,7 @@ function stubEmbed(text) {
   for (let i = 0; i < EMBED_DIM; i += 1) {
     const byte = seed[i % seed.length];
     // Scale byte (0..255) to roughly [-1, 1], with a per-index jitter so the
-    // resulting vector has variation across all 1536 slots, not just 32.
+    // resulting vector has variation across all 768 slots, not just 32.
     out[i] = ((byte + i * 7) % 256) / 127.5 - 1;
   }
   return out;

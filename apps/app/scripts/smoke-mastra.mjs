@@ -3,14 +3,15 @@
 // Exercises the v1.2 Phase 04 contract end-to-end against a real Postgres
 // (any branch with migrations 0001..0004 applied). Runs in two modes:
 //
-//   Default (no OPENAI_API_KEY set):
+//   Default (no AI_WORKER_URL + AI_WORKER_SECRET set):
 //     LLM_PROVIDER=stub + EMBED_PROVIDER=stub — workflow uses canned strings
 //     for both embedding vectors and the draft body. No external calls.
 //     This is the mode we run in CI / pre-deploy.
 //
-//   With OPENAI_API_KEY set:
-//     Real OpenAI calls — costs a few cents per run. Used to validate the
-//     hot path before deploying. Not the default.
+//   With AI_WORKER_URL + AI_WORKER_SECRET set:
+//     Real Cloudflare Workers AI calls via the internjobs-ai-proxy Worker.
+//     Used to validate the hot path before deploying. Not the default
+//     (Workers AI has free-tier quotas but we still don't burn them in CI).
 //
 // Required env:
 //   SMOKE_DATABASE_URL — separate from DATABASE_URL so the smoke test never
@@ -30,7 +31,7 @@
 //      is exercised — match_source='vector'.
 //
 // What it does NOT verify (deferred to Phase 06 canary):
-//   • Real OpenAI token consumption stays under budget.
+//   • Real Workers AI token consumption stays under budget.
 //   • 20-concurrent-inbound load profile (Mastra OOM check from PITFALLS #2).
 //
 // Run:
@@ -48,8 +49,10 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-// Force stub mode unless the operator explicitly wants real API calls.
-if (!process.env.OPENAI_API_KEY) {
+// Force stub mode unless the operator has set up the Workers AI proxy and
+// explicitly opts in (both AI_WORKER_URL + AI_WORKER_SECRET present).
+// This keeps the smoke suite hermetic by default.
+if (!process.env.AI_WORKER_URL || !process.env.AI_WORKER_SECRET) {
   process.env.LLM_PROVIDER = "stub";
   process.env.EMBED_PROVIDER = "stub";
 }

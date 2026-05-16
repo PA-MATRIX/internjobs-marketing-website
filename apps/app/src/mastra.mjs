@@ -9,10 +9,12 @@
 //   @mastra/pg@1.11.0       (PostgresStore + PgVector adapter, same publish
 //                             window as core 1.35.0)
 //   @mastra/memory@1.18.2   (used only if/when we wire LLM thread memory)
-//   openai@6.38.0           (embeddings + chat completions; pinned for
-//                             reproducibility, not exact-pinned because
-//                             the OpenAI SDK is not part of the Mastra
-//                             upgrade contract)
+//
+// 2026-05-16 swap: the openai npm package was removed. Embeddings and
+// chat completions now POST to the internjobs-ai-proxy Worker (Cloudflare
+// Workers AI native binding) via plain `fetch()` from embeddings.mjs and
+// workflows/student-inbound.mjs. The Fly Node app no longer holds any
+// LLM-provider SDK or API token.
 //
 // Schema convention (PITFALLS #1, mandatory):
 //   schemaName: 'mastra' for BOTH PostgresStore and PgVector. Never 'public'.

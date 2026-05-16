@@ -623,8 +623,9 @@ class PostgresStore {
     await this.writeAuditEvent(studentId, "profile_context_updated", "student", {});
 
     // v1.2 Phase 04 (AGENT-03): fire student embedding write as background.
-    // .catch(logEmbedErr), NOT awaited — a failing OpenAI call must not block
-    // the user-visible profile save. PITFALLS-aware: keeps the hot path fast.
+    // .catch(logEmbedErr), NOT awaited — a failing proxy-Worker call must
+    // not block the user-visible profile save. PITFALLS-aware: keeps the
+    // hot path fast.
     const flattened = flattenProfileForEmbedding(context);
     if (flattened) {
       writeStudentEmbedding(this.pool, studentId, flattened).catch(logEmbedErr);
