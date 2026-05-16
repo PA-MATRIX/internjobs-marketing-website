@@ -34,5 +34,4 @@ create index if not exists inbound_messages_unprocessed_idx
   on inbound_messages(created_at)
   where processed_at is null;
 
-insert into schema_migrations (version) values ('0003b_email_inbound')
-  on conflict do nothing;
+-- (schema_migrations row inserted by migrate.mjs after this SQL commits.)

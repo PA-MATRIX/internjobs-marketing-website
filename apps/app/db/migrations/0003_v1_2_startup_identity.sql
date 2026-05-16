@@ -61,7 +61,4 @@ create table if not exists roles (
 create index if not exists roles_startup_status_idx
   on roles(startup_id, status);
 
--- ─── Schema migration record ─────────────────────────────────────────────────
-
-insert into schema_migrations (version) values ('0003_v1_2_startup_identity')
-  on conflict do nothing;
+-- (schema_migrations row inserted by migrate.mjs after this SQL commits.)

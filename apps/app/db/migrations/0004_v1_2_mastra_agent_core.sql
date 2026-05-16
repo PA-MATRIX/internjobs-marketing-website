@@ -173,6 +173,4 @@ update student_threads
        updated_at = now()
  where provider = 'cognee';
 
--- ─── Schema migration record ─────────────────────────────────────────────────
-insert into schema_migrations (version) values ('0004_v1_2_mastra_agent_core')
-  on conflict do nothing;
+-- (schema_migrations row inserted by migrate.mjs after this SQL commits.)
