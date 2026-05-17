@@ -16,5 +16,12 @@ export function loadConfig() {
     hmacSecret: required("BRIDGE_HMAC_SECRET"),
     outboundWebhookUrl: required("BRIDGE_OUTBOUND_WEBHOOK_URL"),
     logLevel: optional("BRIDGE_LOG_LEVEL", "info"),
+
+    // BlueBubbles is the new local transport (replaces spectrum-ts local
+    // mode). Defaults match BlueBubbles' out-of-the-box config: HTTP on
+    // 127.0.0.1:1234. The password is set in the BlueBubbles UI on first
+    // launch; it's required for any non-trivial deploy.
+    bluebubblesUrl: optional("BLUEBUBBLES_URL", "http://127.0.0.1:1234"),
+    bluebubblesPassword: required("BLUEBUBBLES_PASSWORD"),
   };
 }
