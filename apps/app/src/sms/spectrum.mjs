@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { Spectrum } from "spectrum-ts";
+import { Spectrum, text } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { eventIdFromPayload } from "../store.mjs";
 import { createWelcomeText } from "../messaging.mjs";
@@ -147,18 +147,30 @@ async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
           metadata: inbound.metadata || {},
         });
         if (messageId && store?.pool) {
-          runStudentInboundWorkflow({
-            pool: store.pool,
-            messageId,
-            smsProvider,
-            config,
-          }).catch((err) => {
-            console.error(JSON.stringify({
-              level: "error",
-              message: "student_inbound_workflow_failed",
-              messageId,
-              error: err?.message ?? String(err),
-            }));
+          // AWAIT the workflow inline (not fire-and-forget) so we can use
+          // space.responding() for the typing indicator and message.reply()
+          // for the in-thread blue-bubble send. This is the canonical
+          // spectrum-ts pattern per examples/basic/index.ts.
+          await space.responding(async () => {
+            try {
+              await runStudentInboundWorkflow({
+                pool: store.pool,
+                messageId,
+                smsProvider,
+                config,
+                sender: async (body) => {
+                  const outbound = await message.reply(text(body));
+                  return outbound?.id || null;
+                },
+              });
+            } catch (err) {
+              console.error(JSON.stringify({
+                level: "error",
+                message: "student_inbound_workflow_failed",
+                messageId,
+                error: err?.message ?? String(err),
+              }));
+            }
           });
         }
       } catch (err) {

@@ -106,7 +106,7 @@ const LAST_N_MESSAGES = 20; // PITFALLS #19
  *   skipped?: { reason: string },
  * }>}
  */
-export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvider, config }) {
+export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvider, config, sender }) {
   if (!pool) throw new Error("runStudentInboundWorkflow: pool is required");
   if (!messageId) throw new Error("runStudentInboundWorkflow: messageId is required");
 
@@ -247,19 +247,36 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   // 10. Autonomously send. Wrap in try/catch — a send failure flips the
   //     draft to 'failed' and writes an audit_events row, but never crashes
   //     the workflow. (Auto-retry is v1.3.)
+  //
+  //     When `sender` is provided (e.g. by the spectrum listener supplying
+  //     a callback that uses message.reply(text(...)) inside
+  //     space.responding(...)), we use IT for the actual send instead of
+  //     the routeAndSend → phantom REST path. The sender returns a
+  //     providerMessageId string (or null). This is the canonical path
+  //     for iMessage on spectrum-ts: blue bubble, typing indicator,
+  //     read receipts.
   let sent = false;
   try {
-    const sendDraft = {
-      id: draftId,
-      channel,
-      channel_address: channelAddress,
-      body: generated.body,
-      agent_metadata: agentMetadata,
-    };
-    const providerMessageId = await routeAndSend(sendDraft, {
-      smsProvider,
-      config: config || {},
-    });
+    let providerMessageId = null;
+    if (typeof sender === "function") {
+      providerMessageId = await sender(generated.body, {
+        draftId,
+        channel,
+        channelAddress,
+      });
+    } else {
+      const sendDraft = {
+        id: draftId,
+        channel,
+        channel_address: channelAddress,
+        body: generated.body,
+        agent_metadata: agentMetadata,
+      };
+      providerMessageId = await routeAndSend(sendDraft, {
+        smsProvider,
+        config: config || {},
+      });
+    }
     await pool.query(
       `update drafts
           set status = 'sent',
