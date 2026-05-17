@@ -1,6 +1,6 @@
 # v1.2 — User Actions Manifest
 
-**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add, the 2026-05-16 Workers AI swap, AND the 2026-05-16 Workers AI direct tear-out — proxy Worker `apps/ai-worker/` removed; Fly Node app now calls Cloudflare Workers AI REST API directly). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add, the 2026-05-16 Workers AI swap, the 2026-05-16 Workers AI direct tear-out — proxy Worker `apps/ai-worker/` removed; Fly Node app now calls Cloudflare Workers AI REST API directly — AND the 2026-05-16 EMAIL-03 subdomain isolation refactor — agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain so the apex stays clean for human email; Worker + Fly redeployed live; Section B revised). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
 
 **Workers AI direct status (2026-05-16):** Workers AI direct via `CLOUDFLARE_AI_API_TOKEN` (already in Infisical). Proxy Worker torn out. `/healthz` reports `workersAiReady: true`. Sections A5 (OpenAI key) and the prior proxy-Worker user-action are both dropped.
 
@@ -59,24 +59,50 @@ This step is no longer needed. Workers AI direct via `CLOUDFLARE_AI_API_TOKEN` (
 - Infisical `prod` `/internjobs-ai` → add `EMAIL_WORKER_SECRET` → same hex value.
 - Re-run Fly secrets import.
 
-### B3. Confirm or change the fallback forward address
+### B3. Confirm the operator fallback forward address
 
-- Default in `apps/email-worker/src/index.js` is `ops@internjobs.ai`. If that address doesn't exist as a deliverable mailbox, either set it up (Email Routing forward to your inbox) OR edit `OPERATOR_FALLBACK` in `apps/email-worker/src/index.js` to a real address you own, commit, and continue.
+- Default in `apps/email-worker/src/index.js` (post 2026-05-16 subdomain isolation) is `rentalaraj@gmail.com`. This is the Worker's last-resort destination when (a) the Fly POST fails OR (b) a non-conv-prefixed email arrives on the agent subdomain (e.g. `info@agent.internjobs.ai`).
+- This address MUST be a verified Destination Address in CF Email Routing (see B5a). If it isn't verified, `message.forward()` silently fails and the email is lost — there is no second fallback.
+- If you want a different fallback, edit `OPERATOR_FALLBACK` in `apps/email-worker/src/index.js`, commit, and re-run B7 (`wrangler deploy`).
 
-### B4. Enable Cloudflare Email Routing on `internjobs.ai`
+### B4. Enable Cloudflare Email Routing on the apex AND the agent subdomain
 
-- Cloudflare dashboard → `internjobs.ai` → Email → Email Routing → enable.
-- Cloudflare will auto-create the inbound MX records. Wait for them to propagate (a few minutes).
+**Apex (`internjobs.ai`) — for human/employee email:**
 
-### B5. Add the catch-all routing rule
+- Cloudflare dashboard → `internjobs.ai` zone → Email → Email Routing → enable.
+- Cloudflare auto-creates the apex inbound MX records. Wait a few minutes for propagation.
 
-- Email Routing → Routes → add catch-all rule: `*@internjobs.ai` → Send to a Worker → `internjobs-email-ingest`.
-- This single rule handles both `startups@internjobs.ai` (Phase 03) and future `conv_{conversation_id}@internjobs.ai` reply-to addresses (Phase 04+).
+**Subdomain (`agent.internjobs.ai`) — for agent per-conversation aliases:**
 
-### B6. Deploy the Worker
+- Same zone → Email Routing → Settings → add subdomain → `agent.internjobs.ai`. CF Email Routing has supported subdomains since Oct 2025.
+- Cloudflare creates subdomain inbound MX records (separate from apex). Wait for propagation.
+- The two zones share Destination Addresses but have INDEPENDENT routing rules.
+
+### B5. Routing rules — apex vs. subdomain
+
+**Apex routing (human email only — NOT the Worker):**
+
+- Email Routing → Routes (apex view) → add **Custom address** rule: `raj@internjobs.ai` → forward to `rentalaraj@gmail.com`.
+- Email Routing → Routes (apex view) → add **Catch-all** rule: `*@internjobs.ai` → forward to `rentalaraj@gmail.com`.
+- These rules MUST NOT target the Worker. The apex is reserved for human inbox.
+
+**Subdomain routing (agent Worker target):**
+
+- Email Routing → Routes (subdomain view, `agent.internjobs.ai`) → add **Catch-all** rule: `*@agent.internjobs.ai` → **Send to a Worker** → `internjobs-email-ingest`.
+- This single rule handles both `startups@agent.internjobs.ai` and `conv-{conversation_id}@agent.internjobs.ai` reply-to aliases.
+
+### B5a. Verify `rentalaraj@gmail.com` as a Destination Address
+
+- Email Routing → Settings → **Destination Addresses** → Add → `rentalaraj@gmail.com`.
+- Cloudflare emails a verification link; click it from the Gmail inbox.
+- Status must show **Verified** before B5 apex rules will accept it as a target AND before the Worker's `OPERATOR_FALLBACK` will deliver via `message.forward()`.
+
+### B6. (Now empty — was the old single-catch-all step, replaced by B4 + B5.)
+
+### B7. Deploy the Worker
 
 - `cd apps/email-worker && npx wrangler deploy`
-- Worker URL doesn't matter (it's an Email event handler, not an HTTP endpoint).
+- Worker URL is `https://internjobs-email-ingest.rentalaraj.workers.dev` (informational only — Email Routing invokes the Worker via the `email()` handler, not the HTTPS URL).
 
 ---
 
