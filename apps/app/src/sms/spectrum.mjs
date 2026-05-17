@@ -1,9 +1,41 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { Spectrum, text } from "spectrum-ts";
+import { Spectrum, cloud, text } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
+import { createClient as createIMessageClient } from "@photon-ai/advanced-imessage";
 import { eventIdFromPayload } from "../store.mjs";
 import { createWelcomeText } from "../messaging.mjs";
 import { runStudentInboundWorkflow } from "../workflows/student-inbound.mjs";
+
+// Lazy-cached AdvancedIMessage client for features spectrum-ts doesn't yet
+// expose (e.g. chats.markRead). Cached per process; token refresh is handled
+// by issuing a fresh one on demand when the cached one fails. Returns null if
+// project credentials aren't set (graceful no-op in test/dev).
+let _imessageClientPromise = null;
+
+async function getIMessageClient(config) {
+  if (!config?.photon?.projectId || !config?.photon?.apiToken) return null;
+  if (_imessageClientPromise) return _imessageClientPromise;
+  _imessageClientPromise = (async () => {
+    try {
+      const tokenData = await cloud.issueImessageTokens(
+        config.photon.projectId,
+        config.photon.apiToken,
+      );
+      const address =
+        process.env.SPECTRUM_IMESSAGE_ADDRESS ?? "imessage.spectrum.photon.codes:443";
+      return createIMessageClient({ address, token: tokenData.token });
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: "error",
+        message: "imessage_client_init_failed",
+        error: err?.message ?? String(err),
+      }));
+      _imessageClientPromise = null; // allow retry on next call
+      return null;
+    }
+  })();
+  return _imessageClientPromise;
+}
 
 /**
  * SpectrumSmsProvider — the v1.2 sole implementation of SmsProvider.
@@ -147,14 +179,33 @@ async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
           metadata: inbound.metadata || {},
         });
         if (messageId && store?.pool) {
-          // Native iMessage UX: tapback ack + typing indicator + threaded reply.
-          // 1. React with 👀 immediately so the user sees we've read the message
-          //    (substitute for read-receipt; Spectrum's public API doesn't yet
-          //    expose explicit markAsRead).
-          // 2. Wrap the workflow in space.responding() so iMessage shows the
+          // Native iMessage UX:
+          // 1. Mark inbound as read (real "Read" indicator on the user's side).
+          //    Uses @photon-ai/advanced-imessage directly because spectrum-ts
+          //    doesn't yet surface markRead as a Space action — only `background`
+          //    is exposed in iMessage's actions{}. AdvancedIMessage's
+          //    chats.markRead(chatGuid) marks every unread in the chat as read.
+          //    Best-effort; never block the reply.
+          // 2. React with 👀 as a tapback ack (extra visual signal even if
+          //    markRead silently fails on hobby/free tier).
+          // 3. Wrap the workflow in space.responding() so iMessage shows the
           //    "..." typing bubble while the LLM generates.
-          // 3. Floor the indicator visible time at ~1.5s so it actually renders
+          // 4. Floor the indicator visible time at ~1.5s so it actually renders
           //    in the iOS UI even when the 70B reply lands sub-second.
+          getIMessageClient(config).then(async (imClient) => {
+            if (!imClient) return;
+            try {
+              await imClient.chats.markRead(space.id);
+            } catch (markErr) {
+              // hobby/free tier may not allow markRead; log + continue
+              console.error(JSON.stringify({
+                level: "warn",
+                message: "imessage_mark_read_failed",
+                chatGuid: space.id,
+                error: markErr?.message ?? String(markErr),
+              }));
+            }
+          });
           try {
             await message.react("👀");
           } catch (_ackErr) {
