@@ -146,6 +146,128 @@ export function renderSavedProfile() {
     </section>`;
 }
 
+// ─── v1.2 Phase 09 — Standout-style onboarding (QR + sms deep-link) ─────────
+//
+// renderOnboardingQR is the desktop landing rendered after Clerk LinkedIn
+// OAuth + Proxycurl enrichment. The QR encodes an sms:// URI that, when
+// scanned by an iPhone camera, prompts the user to open Messages.app
+// prefilled with the agent's number + the pairing code as the body. The
+// student taps send; the Mac bridge picks up the iMessage and POSTs to
+// /webhooks/mac-bridge, which calls claimPairingCode and binds the phone.
+//
+// renderOnboardingMobile is the mobile-UA variant — no QR (the phone IS
+// the QR-scanning device), just a big button whose href IS the sms:// URI.
+// On iOS this opens Messages.app prefilled.
+//
+// Both pages poll /onboard/status every 3s and redirect to /onboard/success
+// once paired. The polling JS is inlined here (no separate static asset)
+// so the views are zero-dependency.
+
+export async function renderOnboardingQR({ pairingCode, smsUri, agentNumber }) {
+  const qrDataUrl = await QRCode.toDataURL(smsUri, {
+    margin: 1,
+    width: 260,
+    color: { dark: "#111111", light: "#ffffff" },
+  });
+  return `
+    <section class="pair-grid">
+      <div class="panel">
+        <p class="eyebrow">Step 2 of 2</p>
+        <h1>Scan it. Send the text.</h1>
+        <p class="lede">Scan with your iPhone camera. It opens Messages with the right number + code already filled in. Tap send.</p>
+        <div class="qr-wrap"><img src="${qrDataUrl}" alt="QR code for pairing InternJobs.ai messages" /></div>
+        <p class="fine">We've already pulled your LinkedIn — your first agent message will be contextual.</p>
+      </div>
+      <div class="panel dark">
+        <p class="eyebrow">Pairing code</p>
+        <div class="pair-code">${escapeHtml(pairingCode)}</div>
+        <p class="lede">Or text <strong>${escapeHtml(pairingCode)}</strong> to <strong>${escapeHtml(agentNumber)}</strong> from your phone.</p>
+        <button class="button light" type="button" id="copy-pair-code" data-code="${escapeHtml(pairingCode)}">Copy code</button>
+        <p class="fine" id="pair-status">Waiting for your text…</p>
+      </div>
+    </section>
+    <script>
+      (function () {
+        var btn = document.getElementById('copy-pair-code');
+        if (btn) {
+          btn.addEventListener('click', function () {
+            var code = btn.getAttribute('data-code') || '';
+            if (navigator.clipboard && code) {
+              navigator.clipboard.writeText(code).then(function () {
+                btn.textContent = 'Copied';
+                setTimeout(function () { btn.textContent = 'Copy code'; }, 1500);
+              });
+            }
+          });
+        }
+        // Poll /onboard/status every 3s. The endpoint reflects pairing_sessions
+        // claim state. Once paired, redirect to /onboard/success.
+        var statusEl = document.getElementById('pair-status');
+        var stopped = false;
+        function tick() {
+          if (stopped) return;
+          fetch('/onboard/status', { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+              if (j && j.paired) {
+                stopped = true;
+                window.location.href = '/onboard/success';
+              } else if (statusEl) {
+                statusEl.textContent = 'Waiting for your text…';
+              }
+            })
+            .catch(function () {})
+            .finally(function () {
+              if (!stopped) setTimeout(tick, 3000);
+            });
+        }
+        setTimeout(tick, 3000);
+      })();
+    </script>`;
+}
+
+export function renderOnboardingMobile({ pairingCode, smsUri, agentNumber }) {
+  return `
+    <section class="panel narrow">
+      <p class="eyebrow">Almost done</p>
+      <h1>Open Messages to confirm.</h1>
+      <p class="lede">We'll send the code through iMessage so your number is bound to your profile. Your first agent message will reference your LinkedIn.</p>
+      <a class="button primary" href="${escapeHtml(smsUri)}">Open Messages to confirm</a>
+      <p class="fine">Or text <strong>${escapeHtml(pairingCode)}</strong> to <strong>${escapeHtml(agentNumber)}</strong>.</p>
+      <p class="fine" id="pair-status">Waiting for your text…</p>
+    </section>
+    <script>
+      (function () {
+        var statusEl = document.getElementById('pair-status');
+        var stopped = false;
+        function tick() {
+          if (stopped) return;
+          fetch('/onboard/status', { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+              if (j && j.paired) {
+                stopped = true;
+                window.location.href = '/onboard/success';
+              }
+            })
+            .catch(function () {})
+            .finally(function () { if (!stopped) setTimeout(tick, 3000); });
+        }
+        setTimeout(tick, 3000);
+      })();
+    </script>`;
+}
+
+export function renderOnboardingSuccess() {
+  return `
+    <section class="panel dark narrow">
+      <p class="eyebrow">You're in</p>
+      <h1>Locked in.</h1>
+      <p class="lede">Maya will reach out shortly. The first text will reference your LinkedIn — school, current role, anything we already know about you.</p>
+      <a class="button light" href="/profile">Review profile context</a>
+    </section>`;
+}
+
 // ─── Startup views (v1.2) ────────────────────────────────────────────────────
 
 export function renderStartupSignIn(config) {
