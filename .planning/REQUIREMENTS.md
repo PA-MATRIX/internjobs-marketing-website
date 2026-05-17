@@ -74,10 +74,10 @@ Spectrum/Photon stays the only active student SMS path. v1.2 adds startups + an 
 - [ ] **AGENT-02**: Mastra maintains persistent thread memory keyed separately by `student_id` and `startup_id`, backed by Postgres (Mastra `PostgresStore`) under a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`). Thread context prevents duplicate intros and supports full conversation history. *Workers AI direct REST (no OpenAI billing, no proxy Worker, no AI Gateway) — 2026-05-16 tear-out.*
 - [ ] **AGENT-03**: pgvector semantic memory enabled on Neon (`vector` extension + HNSW index created in migration, not deferred). Student profile and role embeddings written on save/update. Embedding model is Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768-dim) via direct REST (`api.cloudflare.com/client/v4/accounts/{id}/ai/run/...` with `Authorization: Bearer {CLOUDFLARE_AI_API_TOKEN}`); vector column is `vector(768)`. Agent match optionally uses cosine similarity when `USE_VECTOR_MATCH` flag is set; falls back to AGENT-01 keyword match otherwise. *Workers AI direct REST (no OpenAI billing, no proxy Worker, no AI Gateway) — 2026-05-16 tear-out.*
 
-### Operator Approval Gate
+### Operator Audit
 
-- [ ] **APPROVE-01**: Operator dashboard at `/ops/drafts` (single Clerk app with `publicMetadata.userType = 'operator'`, not a DB flag) lists all pending agent drafts (student-side SMS replies + startup-side emails) with conversation context, and supports approve / edit-then-approve / reject (with optional free-text reason) on each draft.
-- [ ] **APPROVE-02**: No auto-send in v1.2 — every outbound message is operator-approved. Approving sends through the correct channel (Spectrum SMS for students via the `SmsProvider`, outbound email provider for startups) and records `status='sent'` + `provider_message_id`. Rejected drafts feed a feedback log readable by the human prompt-tuner.
+- [ ] **OPS-01**: Read-only message audit log at `/ops/drafts` (single Clerk app with `publicMetadata.userType = 'operator'`, not a DB flag) showing every agent-sent message + every inbound with conversation context, ordered newest-first. Flag-for-review action (POST `/ops/drafts/:id/flag`) writes to `draft_feedback` with `feedback_type='flagged'` + free-text reason. No approve/edit/reject pre-send — the autonomy pivot 2026-05-17 removed the gate. Legacy `feedback_type='rejected'`/`'edited'` rows from the pre-pivot approval queue stay queryable for historical context.
+- [ ] **OPS-02**: Mastra workflow auto-sends agent responses on both student SMS (Spectrum) and startup email (CF Email Service) channels without human approval. Workflow INSERTs the draft with transient `status='sending'`, then UPDATEs to `'sent'` (with `sent_at` + `provider_message_id`) on success or `'failed'` on send error (with `audit_events` row `event_type='auto_send_failed'`). Send failures do NOT crash the workflow. The operator can flag bad messages post-hoc via OPS-01; they cannot recall or edit a sent message. Auto-retry on failure is deferred to v1.3.
 
 ### Storage & Threading
 
@@ -117,6 +117,7 @@ Named candidates for v1.3+. No checkboxes — these become Active when promoted 
 - **SEC-ROTATE-01**: Rotate `CLERK_SECRET_KEY` (pasted in chat 2026-05-15); update Infisical `prod`/`/internjobs-ai` and re-run `flyctl secrets import`. *(Currently tracked as STATE.md blocker; not formally promoted to v1.2 requirement.)*
 - **SEC-ROTATE-CF-EMAIL-01**: Rotate the Cloudflare Email Service API token pasted in chat 2026-05-16 (same posture as SEC-ROTATE-01). Update Infisical `prod`/`/internjobs-ai` `CLOUDFLARE_EMAIL_API_TOKEN` and re-run `flyctl secrets import`. Tracked as STATE.md blocker pending the v1.2 INTEG-01 smoke run.
 - **SEC-ROTATE-CF-AI-01**: Rotate the Cloudflare Workers AI API token pasted in chat 2026-05-16 (same posture as SEC-ROTATE-CF-EMAIL-01). The token is scoped for Workers AI direct (used by `apps/app/src/embeddings.mjs` and `apps/app/src/workflows/student-inbound.mjs` to call `api.cloudflare.com/client/v4/accounts/{id}/ai/run/...`). Update Infisical `prod`/`/internjobs-ai` `CLOUDFLARE_AI_API_TOKEN` and re-run `flyctl secrets import`. Tracked as STATE.md blocker pending the next post-launch rotation pass.
+- **SAFETY-01**: Pre-LLM injection screening (Lakera Guard or equivalent). With the agent autonomous from 2026-05-17, prompt-level guardrails in `apps/app/src/workflows/student-inbound.mjs` (`AGENT_SAFETY_GUARDRAILS`) are the first line of defense. SAFETY-01 layers Lakera Guard (or equivalent) on inbound message body and any reply-to alias before the LLM call, to catch prompt-injection / jailbreaks / TOS-violating asks before they reach the model. Defer to v1.3.
 
 ## Out of Scope
 
@@ -127,7 +128,6 @@ Explicit exclusions. Documented to prevent scope creep.
 | LinkedIn credential capture / private-surface scraping | High legal/security risk; Clerk OAuth + user-authorized data only | Never (without legal review) |
 | Replacing marketing site with the app | Marketing stays a static Cloudflare Pages deployment | Never |
 | ATS or recruiter dashboard | Wrong product feel; app stays messaging-first | Never |
-| Auto-send of agent-drafted messages | Breaks product promise + legal posture | Never in v1.2; revisit only with strong safety evidence |
 | Cognee in v1.2 | Agent memory lives in Mastra thread + pgvector; placeholders stay inert | v1.3+ (COGNEE-ACTIVATE-01) |
 | Telnyx activation in v1.2 | Avoid stacking unfamiliar SMS platform on unfamiliar agent framework in one milestone; v1.2 ships only the `SmsProvider` seam (SMS-01) | v1.3 (TELNYX-ADAPT-01) |
 | Voice (any provider) | Not yet validated as user need | v1.3 gated on >10% inbound asks |
@@ -152,8 +152,8 @@ Maps current-milestone (v1.2) requirements to roadmap phases.
 | AGENT-01 | Phase 04 — Mastra Agent Core | Pending |
 | AGENT-02 | Phase 04 — Mastra Agent Core | Pending |
 | AGENT-03 | Phase 04 — Mastra Agent Core | Pending |
-| APPROVE-01 | Phase 05 — Operator Approval Gate | Pending |
-| APPROVE-02 | Phase 05 — Operator Approval Gate | Pending |
+| OPS-01 | Phase 05 — Operator Audit Log (was: Approval Gate) | Pending |
+| OPS-02 | Phase 05 — Operator Audit Log (was: Approval Gate) | Pending |
 | EMAIL-03 | Phase 03/04 enhancement (scope-add 2026-05-16) | Pending |
 | STORAGE-01 | Phase 04 enhancement (scope-add 2026-05-16) | Pending |
 | INTEG-01 | Phase 06 — Two-Sided Integration Smoke Test | Pending |
@@ -165,4 +165,4 @@ Maps current-milestone (v1.2) requirements to roadmap phases.
 
 ---
 *Requirements defined: 2026-05-16*
-*Last updated: 2026-05-16 — EMAIL-03 subdomain isolation: agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain (hard cut-over, no apex fallback). Worker bound to `*@agent.internjobs.ai`; apex stays free for human/employee email via separate forward-to-personal-inbox rules. Earlier 2026-05-16: Workers AI direct tear-out: AGENT-01..03 re-annotated (proxy Worker removed; Fly Node app now calls Workers AI REST directly with `CLOUDFLARE_AI_API_TOKEN`). SEC-ROTATE-CF-AI-01 added to backlog. Earlier 2026-05-16: STORAGE-01 + EMAIL-03 scope-add (R2 per-entity folder scaffold + per-conversation Reply-To aliases for deterministic threading; modeled on SuperIntelligence patterns); SEC-ROTATE-CF-EMAIL-01 added to backlog; v1.3 candidates extended with STORAGE-02, STORAGE-03, EMAIL-04. Prior 2026-05-16 updates: Resend → Cloudflare Email Service swap for EMAIL-02; v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam).*
+*Last updated: 2026-05-17 — AUTONOMY PIVOT: APPROVE-01/02 reframed as OPS-01/02 (read-only audit log + flag-for-review; no operator approval pre-send). "Auto-send of agent-drafted messages" line removed from Out of Scope. SAFETY-01 (Lakera Guard) added to Backlog as the v1.3 layered defense ahead of the LLM call. Traceability table updated to reflect Phase 05 rename (Operator Audit Log, was: Approval Gate). See PROJECT.md Key Decisions for rationale. Earlier 2026-05-16 — EMAIL-03 subdomain isolation: agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain (hard cut-over, no apex fallback). Worker bound to `*@agent.internjobs.ai`; apex stays free for human/employee email via separate forward-to-personal-inbox rules. Earlier 2026-05-16: Workers AI direct tear-out: AGENT-01..03 re-annotated (proxy Worker removed; Fly Node app now calls Workers AI REST directly with `CLOUDFLARE_AI_API_TOKEN`). SEC-ROTATE-CF-AI-01 added to backlog. Earlier 2026-05-16: STORAGE-01 + EMAIL-03 scope-add (R2 per-entity folder scaffold + per-conversation Reply-To aliases for deterministic threading; modeled on SuperIntelligence patterns); SEC-ROTATE-CF-EMAIL-01 added to backlog; v1.3 candidates extended with STORAGE-02, STORAGE-03, EMAIL-04. Prior 2026-05-16 updates: Resend → Cloudflare Email Service swap for EMAIL-02; v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam).*

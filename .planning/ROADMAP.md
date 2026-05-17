@@ -13,7 +13,9 @@
 
 ## v1.2 Overview
 
-Stand up a Mastra-powered agent that drafts both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel — every outbound message human-approved. Student SMS stays on the existing Spectrum/Photon path; v1.2 only ships an `SmsProvider` interface seam so v1.3+ can swap in Telnyx without touching call-sites.
+Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of the student↔startup conversation, with startups onboarded as a first-class user type and email as their primary channel. Student SMS stays on the existing Spectrum/Photon path; v1.2 only ships an `SmsProvider` interface seam so v1.3+ can swap in Telnyx without touching call-sites.
+
+**Autonomy pivot (2026-05-17):** the v1.2 plan originally had a human-in-the-loop operator approval gate. That gate was removed because turn-by-turn approval latency made conversational UX impossibly slow. The agent now sends autonomously; `/ops/drafts` is a read-only audit log + flag-for-review surface. Safety posture: system-prompt-level guardrails today, Lakera Guard pre-LLM screening in v1.3 (SAFETY-01).
 
 **Phase numbering convention:** v1.2 restarts at Phase 01 (per existing v1.0/v1.1 pattern). Each milestone has its own phase sequence under its workspace directory.
 
@@ -23,7 +25,7 @@ Stand up a Mastra-powered agent that drafts both sides of the student↔startup 
 - [ ] **Phase 02: Startup Identity, Consent & Roles** — Email-first Clerk auth for startups; profile + consent capture; roles CRUD.
 - [ ] **Phase 03: Startup Email Channel (Inbound + Outbound)** — CF Email Routing → Worker → Mastra ingest; Resend (or equivalent) for outbound with SPF + DKIM.
 - [ ] **Phase 04: Mastra Agent Core** — Workflow that drafts (never sends); thread memory in dedicated `mastra` schema; pgvector with HNSW index.
-- [ ] **Phase 05: Operator Approval Gate** — `/ops/drafts` dashboard, approve / edit / reject, gated send through correct channel.
+- [ ] **Phase 05: Operator Audit Log (was: Approval Gate)** — `/ops/drafts` is a read-only audit log of every autonomous-agent send; operators flag bad messages post-hoc for prompt-tuning review (no pre-send approval after the 2026-05-17 autonomy pivot).
 - [ ] **Phase 06: Two-Sided Integration Smoke Test** — All 11 INTEG-01 steps pass end-to-end in production.
 
 ## Phase Details
@@ -94,20 +96,20 @@ Stand up a Mastra-powered agent that drafts both sides of the student↔startup 
 
 **Plans:** TBD
 
-### Phase 05: Operator Approval Gate
+### Phase 05: Operator Audit Log (was: Approval Gate)
 
-**Goal:** Every outbound message is operator-reviewed. No auto-send path exists in production.
+**Goal:** `/ops/drafts` is the read-only audit log of every autonomous-agent message. The 2026-05-17 pivot removed the pre-send approval gate; operators flag bad messages post-hoc for prompt-tuning review.
 
 **Depends on:** Phase 04
 
-**Requirements:** APPROVE-01, APPROVE-02
+**Requirements:** OPS-01, OPS-02
 
 **Success Criteria** (what must be TRUE):
-1. `/ops/drafts` lists all pending agent drafts (student-side SMS + startup-side email) with conversation context (student, startup, role, prior turns). Auth is `requireOperatorAuth` middleware checking Clerk `publicMetadata.userType === 'operator'` (not a DB flag).
-2. Operator can approve as-is, edit-then-approve, or reject (with optional free-text reason) from the draft detail view.
-3. Approving a draft sends through the correct channel — Spectrum SMS via the Phase 01 `SmsProvider` for students, the Phase 03 outbound provider for startup emails — and updates `drafts.status='sent'`, `sent_at`, and `provider_message_id`.
-4. Rejected drafts appear in a `/ops/feedback` log with their `rejection_reason`, readable by the human prompt-tuner.
-5. No code path exists in production that sends an outbound message without flipping through `drafts.status='approved'` first.
+1. `/ops/drafts` lists every agent draft (regardless of status: sent / failed / sending / flagged + legacy pre-pivot rows) with conversation context (student, startup, role, prior turns), ordered newest-first. Auth is `requireOperatorAuth` middleware checking Clerk `publicMetadata.userType === 'operator'` (not a DB flag).
+2. Detail view (`GET /ops/drafts/:id`) is read-only — no approve/edit/reject forms. It shows the sent body, provider_message_id, send-error blob if the row is in `'failed'`, and a "Flag for review" form (`POST /ops/drafts/:id/flag`).
+3. The Mastra workflow autonomously sends agent responses on both student SMS and (future) startup email channels: INSERT with `status='sending'`, route to `outbound.routeAndSend`, then UPDATE to `'sent'` (with `sent_at` + `provider_message_id`) on success or `'failed'` on send error (with `audit_events` row `event_type='auto_send_failed'`). Send failures do not crash the workflow.
+4. Flagged drafts appear in `/ops/feedback` (filtered to `feedback_type='flagged'`), readable by the human prompt-tuner.
+5. The deprecated pre-pivot endpoints (`POST /ops/drafts/:id/{approve,edit,reject}`) return 410 Gone with `reason='approval_gate_removed_2026_05_17'`.
 
 **Plans:** TBD
 
@@ -137,7 +139,7 @@ Stand up a Mastra-powered agent that drafts both sides of the student↔startup 
 | 02. Startup Identity, Consent & Roles | v1.2 | 0/TBD | Not started | — |
 | 03. Startup Email Channel | v1.2 | 0/TBD | Not started | — |
 | 04. Mastra Agent Core | v1.2 | 0/TBD | Not started | — |
-| 05. Operator Approval Gate | v1.2 | 0/TBD | Not started | — |
+| 05. Operator Audit Log (was: Approval Gate) | v1.2 | 0/TBD | Not started | — |
 | 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
 
 ## v1.3 Candidates
@@ -148,4 +150,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-17 — autonomy pivot: Phase 05 renamed "Operator Audit Log (was: Approval Gate)"; APPROVE-01/02 reframed as OPS-01/02; success criteria rewritten to reflect read-only audit log + flag-for-review.*

@@ -1,6 +1,6 @@
 # v1.2 — User Actions Manifest
 
-**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add, the 2026-05-16 Workers AI swap, the 2026-05-16 Workers AI direct tear-out — proxy Worker `apps/ai-worker/` removed; Fly Node app now calls Cloudflare Workers AI REST API directly — AND the 2026-05-16 EMAIL-03 subdomain isolation refactor — agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain so the apex stays clean for human email; Worker + Fly redeployed live; Section B revised). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+**Status as of 2026-05-17:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add, the 2026-05-16 Workers AI swap, the 2026-05-16 Workers AI direct tear-out — proxy Worker `apps/ai-worker/` removed; Fly Node app now calls Cloudflare Workers AI REST API directly — the 2026-05-16 EMAIL-03 subdomain isolation refactor — agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain so the apex stays clean for human email; Worker + Fly redeployed live; Section B revised — AND the 2026-05-17 AUTONOMY PIVOT: the agent now drafts AND sends autonomously on student SMS; `/ops/drafts` is a read-only audit log with flag-for-review (no operator approval gate). Section E is rewritten to test the autonomous flow. What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
 
 **Workers AI direct status (2026-05-16):** Workers AI direct via `CLOUDFLARE_AI_API_TOKEN` (already in Infisical). Proxy Worker torn out. `/healthz` reports `workersAiReady: true`. Sections A5 (OpenAI key) and the prior proxy-Worker user-action are both dropped.
 
@@ -223,9 +223,11 @@ Expect `{"missing": []}`.
 
 ---
 
-## Section E — INTEG-01 smoke test (Phase 06 acceptance)
+## Section E — INTEG-01 smoke test (Phase 06 acceptance, AUTONOMOUS FLOW post-2026-05-17)
 
-Run the 11-step protocol in `apps/app/test/integ-01-runbook.md` against prod. Fill in `apps/app/test/integ-01-VERIFICATION.md` as you go.
+**Updated 2026-05-17** — the 11-step protocol now describes the AUTONOMOUS flow. The pre-pivot version had an operator-approve step between every agent draft and every send; that step is GONE. Each turn is now: student texts → workflow drafts → workflow auto-sends → drafts row visible at `/ops/drafts` with status='sent'.
+
+Run the protocol in `apps/app/test/integ-01-runbook.md` against prod. Fill in `apps/app/test/integ-01-VERIFICATION.md` as you go.
 
 You will need:
 - A test phone able to text the Spectrum shared number.
@@ -235,9 +237,20 @@ You will need:
 
 The `GET /admin/integ-01-status?student_id=<UUID>` endpoint returns 8 booleans + `all_passed` — useful for confirming each step before moving to the next.
 
+The autonomous flow at a glance:
+1. Student texts the Spectrum number. `messaging_events` row + `inbound_messages` row written.
+2. Mastra workflow fires. Matches student to a role, drafts a reply with safety guardrails, INSERTs `drafts` with `status='sending'`.
+3. Workflow calls `outbound.routeAndSend` → Spectrum send succeeds → workflow UPDATEs `drafts` to `status='sent'` (sub-second under normal latency). `audit_events` row `event_type='student_inbound_auto_sent'`. Student receives the agent reply automatically.
+4. Sample reverse direction (startup): when the autonomous startup-email flow lands (post-pivot but pre-INTEG-01, code-wise it's the same `routeAndSend` path), an inbound email via the catch-all Worker → Fly ingest → Mastra workflow → autonomous CF Email Service send. `drafts` row with `channel='email'`, `status='sent'`, `provider_message_id='cf-...'`.
+5. Visit `/ops/drafts` (with operator publicMetadata) and confirm every send is logged with status='sent' + provider_message_id. Verify the read-only detail page (`/ops/drafts/:id`) shows the message body + a "Flag for review" form. Confirm no approve/edit/reject forms exist.
+6. Optionally hit `POST /ops/drafts/:id/flag` with a fake reason → confirm `draft_feedback` row with `feedback_type='flagged'` lands; `/ops/feedback` lists it.
+7. Sanity-check the audit: any row in `drafts` with `status='failed'` should have a matching `audit_events.event_type='auto_send_failed'`.
+
 INTEG-01 passes when:
-- All 11 steps yield the expected Neon row(s) (no manual DB insert/update).
-- The Section C audit query in the runbook shows zero outbound messages without a matching `drafts.status='sent'` row.
+- All steps yield the expected Neon row(s) (no manual DB insert/update).
+- Every `drafts.status='sent'` row has a corresponding `provider_message_id` and a `sent_at` timestamp.
+- Every `drafts.status='failed'` row has a corresponding `audit_events.event_type='auto_send_failed'` row.
+- `/ops/drafts/:id/{approve,edit,reject}` POSTs return 410 Gone with `reason='approval_gate_removed_2026_05_17'`.
 - VERIFICATION.md is filled in and committed.
 
 ---
