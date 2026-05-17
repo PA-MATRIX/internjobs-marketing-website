@@ -139,7 +139,7 @@ async function replyWithWelcome(space, message, student) {
 
 function parseSpectrumMessage(space, message) {
   const text = getMessageText(message);
-  const channelAddress = String(space.phone || message.sender?.id || space.id || "");
+  const channelAddress = extractPhoneFromSpace(space, message);
   const channelType = message.platform === "iMessage" ? "imessage" : String(message.platform || "sms").toLowerCase();
 
   return {
@@ -156,6 +156,20 @@ function parseSpectrumMessage(space, message) {
       spaceId: space.id,
     },
   };
+}
+
+// Photon/Spectrum iMessage encodes the participant phone in space.id as
+// `<spaceType>;-;<phone>` (e.g. `any;-;+17133924287`). When space.phone /
+// message.sender.id aren't set explicitly, parse the phone out of space.id.
+function extractPhoneFromSpace(space, message) {
+  if (space?.phone) return String(space.phone);
+  if (message?.sender?.id && /^\+?\d/.test(String(message.sender.id))) {
+    return String(message.sender.id);
+  }
+  const spaceId = String(space?.id || "");
+  const m = spaceId.match(/(\+\d{6,15})/);
+  if (m) return m[1];
+  return spaceId;
 }
 
 function getMessageText(message) {
