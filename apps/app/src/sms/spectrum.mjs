@@ -147,22 +147,37 @@ async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
           metadata: inbound.metadata || {},
         });
         if (messageId && store?.pool) {
-          // AWAIT the workflow inline (not fire-and-forget) so we can use
-          // space.responding() for the typing indicator and message.reply()
-          // for the in-thread blue-bubble send. This is the canonical
-          // spectrum-ts pattern per examples/basic/index.ts.
+          // Native iMessage UX: tapback ack + typing indicator + threaded reply.
+          // 1. React with 👀 immediately so the user sees we've read the message
+          //    (substitute for read-receipt; Spectrum's public API doesn't yet
+          //    expose explicit markAsRead).
+          // 2. Wrap the workflow in space.responding() so iMessage shows the
+          //    "..." typing bubble while the LLM generates.
+          // 3. Floor the indicator visible time at ~1.5s so it actually renders
+          //    in the iOS UI even when the 70B reply lands sub-second.
+          try {
+            await message.react("👀");
+          } catch (_ackErr) {
+            // ack is best-effort; never block the reply on it
+          }
           await space.responding(async () => {
+            const minTyping = new Promise((r) => setTimeout(r, 1500));
             try {
-              await runStudentInboundWorkflow({
-                pool: store.pool,
-                messageId,
-                smsProvider,
-                config,
-                sender: async (body) => {
-                  const outbound = await message.reply(text(body));
-                  return outbound?.id || null;
-                },
-              });
+              await Promise.all([
+                runStudentInboundWorkflow({
+                  pool: store.pool,
+                  messageId,
+                  smsProvider,
+                  config,
+                  sender: async (body) => {
+                    // Hold typing visible at least minTyping before the reply lands.
+                    await minTyping;
+                    const outbound = await message.reply(text(body));
+                    return outbound?.id || null;
+                  },
+                }),
+                minTyping,
+              ]);
             } catch (err) {
               console.error(JSON.stringify({
                 level: "error",
