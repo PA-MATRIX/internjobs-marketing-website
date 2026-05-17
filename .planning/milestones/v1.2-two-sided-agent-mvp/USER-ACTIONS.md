@@ -1,6 +1,8 @@
 # v1.2 — User Actions Manifest
 
-**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, AND the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+**Status as of 2026-05-16:** All v1.2 code is committed on `main` (Phases 01–06, the 2026-05-16 Resend → Cloudflare Email Service swap, the 2026-05-16 STORAGE-01 + EMAIL-03 scope-add, AND the 2026-05-16 Workers AI swap — OpenAI replaced by Cloudflare Workers AI via the `internjobs-ai-proxy` Worker). What follows are the dashboard / DNS / API-key / deploy / smoke-test steps that only you can run. Work top-down — there are real dependencies (e.g. Cloudflare Email Service onboarding must complete before Fly redeploys with the credentials in scope).
+
+**Workers AI swap status (2026-05-16):** Already deployed live to prod. `aiProxyReady: true` on `/healthz`. Section A5 (OpenAI key) is dropped. Optional follow-up: create the `internjobs-ai` AI Gateway in CF Dashboard for analytics + caching (the proxy Worker picks it up automatically when present).
 
 **Pending blocker (2026-05-16):** SEC-ROTATE-CF-EMAIL-01 — the Cloudflare Email Service API token pasted in chat 2026-05-16 should be rotated AFTER Section E smoke-test passes. Same posture as SEC-ROTATE-01 (Clerk). Update Infisical `prod`/`/internjobs-ai` → `CLOUDFLARE_EMAIL_API_TOKEN`; re-run `flyctl secrets import`.
 
@@ -33,10 +35,13 @@
   ```
 - This must be set in Clerk Dashboard or via the Clerk Backend API; never expose a route that lets a user set their own `publicMetadata.userType`.
 
-### A5. Add `OPENAI_API_KEY` to Infisical (Phase 04 prerequisite)
+### A5. ~~Add `OPENAI_API_KEY` to Infisical~~ — DROPPED 2026-05-16 (Workers AI swap)
 
-- Infisical `prod` `/internjobs-ai` → add `OPENAI_API_KEY` (your OpenAI key with embeddings + chat-completions access).
-- Re-run the Fly secrets import (same command as A2).
+This step is no longer needed. The v1.2 LLM path was swapped from OpenAI to Cloudflare Workers AI via the `internjobs-ai-proxy` Worker (`apps/ai-worker/`). The Fly Node app uses the proxy Worker's `AI_WORKER_URL` + `AI_WORKER_SECRET` (already stored in Infisical and live on Fly as of 2026-05-16). The proxy Worker holds the native `env.AI` binding — no Cloudflare API token is needed on the Node side, and no OpenAI key is needed anywhere.
+
+**Optional follow-up (not required for any phase to pass):**
+
+- Cloudflare Dashboard → AI → AI Gateway → Create gateway → name `internjobs-ai`. The proxy Worker passes `{gateway:{id:'internjobs-ai'}}` best-effort; when the gateway exists, all AI calls flow through it for analytics + caching + per-route rate limits. Until then, calls hit Workers AI directly (CF error code 2001 → silent fallback in the Worker). No code change is needed when the gateway is created — the Worker picks it up on the next call.
 
 ---
 
@@ -180,7 +185,7 @@ curl https://app.internjobs.ai/healthz | jq .
 Expect every key TRUE:
 - `clerk`, `database`, `photonNumber`, `photonWebhook`, `spectrumListener` (v1.0/1.1 keys)
 - `emailWorkerSecret`, `cloudflareEmailReady` (Phase 03 — `cloudflareEmailReady` is true iff BOTH `CLOUDFLARE_EMAIL_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` are set)
-- `mastraReady`, `pgvectorReady`, `openaiKeyPresent` (Phase 04)
+- `mastraReady`, `pgvectorReady`, `aiProxyReady` (Phase 04 — `aiProxyReady` is true iff BOTH `AI_WORKER_URL` and `AI_WORKER_SECRET` are set; replaced `openaiKeyPresent` in the 2026-05-16 Workers AI swap)
 - `r2Ready` (STORAGE-01 scope-add — true iff `R2_ACCOUNT_ID` + `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` all set AND the singleton constructed without error)
 
 ```
@@ -219,7 +224,7 @@ INTEG-01 passes when:
 ## Why this list is ordered this way
 
 - **A1** is the v1.1 carry-over — until DNS-only is set, no user of any type can authenticate, so nothing else is testable.
-- **A2 + A5** load the secrets so deploy doesn't restart with stale `CLERK_SECRET_KEY` or no `OPENAI_API_KEY`.
+- **A2** loads the rotated `CLERK_SECRET_KEY` so deploy doesn't restart with the stale value. (A5 was the OpenAI key; it's dropped — the 2026-05-16 Workers AI swap routes LLM traffic through the `internjobs-ai-proxy` Worker.)
 - **A3** unlocks startup sign-in; **A4** unlocks `/ops/*` for you.
 - **B** lights up inbound email (Worker exists; needs CF Email Routing + secret in two places).
 - **C** lights up outbound email (Cloudflare Email Sending domain onboard + API token).

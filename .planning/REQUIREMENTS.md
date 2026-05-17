@@ -70,9 +70,9 @@ Spectrum/Photon stays the only active student SMS path. v1.2 adds startups + an 
 
 ### Agent Core (Mastra)
 
-- [ ] **AGENT-01**: When a student inbound SMS arrives (Spectrum/Photon path), the Mastra workflow fires, reads the student's profile context, matches against active `roles`, and writes a student-side draft message to a `drafts` table with `status='pending_review'`. v1.2 match is keyword heuristic; pgvector match is layered on via AGENT-03.
-- [ ] **AGENT-02**: Mastra maintains persistent thread memory keyed separately by `student_id` and `startup_id`, backed by Postgres (Mastra `PostgresStore`) under a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`). Thread context prevents duplicate intros and supports full conversation history.
-- [ ] **AGENT-03**: pgvector semantic memory enabled on Neon (`vector` extension + HNSW index created in migration, not deferred). Student profile and role embeddings written on save/update. Agent match optionally uses cosine similarity when `USE_VECTOR_MATCH` flag is set; falls back to AGENT-01 keyword match otherwise.
+- [ ] **AGENT-01**: When a student inbound SMS arrives (Spectrum/Photon path), the Mastra workflow fires, reads the student's profile context, matches against active `roles`, and writes a student-side draft message to a `drafts` table with `status='pending_review'`. v1.2 match is keyword heuristic; pgvector match is layered on via AGENT-03. *Workers AI via internal proxy Worker (no OpenAI billing) — 2026-05-16 swap.*
+- [ ] **AGENT-02**: Mastra maintains persistent thread memory keyed separately by `student_id` and `startup_id`, backed by Postgres (Mastra `PostgresStore`) under a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`). Thread context prevents duplicate intros and supports full conversation history. *Workers AI via internal proxy Worker (no OpenAI billing) — 2026-05-16 swap.*
+- [ ] **AGENT-03**: pgvector semantic memory enabled on Neon (`vector` extension + HNSW index created in migration, not deferred). Student profile and role embeddings written on save/update. Embedding model is Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768-dim) via the internjobs-ai-proxy Worker; vector column is `vector(768)`. Agent match optionally uses cosine similarity when `USE_VECTOR_MATCH` flag is set; falls back to AGENT-01 keyword match otherwise. *Workers AI via internal proxy Worker (no OpenAI billing) — 2026-05-16 swap.*
 
 ### Operator Approval Gate
 
