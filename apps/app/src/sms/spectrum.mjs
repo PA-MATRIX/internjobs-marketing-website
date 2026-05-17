@@ -103,7 +103,7 @@ async function sendSms(to, body, config) {
   };
 }
 
-async function runSpectrumWaitlistListener({ config, store }) {
+async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
   if (!config.photon.projectId || !config.photon.apiToken) {
     console.error(JSON.stringify({ level: "error", message: "spectrum_listener_missing_credentials" }));
     return;
