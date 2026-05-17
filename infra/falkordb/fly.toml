@@ -1,0 +1,48 @@
+# Fly app config for self-hosted FalkorDB (v1.2 MEMORY-01).
+#
+# Purpose: Redis-protocol graph database for agent temporal-fact memory.
+# Reachable ONLY from inside the internjobs-sios-org private network at
+# `internjobs-graph.internal:6379`. No public IP, no HTTP service.
+#
+# Persistence: 10GB Fly volume `falkor_data` mounted at /data. Single machine
+# (graph DB writes are not safe to scale horizontally without coordination —
+# the v1.2 agent volume does not need it).
+#
+# Auth: REDIS_PASSWORD is set via `flyctl secrets set` (generated with
+# `openssl rand -hex 32`). Saved to Infisical /internjobs-ai. The student
+# app reads FALKORDB_URL which encodes the password.
+#
+# Image: official falkordb/falkordb (Redis 8 + FalkorDB module 4.x). The
+# image's run.sh entrypoint forwards `REDIS_ARGS` to redis-server. We pass
+# `--requirepass $REDIS_PASSWORD --appendonly yes` via that env, and point
+# the data dir at the mounted volume via FALKORDB_DATA_PATH.
+
+app = "internjobs-graph"
+primary_region = "ord"
+
+[build]
+  image = "falkordb/falkordb:latest"
+
+[env]
+  # Disable the embedded FalkorDB browser UI (would bind 0.0.0.0 inside the
+  # machine and is a useless attack surface for a private-only DB).
+  BROWSER = "0"
+  # Persist data on the Fly volume, not the ephemeral container fs.
+  FALKORDB_DATA_PATH = "/data"
+  # Durability across restarts. REDIS_ARGS is forwarded verbatim by the
+  # image's run.sh. --requirepass picks up REDIS_PASSWORD from env at
+  # redis-server boot (passed via shell expansion in the entrypoint).
+  REDIS_ARGS = "--requirepass $REDIS_PASSWORD --appendonly yes"
+
+# No [http_service] block — this app is Redis-only, no HTTP. The Fly
+# private .internal network gives 6379 connectivity org-internal without
+# exposing a public IP.
+
+[[mounts]]
+  source = "falkor_data"
+  destination = "/data"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
