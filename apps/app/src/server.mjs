@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
-import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie } from "./auth.mjs";
+import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie, applyHandshakeOrContinue } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
@@ -120,6 +120,8 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/waitlist") {
       const auth = await getAuth(req, config);
+      // AUTH-PROD: handshake sentinel → forward Clerk's headers + 307.
+      if (applyHandshakeOrContinue(res, auth)) return;
       if (auth) {
         redirect(res, "/pairing");
         return;
@@ -200,6 +202,15 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/auth/callback") {
       const auth = await getAuth(req, config);
+      // AUTH-PROD (2026-05-16): the bug was here. On the first hop after
+      // LinkedIn sign-in completed, Clerk redirects to /auth/callback with
+      // a `__clerk_handshake` URL param (no `__session` cookie yet). The
+      // old JWKS-only verifier saw no cookie, returned null, and we
+      // redirected back to sign-in — auth loop. authenticateRequest() now
+      // returns a handshake state on that exact hop; we forward Clerk's
+      // Set-Cookie + Location headers verbatim with 307, and the browser
+      // follows up with the session cookie in place.
+      if (applyHandshakeOrContinue(res, auth)) return;
       if (!auth?.clerkUserId) {
         redirect(res, getSignInUrl(config));
         return;
@@ -914,13 +925,16 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/ops/privacy") {
+      const privacyAuth = await getAuth(req, config);
+      // AUTH-PROD: handshake sentinel → forward Clerk's headers + 307.
+      if (applyHandshakeOrContinue(res, privacyAuth)) return;
       sendHtml(
         res,
         200,
         renderLayout({
           title: "Privacy Operations",
           config,
-          auth: await getAuth(req, config),
+          auth: privacyAuth,
           body: `<section class="panel narrow"><p class="eyebrow">Operations</p><h1>Privacy controls before production data.</h1><p class="lede">User deletion/export requests should be handled from audit-backed database records. Do not log profile snapshots, message bodies, provider tokens, or raw webhook payloads.</p></section>`,
         }),
       );
@@ -962,6 +976,9 @@ startSpectrumWaitlistListener({ config, store, smsProvider });
 
 async function requireAuth(req, res) {
   const auth = await getAuth(req, config);
+  // AUTH-PROD: handshake sentinel → SDK headers + 307. Caller bails like
+  // for any unauthenticated case (the `return null` path below).
+  if (applyHandshakeOrContinue(res, auth)) return null;
   if (auth?.clerkUserId) return auth;
 
   redirect(res, getSignInUrl(config));
@@ -989,6 +1006,8 @@ function sendDeps() {
 // layer (PITFALLS #12), not inside handlers.
 async function requireStartupAuthOrRedirect(req, res) {
   const auth = await getAuth(req, config);
+  // AUTH-PROD: handshake sentinel → SDK headers + 307.
+  if (applyHandshakeOrContinue(res, auth)) return null;
   if (!auth?.clerkUserId) {
     redirect(res, getStartupSignInUrl(config));
     return null;

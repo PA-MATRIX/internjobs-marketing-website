@@ -15,6 +15,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "3.1048.0",
     "@aws-sdk/s3-request-presigner": "3.1048.0",
+    "@clerk/backend": "3.4.9",
     "@mastra/core": "1.35.0",
     "@mastra/memory": "1.18.2",
     "@mastra/pg": "1.11.0",
