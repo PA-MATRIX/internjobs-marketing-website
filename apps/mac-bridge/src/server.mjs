@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { loadConfig } from "./config.mjs";
 import { verifyBody } from "./security.mjs";
-import { startLocalListener } from "./listener.mjs";
+import { startListener } from "./listener.mjs";
 
 const config = loadConfig();
 
@@ -9,7 +9,7 @@ function log(level, message, fields = {}) {
   process.stdout.write(JSON.stringify({ level, message, ...fields, ts: new Date().toISOString() }) + "\n");
 }
 
-const listener = await startLocalListener({ config, log });
+const listener = await startListener({ config, log });
 
 const server = createServer(async (req, res) => {
   try {
