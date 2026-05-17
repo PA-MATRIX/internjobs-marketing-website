@@ -3,6 +3,7 @@ dist
 .wrangler
 .env
 .env.*
+!.env.example
 *.log
 
 apps/mac-bridge/.env
