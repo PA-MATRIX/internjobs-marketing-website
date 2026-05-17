@@ -3,6 +3,7 @@ import { Spectrum } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { eventIdFromPayload } from "../store.mjs";
 import { createWelcomeText } from "../messaging.mjs";
+import { runStudentInboundWorkflow } from "../workflows/student-inbound.mjs";
 
 /**
  * SpectrumSmsProvider — the v1.2 sole implementation of SmsProvider.
@@ -10,7 +11,7 @@ import { createWelcomeText } from "../messaging.mjs";
  * only depend on the SmsProvider seam, not on Spectrum/Photon internals.
  */
 export function createSpectrumSmsProvider(config) {
-  return {
+  const provider = {
     verifyWebhook(req, rawBody) {
       return verifyWebhook(req, rawBody, config);
     },
@@ -21,9 +22,10 @@ export function createSpectrumSmsProvider(config) {
       return sendSms(to, body, config);
     },
     async listen({ store }) {
-      return runSpectrumWaitlistListener({ config, store });
+      return runSpectrumWaitlistListener({ config, store, smsProvider: provider });
     },
   };
+  return provider;
 }
 
 function verifyWebhook(req, rawBody, config) {
@@ -122,6 +124,50 @@ async function runSpectrumWaitlistListener({ config, store }) {
     if (confirmation.student && confirmation.welcomeNeeded) {
       const welcome = await replyWithWelcome(space, message, confirmation.student);
       await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
+    }
+
+    // v1.2 autonomy pivot: when an existing confirmed student texts in, write
+    // an inbound_messages row + fire-and-forget the Mastra workflow. The
+    // workflow drafts + autonomously sends the reply via outbound.mjs ->
+    // smsProvider.sendSms (the Phase 01 seam). Mirrors /webhooks/photon.
+    if (
+      !confirmation.error &&
+      confirmation.eventType === "student_reply" &&
+      confirmation.student &&
+      typeof store.writeInboundMessage === "function"
+    ) {
+      try {
+        const messageId = await store.writeInboundMessage({
+          provider: "spectrum",
+          providerEventId: inbound.providerEventId,
+          channelType: inbound.channelType,
+          channelAddress: inbound.channelAddress,
+          studentId: confirmation.student.id,
+          body: inbound.text,
+          metadata: inbound.metadata || {},
+        });
+        if (messageId && store?.pool) {
+          runStudentInboundWorkflow({
+            pool: store.pool,
+            messageId,
+            smsProvider,
+            config,
+          }).catch((err) => {
+            console.error(JSON.stringify({
+              level: "error",
+              message: "student_inbound_workflow_failed",
+              messageId,
+              error: err?.message ?? String(err),
+            }));
+          });
+        }
+      } catch (err) {
+        console.error(JSON.stringify({
+          level: "error",
+          message: "write_inbound_message_failed",
+          error: err?.message ?? String(err),
+        }));
+      }
     }
   }
 }
