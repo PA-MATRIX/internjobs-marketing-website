@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "!apps/agentic-inbox"
   ],
   "scripts": {
     "dev": "npm run dev:marketing",
