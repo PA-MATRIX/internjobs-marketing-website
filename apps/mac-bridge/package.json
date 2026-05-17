@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs"
+    "start": "node --env-file=.env src/server.mjs",
+    "dev": "node --watch --env-file=.env src/server.mjs"
   },
   "dependencies": {
     "spectrum-ts": "^1.9.1"

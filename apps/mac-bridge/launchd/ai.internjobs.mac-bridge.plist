@@ -8,6 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--env-file=/Users/raj/internjobs-cms/apps/mac-bridge/.env</string>
     <string>/Users/raj/internjobs-cms/apps/mac-bridge/src/server.mjs</string>
   </array>
 
