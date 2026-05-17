@@ -1144,56 +1144,6 @@ class PostgresStore {
     return rows[0];
   }
 
-  // ─── Agent mailbox (v1.2 2026-05-17) ─────────────────────────────────────
-  //
-  // recordAgentEmail: persist a single inbound mail to agent_emails. Worker
-  // POSTs here via /webhooks/agent-mail for addresses on its AGENT_MAILBOXES
-  // list. Dedupes on provider_event_id (partial unique index).
-  async recordAgentEmail({ providerEventId, to, from, subject, body, headers, ts }) {
-    const receivedAt = ts ? new Date(Number(ts)) : new Date();
-    const headersJson = headers && typeof headers === "object" ? headers : {};
-    const { rows } = await this.pool.query(
-      `insert into agent_emails
-         (provider_event_id, to_address, from_address, subject, body, headers, received_at)
-       values ($1, $2, $3, $4, $5, $6, $7)
-       on conflict (provider_event_id)
-         where provider_event_id is not null
-         do nothing
-       returning id`,
-      [
-        providerEventId || null,
-        String(to || "").toLowerCase().trim(),
-        String(from || ""),
-        String(subject || ""),
-        String(body || ""),
-        headersJson,
-        receivedAt,
-      ],
-    );
-    return { id: rows[0]?.id || null, duplicate: rows.length === 0 };
-  }
-
-  // listAgentEmails: paginated reverse-chrono inbox for /admin/agent-mail/inbox.
-  // Body is included — operators (and the agent) need to read it. Capped at
-  // 200 rows per call by the route handler.
-  async listAgentEmails({ to = null, limit = 50, since = null } = {}) {
-    const args = [];
-    const where = [];
-    if (to) { args.push(String(to).toLowerCase()); where.push(`to_address = $${args.length}`); }
-    if (since) { args.push(since); where.push(`received_at >= $${args.length}`); }
-    args.push(Math.min(Math.max(Number(limit) || 50, 1), 200));
-    const limitIdx = args.length;
-    const sql = `
-      select id, provider_event_id, to_address, from_address, subject, body,
-             headers, received_at, processed_at, metadata,
-             conversation_id, startup_id
-        from agent_emails
-        ${where.length ? "where " + where.join(" and ") : ""}
-       order by received_at desc
-       limit $${limitIdx}`;
-    const { rows } = await this.pool.query(sql, args);
-    return rows;
-  }
 }
 
 // Parse an RFC 5322 From: value down to the bare addr-spec. We don't need

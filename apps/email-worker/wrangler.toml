@@ -4,11 +4,6 @@ compatibility_date = "2026-05-16"
 
 [vars]
 FLY_INGEST_URL = "https://app.internjobs.ai/webhooks/email"
-# v1.2 (2026-05-17): dedicated agent mailbox ingest. Receives mail to
-# agent-mac@agent.internjobs.ai (Apple ID identity inbox) and future
-# per-channel agent mailboxes. Distinct from /webhooks/email because the
-# Fly app stores these in agent_emails (not inbound_messages).
-FLY_AGENT_MAIL_URL = "https://app.internjobs.ai/webhooks/agent-mail"
 
 # EMAIL_WORKER_SECRET is set as an encrypted secret via:
 #   cd apps/email-worker && npx wrangler secret put EMAIL_WORKER_SECRET
