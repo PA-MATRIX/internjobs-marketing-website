@@ -1,29 +1,39 @@
 // apps/app/src/outbound.mjs
 //
-// v1.2 Phase 05 — the SOLE module permitted to invoke provider send
-// methods (smsProvider.sendSms, sendStartupEmail).
+// v1.2 — unified outbound channel router for agent-drafted messages.
 //
-// HARD CONSTRAINT (verified at deploy time by grep):
-//   No other file under apps/app/src/ may call smsProvider.sendSms or
-//   sendStartupEmail directly. The one pre-existing exception is the
-//   v1.1 pairing-welcome SMS path in server.mjs (auto-send on
-//   pairing_confirmed + welcomeNeeded) — that pre-dates the draft queue
-//   and is NOT an agent-drafted message. "No auto-send" applies
-//   specifically to drafts table rows.
+// AUTONOMY PIVOT (2026-05-17): this module is the channel router (SMS via
+// SmsProvider, email via sendStartupEmail). It is callable from anywhere —
+// typically from Mastra workflows (autonomous send) and from the
+// /ops/drafts/:id/flag rate-limit retry path (operator-initiated). The
+// prior "no auto-send" structural invariant — where outbound.mjs was the
+// SOLE call site, invoked only from /ops/drafts/:id/approve — is GONE.
+// The agent now sends autonomously on both student SMS and startup email
+// sides; /ops/drafts is a read-only audit log; operators flag bad messages
+// for prompt-tuning review (not pre-send approval).
 //
-// The `sendStartupEmail` import is intentionally OWNED here so server.mjs
-// has no direct line to the email provider. The /ops/drafts/:id/approve
-// handler passes `routeAndSend` a `smsProvider` (the same Phase 01
-// abstraction the welcome path uses) and a config; this module constructs
-// the email call from config.cloudflareEmailAccountId and
-// config.cloudflareEmailApiToken (Cloudflare Email Service, the "Agent
-// Mail" product launched at Agents Week 2026 — public beta 2026-04-17).
+// HISTORICAL: the structural "no auto-send" invariant lived here from
+// Phase 05 (2026-05-15..16) through 2026-05-17. Rationale for pivot:
+// turn-by-turn operator approval latency made conversational UX
+// impossibly slow (not really conversational at all). Risk is acknowledged
+// (the agent can say bad things) and is mitigated by:
+//   - System-prompt-level safety guardrails (AGENT_SAFETY_GUARDRAILS in
+//     student-inbound.mjs).
+//   - Lakera Guard pre-LLM screening (v1.3, SAFETY-01).
+//   - Operator flag-for-review post-hoc via POST /ops/drafts/:id/flag.
 //
-// Send-failure semantics (see Phase 05 PLAN.md success criteria):
-//   - On thrown error: caller (server.mjs /ops/drafts/:id/approve) catches,
-//     writes an audit_events row event_type='draft_send_failed', and leaves
-//     drafts.status='approved' so the operator can retry. No automatic
-//     retry in v1.2.
+// The `sendStartupEmail` import is intentionally OWNED here so callers
+// don't need a direct line to the email provider. The Mastra workflow
+// passes `routeAndSend` a `smsProvider` (the Phase 01 abstraction) and a
+// `config`; this module constructs the email call from
+// config.cloudflareEmailAccountId and config.cloudflareEmailApiToken
+// (Cloudflare Email Service, the "Agent Mail" product launched at Agents
+// Week 2026 — public beta 2026-04-17).
+//
+// Send-failure semantics:
+//   - On thrown error: caller (typically the Mastra workflow) catches,
+//     writes an audit_events row event_type='auto_send_failed', and flips
+//     drafts.status='failed'. No automatic retry in v1.2 (v1.3 candidate).
 //   - On success: caller flips status='sent', sets sent_at and
 //     provider_message_id.
 //

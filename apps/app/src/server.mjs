@@ -329,12 +329,15 @@ const server = createServer(async (req, res) => {
         await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
       }
 
-      // v1.2 Phase 04 (AGENT-01): on a regular student reply (not a pairing
-      // confirmation), write to inbound_messages and trigger the agent
-      // workflow FIRE-AND-FORGET. The HTTP 200 returns immediately; the
-      // workflow continues in the background and writes a drafts row.
-      // PHASE 04 NEVER SENDS — the workflow's terminal state is drafts row
-      // with status='pending_review'. Phase 05 owns the send path.
+      // v1.2 Phase 04 (AGENT-01) + 2026-05-17 autonomy pivot: on a regular
+      // student reply (not a pairing confirmation), write to
+      // inbound_messages and trigger the agent workflow FIRE-AND-FORGET.
+      // The HTTP 200 returns immediately; the workflow continues in the
+      // background, drafts the response, AND autonomously sends it via the
+      // outbound router. The terminal draft state is 'sent' (or 'failed').
+      // The prior 'pending_review' operator-gate is GONE — /ops/drafts is
+      // now a read-only audit log + flag-for-review surface (handled in a
+      // separate commit; see refactor(OPS-AUDIT)).
       if (
         !confirmation.error &&
         confirmation.eventType === "student_reply" &&
@@ -354,9 +357,19 @@ const server = createServer(async (req, res) => {
           if (messageId && store?.pool) {
             // Fire-and-forget: don't await, don't block the 200 response.
             // Errors are logged but never surface to the SMS provider —
-            // operator dashboards (audit_events) are the primary recovery
-            // surface, not a 5xx that would trigger SMS retries.
-            runStudentInboundWorkflow({ pool: store.pool, messageId }).catch((err) => {
+            // audit_events is the primary recovery surface, not a 5xx
+            // that would trigger SMS retries.
+            //
+            // Autonomy pivot (2026-05-17): pass smsProvider + config so
+            // the workflow can autonomously route the draft to the
+            // outbound provider. Without these the workflow still drafts
+            // but marks the row 'failed' with reason='no_sms_provider'.
+            runStudentInboundWorkflow({
+              pool: store.pool,
+              messageId,
+              smsProvider,
+              config,
+            }).catch((err) => {
               console.error(
                 JSON.stringify({
                   level: "error",

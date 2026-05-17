@@ -22,24 +22,36 @@
 //      The contract surface (conversation row created, draft row written)
 //      is unchanged.
 //   7. Compose prompt: system + profile + history + matched role + new body.
+//      The system prompt includes baseline safety guardrails (no legal/
+//      financial promises, no PII about other parties, polite refusal of
+//      illegal asks). v1.3 will add Lakera Guard pre-LLM screening.
 //   8. Call LLM → returns generated body. In v1.2 (post 2026-05-16
 //      tear-out) this is a direct POST to the Cloudflare Workers AI REST
 //      API. Without CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN
 //      (or with LLM_PROVIDER=stub for tests) we synthesize a deterministic
-//      canned draft so the rest of the pipeline stays exercised. Phase 06
-//      canary validates the real LLM path.
-//   9. Insert drafts row with status='pending_review', recipient_type='student',
+//      canned draft so the rest of the pipeline stays exercised.
+//   9. Insert drafts row with status='sent' (or 'failed'), recipient_type='student',
 //      channel='sms'. agent_metadata captures match_source, model, and a
-//      compact prompt summary.
-//  10. Mark inbound_messages.processed_at = now().
-//  11. (Future) Append the student message + agent draft to a Mastra
-//      thread via @mastra/memory. Skipped in v1.2 — see #6.
+//      compact prompt summary. Autonomy pivot (2026-05-17): drafts go
+//      straight to 'sent' after the autonomous send succeeds; the prior
+//      'pending_review' default is gone.
+//  10. Autonomously send via outbound.routeAndSend(). Wrap in try/catch so
+//      a send failure does not crash the workflow. On success: flip status
+//      to 'sent', set sent_at + provider_message_id. On failure: flip to
+//      'failed', write audit_events 'auto_send_failed' with the error.
+//  11. Mark inbound_messages.processed_at = now().
 //
-// HARD CONSTRAINT: This workflow MUST NOT send any outbound message. It
-// writes to drafts and stops. Phase 05 owns send.
+// HISTORICAL NOTE (2026-05-17 pivot): this workflow USED to write
+// status='pending_review' and stop — a human operator approved each draft
+// via /ops/drafts before send. That gate is gone. The agent now sends
+// autonomously on both student SMS and (future) startup email sides.
+// /ops/drafts is now a read-only audit log; operators can flag bad
+// messages post-hoc for prompt-tuning review. Rationale: turn-by-turn
+// approval latency made conversational UX impossibly slow.
 
 import { logEmbedErr } from "../embeddings.mjs";
 import { buildConversationReplyTo } from "./reply-to.mjs";
+import { routeAndSend } from "../outbound.mjs";
 
 // v1.2 2026-05-16 tear-out: chat completion now goes DIRECTLY to the
 // Cloudflare Workers AI REST API (no proxy Worker, no AI Gateway). The
@@ -63,15 +75,27 @@ const LAST_N_MESSAGES = 20; // PITFALLS #19
  *                                         + CLOUDFLARE_AI_API_TOKEN are set,
  *                                         else a canned-string stub is used.
  * @param {string}            deps.messageId  The inbound_messages.id to process.
+ * @param {object}            [deps.smsProvider]  Phase 01 SMS provider (e.g.
+ *                                                Spectrum) used for autonomous
+ *                                                send. When omitted the
+ *                                                workflow still drafts but
+ *                                                marks the draft 'failed' with
+ *                                                event_type='auto_send_failed'
+ *                                                + reason='no_sms_provider'.
+ * @param {object}            [deps.config]     App config blob for outbound
+ *                                                routing (Spectrum + CF Email
+ *                                                Service creds + outboundDryRun
+ *                                                flag for the smoke suite).
  *
  * @returns {Promise<{
  *   draftId: string | null,
  *   conversationId: string | null,
  *   matchSource: 'vector' | 'keyword' | 'none',
+ *   sent?: boolean,
  *   skipped?: { reason: string },
  * }>}
  */
-export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
+export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvider, config }) {
   if (!pool) throw new Error("runStudentInboundWorkflow: pool is required");
   if (!messageId) throw new Error("runStudentInboundWorkflow: messageId is required");
 
@@ -145,7 +169,16 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
   // 8. Call LLM (proxy Worker → Workers AI, test stub, or canned fallback).
   const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
 
-  // 9. Insert drafts row. status='pending_review' — operator queue gate.
+  // 9. Insert drafts row. Autonomy pivot (2026-05-17): rows are written
+  //    directly with status='sent' after the autonomous send succeeds
+  //    (or 'failed' if it threw). To avoid two writes for the happy path
+  //    we INSERT with the transient 'sending' status, then UPDATE to
+  //    'sent'/'failed' after routeAndSend resolves. The 'sending' state is
+  //    sub-second under normal latency; operators viewing /ops/drafts mid-
+  //    flight see it as a status badge ("in-flight"). Rows that get stuck
+  //    in 'sending' (process crash between INSERT and UPDATE) are a
+  //    self-evident audit signal.
+  //
   //    agent_metadata captures provenance: match_source + model + a hash of
   //    the prompt for debugging without leaking PII.
   //
@@ -169,26 +202,24 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
     roleId: role.id,
     startupId: role.startup_id,
   });
+  const channelAddress = inbound.channel_address || "";
   const { rows: draftRows } = await pool.query(
     `insert into drafts
        (conversation_id, inbound_message_id, recipient_type, channel,
         channel_address, body, status, agent_metadata)
-     values ($1, $2, $3, $4, $5, $6, 'pending_review', $7)
+     values ($1, $2, $3, $4, $5, $6, 'sending', $7)
      returning id`,
     [
       conversation.id,
       inbound.id,
       recipientType,
       channel,
-      inbound.channel_address || "",
+      channelAddress,
       generated.body,
       agentMetadata,
     ],
   );
   const draftId = draftRows[0]?.id || null;
-
-  // 10. Mark inbound consumed.
-  await markProcessed(pool, inbound.id);
 
   await writeAudit(pool, studentId, "student_inbound_drafted", "system", {
     inboundId: inbound.id,
@@ -199,7 +230,73 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
     startupId: role.startup_id,
   });
 
-  return { draftId, conversationId: conversation.id, matchSource };
+  // 10. Autonomously send. Wrap in try/catch — a send failure flips the
+  //     draft to 'failed' and writes an audit_events row, but never crashes
+  //     the workflow. (Auto-retry is v1.3.)
+  let sent = false;
+  try {
+    const sendDraft = {
+      id: draftId,
+      channel,
+      channel_address: channelAddress,
+      body: generated.body,
+      agent_metadata: agentMetadata,
+    };
+    const providerMessageId = await routeAndSend(sendDraft, {
+      smsProvider,
+      config: config || {},
+    });
+    await pool.query(
+      `update drafts
+          set status = 'sent',
+              sent_at = now(),
+              provider_message_id = $2,
+              updated_at = now()
+        where id = $1`,
+      [draftId, providerMessageId],
+    );
+    sent = true;
+    await writeAudit(pool, studentId, "student_inbound_auto_sent", "agent", {
+      draftId,
+      conversationId: conversation.id,
+      providerMessageId: providerMessageId || null,
+      channel,
+    });
+  } catch (sendErr) {
+    const errMsg = sendErr?.message || String(sendErr);
+    await pool.query(
+      `update drafts
+          set status = 'failed',
+              updated_at = now(),
+              agent_metadata = coalesce(agent_metadata, '{}'::jsonb)
+                                || jsonb_build_object('send_error', $2::text)
+        where id = $1`,
+      [draftId, errMsg.slice(0, 500)],
+    );
+    await writeAudit(pool, studentId, "auto_send_failed", "agent", {
+      draftId,
+      conversationId: conversation.id,
+      channel,
+      error: errMsg.slice(0, 500),
+    });
+    // Log but don't rethrow — fire-and-forget caller in server.mjs would
+    // log a workflow_failed too, which is noisier than necessary for the
+    // expected "send threw, draft is marked failed" path.
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "student_inbound_auto_send_failed",
+        draftId,
+        conversationId: conversation.id,
+        error: errMsg,
+      }),
+    );
+  }
+
+  // 11. Mark inbound consumed.
+  await markProcessed(pool, inbound.id);
+
+  return { draftId, conversationId: conversation.id, matchSource, sent };
 }
 
 // ─── Profile + thread helpers ────────────────────────────────────────────────
@@ -346,12 +443,30 @@ async function upsertConversation(pool, { studentId, startupId, roleId }) {
 
 // ─── Prompt composition ──────────────────────────────────────────────────────
 
+// Baseline safety guardrails injected into every system prompt. v1.2
+// autonomy pivot (2026-05-17): with no operator approval gate pre-send,
+// these prompt-level rules are the FIRST line of defense. v1.3 will add
+// Lakera Guard pre-LLM screening on inbound content for prompt-injection.
+// Operators can flag any sent message via /ops/drafts/:id/flag for
+// prompt-tuning review post-hoc.
+export const AGENT_SAFETY_GUARDRAILS = [
+  "SAFETY:",
+  "- Do not make legal, financial, or medical promises on the startup's behalf.",
+  "- Do not commit the startup to compensation, hiring decisions, equity, or contract terms.",
+  "- Do not share personal information about other students or other startups.",
+  "- Do not invent facts about the student, startup, or role beyond the provided context.",
+  "- If asked to do something illegal, deceptive, or that violates a person's privacy, refuse politely and end with a neutral message.",
+  "- If you're unsure how to answer, ask the student a clarifying question rather than guessing.",
+].join("\n");
+
 function composePrompt({ profileBlob, threadHistory, role, inboundBody }) {
   const parts = [];
   parts.push(
     "You are an agent helping a student communicate with a startup about a job opportunity.",
     "Draft a short, friendly SMS reply on the student's behalf. Keep it under 320 characters.",
     "Never invent facts about the student or the startup. If a question can't be answered from the context, ask politely.",
+    "",
+    AGENT_SAFETY_GUARDRAILS,
     "",
     "--- Student profile ---",
     profileBlob || "(no profile context on file)",
@@ -415,7 +530,13 @@ async function runLLM({ llm, prompt, model }) {
         },
         body: JSON.stringify({
           messages: [
-            { role: "system", content: "Draft concise SMS replies." },
+            {
+              role: "system",
+              content:
+                "Draft concise SMS replies on a student's behalf to a startup recruiter. " +
+                "Keep replies under 320 characters. Be friendly and natural.\n\n" +
+                AGENT_SAFETY_GUARDRAILS,
+            },
             { role: "user", content: prompt },
           ],
           max_tokens: 512,
