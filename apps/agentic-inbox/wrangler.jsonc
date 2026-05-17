@@ -4,11 +4,16 @@
 	// github.com/cloudflare/agentic-inbox @ 48039bb6. Changes from upstream:
 	//   - name: agentic-inbox → internjobs-agentic-inbox
 	//   - vars.DOMAINS: "example.com" → "internjobs.ai"
-	//   - vars.EMAIL_ADDRESSES: [] → ["agent-mac@agent.internjobs.ai"]
+	//   - vars.EMAIL_ADDRESSES: [] → ["maya@agent.internjobs.ai"]
 	//   - r2_buckets.bucket_name: "agentic-inbox" → "internjobs-agentic-inbox"
 	// All other settings (DO migrations, send_email binding, AI binding,
 	// compatibility_date/flags) kept identical to upstream so future upstream
 	// pulls merge cleanly.
+	//
+	// Naming note: "maya" is the agent's persona name (single agent identity
+	// for the v1.2 omnichannel surface — iMessage via Phase 07 mac-bridge +
+	// email via this Worker). Per-channel sub-agents (e.g. maya-startup@,
+	// maya-billing@) are out of scope for v1.2.
 	"name": "internjobs-agentic-inbox",
 	"compatibility_date": "2025-11-28",
 	"main": "./workers/app.ts",
@@ -23,7 +28,7 @@
 		// TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 		// The worker now fails closed outside local development if Access is not configured.
 		"DOMAINS": "internjobs.ai",
-		"EMAIL_ADDRESSES": ["agent-mac@agent.internjobs.ai"]
+		"EMAIL_ADDRESSES": ["maya@agent.internjobs.ai"]
 	},
 	"send_email": [
 		{

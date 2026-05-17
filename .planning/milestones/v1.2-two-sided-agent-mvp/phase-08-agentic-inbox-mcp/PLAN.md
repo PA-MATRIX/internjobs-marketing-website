@@ -30,7 +30,7 @@ must_haves:
   truths:
     - "agentic-inbox Worker deployed at agentic-inbox.internjobs.ai (or chosen custom domain) and resolves over HTTPS"
     - "CF Access policy gates the UI; unauthenticated visitors get redirected to the Access SSO"
-    - "agent-mac@agent.internjobs.ai inbound mail lands in the agentic-inbox MailboxDO (visible in the UI)"
+    - "maya@agent.internjobs.ai inbound mail lands in the agentic-inbox MailboxDO (visible in the UI)"
     - "The /mcp endpoint on the agentic-inbox Worker responds to MCP protocol calls authenticated via CF Access service token"
     - "Mastra workflow on Fly can invoke the email-send MCP tool against agentic-inbox and produce an outbound message"
     - "Existing conv-{uuid}@agent.internjobs.ai pipeline (Phase 03) continues to work unchanged — no regression"
@@ -42,9 +42,9 @@ must_haves:
     - path: "Cloudflare dashboard"
       provides: "Zero Trust Access app with POLICY_AUD + TEAM_DOMAIN set as Worker secrets"
     - path: "Cloudflare dashboard"
-      provides: "Email Routing rule for agent-mac@agent.internjobs.ai → agentic-inbox Worker (specific-address route, not catch-all)"
+      provides: "Email Routing rule for maya@agent.internjobs.ai → agentic-inbox Worker (specific-address route, not catch-all)"
   key_links:
-    - from: "agent-mac@ inbound email"
+    - from: "maya@ inbound email"
       to: "MailboxDO SQLite + R2 attachments"
       via: "CF Email Routing → agentic-inbox Worker"
     - from: "Mastra workflow on Fly"
@@ -68,7 +68,7 @@ the autonomous agent (and operators) a polished email surface with:
     oversight + draft-then-confirm review
   • CF Access SSO as the single trust boundary
 
-Goal: make agent-mac@agent.internjobs.ai the agent's identity inbox AND
+Goal: make maya@agent.internjobs.ai the agent's identity inbox AND
 future inboxes (agent-startup@, agent-billing@, etc.) trivially addable via
 EMAIL_ADDRESSES env. The Fly app keeps the conv-{uuid}@ student-conversation
 pipeline; agentic-inbox owns identity inboxes only.
@@ -98,7 +98,7 @@ Cost: a single migration rollback of 0006_v1_2_agent_emails + small Fly code del
 
 ### Step 1: Customize apps/agentic-inbox/wrangler.jsonc
 - `DOMAINS: "internjobs.ai"` (the apex; agent.internjobs.ai routes via Email Routing rules)
-- `EMAIL_ADDRESSES: ["agent-mac@agent.internjobs.ai"]` (Apple ID inbox; expand later)
+- `EMAIL_ADDRESSES: ["maya@agent.internjobs.ai"]` (Apple ID inbox; expand later)
 - Custom R2 bucket name: `internjobs-agentic-inbox` (namespaced to avoid CF account collisions)
 - Custom Worker name: `internjobs-agentic-inbox`
 - DO classes (MailboxDO, EmailAgent, EmailMCP) — keep defaults
@@ -126,7 +126,7 @@ Cost: a single migration rollback of 0006_v1_2_agent_emails + small Fly code del
 ### Step 6: Custom hostname + Email Routing
 - Add CNAME `agentic-inbox.internjobs.ai` → Worker (or use the workers.dev URL)
 - CF Email Routing → agent.internjobs.ai → ADD specific-address rule:
-    `agent-mac@agent.internjobs.ai → Send to Worker → internjobs-agentic-inbox`
+    `maya@agent.internjobs.ai → Send to Worker → internjobs-agentic-inbox`
 - This takes PRECEDENCE over the catch-all that routes to internjobs-email-ingest
 
 ### Step 7: Sunset home-rolled agent-mail path
@@ -137,7 +137,7 @@ Cost: a single migration rollback of 0006_v1_2_agent_emails + small Fly code del
 - Re-deploy Fly + email-worker
 
 ### Step 8: Inbox smoke test
-- Send a test email to `agent-mac@agent.internjobs.ai`
+- Send a test email to `maya@agent.internjobs.ai`
 - Verify it appears in agentic-inbox UI under that mailbox
 - Verify the auto-draft reply appears in the agent panel
 
