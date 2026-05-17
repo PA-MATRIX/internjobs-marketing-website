@@ -149,14 +149,15 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId }) {
   //    agent_metadata captures provenance: match_source + model + a hash of
   //    the prompt for debugging without leaking PII.
   //
-  // v1.2 EMAIL-03 (scope-add 2026-05-16): buildDraftAgentMetadata stamps
-  // `reply_to = conv-{conversation_id}@internjobs.ai` whenever the draft
-  // is for a startup recipient (so the CF Email Service payload carries
-  // a per-conversation Reply-To and the inbound catch-all Worker can
-  // route replies deterministically). This workflow only emits
-  // recipient_type='student', so the stamp is a no-op for these rows —
-  // the helper exists so future startup-drafting workflows pick up the
-  // behavior for free.
+  // v1.2 EMAIL-03 (scope-add 2026-05-16, subdomain update same-day):
+  // buildDraftAgentMetadata stamps
+  // `reply_to = conv-{conversation_id}@agent.internjobs.ai` whenever the
+  // draft is for a startup recipient (so the CF Email Service payload
+  // carries a per-conversation Reply-To and the inbound catch-all Worker
+  // bound to the `agent.internjobs.ai` subdomain can route replies
+  // deterministically). This workflow only emits recipient_type='student',
+  // so the stamp is a no-op for these rows — the helper exists so future
+  // startup-drafting workflows pick up the behavior for free.
   const recipientType = "student";
   const channel = "sms";
   const agentMetadata = buildDraftAgentMetadata({
@@ -514,8 +515,8 @@ export function buildDraftAgentMetadata({
   };
   if (recipientType === "startup" && conversationId) {
     // Literal prefix `conv-` (single hyphen separator) + full UUID with
-    // hyphens. Lowercased. Parsed by apps/email-worker/src/index.js on
-    // inbound replies.
+    // hyphens, on the `agent.internjobs.ai` subdomain. Lowercased. Parsed
+    // by apps/email-worker/src/index.js on inbound replies.
     const replyTo = buildConversationReplyTo(conversationId);
     if (replyTo) meta.reply_to = replyTo;
   }

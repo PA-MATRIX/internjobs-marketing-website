@@ -9,8 +9,20 @@ FLY_INGEST_URL = "https://app.internjobs.ai/webhooks/email"
 #   cd apps/email-worker && npx wrangler secret put EMAIL_WORKER_SECRET
 # Never put it in this file — wrangler.toml is committed to git.
 
-# Cloudflare Email Routing rule (configured in CF Dashboard, not here):
-#   catch-all *@internjobs.ai → Send to Worker → internjobs-email-ingest
-# A catch-all is used so both the v1.2 entry address (startups@internjobs.ai)
-# and the Phase-04 reply-to pattern (conv_{conversation_id}@internjobs.ai)
-# are handled without a wrangler.toml change.
+# Cloudflare Email Routing rules (configured in CF Dashboard, not here):
+#
+#   1. Subdomain `agent.internjobs.ai` catch-all:
+#        *@agent.internjobs.ai → Send to Worker → internjobs-email-ingest
+#      This is the ONLY routing target for the Worker (2026-05-16 subdomain
+#      isolation update). Per-conversation aliases
+#      `conv-{conversation_id}@agent.internjobs.ai` land here.
+#
+#   2. Apex `internjobs.ai` (human/employee email — NOT this Worker):
+#        - Custom address: raj@internjobs.ai → rentalaraj@gmail.com (forward)
+#        - Catch-all: *@internjobs.ai → rentalaraj@gmail.com (forward)
+#      Apex mail NEVER reaches this Worker. A startup that strips the
+#      subdomain in their reply lands in the human inbox, not the agent.
+#
+# No `[[zone]]` block needed here — CF Email Routing → Worker binding is
+# configured entirely in the dashboard. The Worker's `name` (above) is what
+# the dashboard rule targets.

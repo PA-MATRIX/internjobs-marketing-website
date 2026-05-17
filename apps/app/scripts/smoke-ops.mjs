@@ -272,17 +272,28 @@ try {
   const replyToMod = await import("../src/workflows/reply-to.mjs");
   const uuid = "abcdef12-3456-7890-abcd-ef1234567890";
   const built = replyToMod.buildConversationReplyTo(uuid);
-  assert(built === `conv-${uuid}@internjobs.ai`, "buildConversationReplyTo should return canonical form");
-  const parsed = replyToMod.parseConversationReplyTo(`"Op" <CONV-${uuid.toUpperCase()}@internjobs.ai>`);
+  assert(
+    built === `conv-${uuid}@agent.internjobs.ai`,
+    "buildConversationReplyTo should return canonical subdomain form",
+  );
+  const parsed = replyToMod.parseConversationReplyTo(
+    `"Op" <CONV-${uuid.toUpperCase()}@agent.internjobs.ai>`,
+  );
   assert(parsed === uuid, "parseConversationReplyTo should lowercase + extract from angle brackets");
   assert(replyToMod.parseConversationReplyTo("ops@internjobs.ai") === null, "non-conv address should parse to null");
+  assert(
+    replyToMod.parseConversationReplyTo(`conv-${uuid}@internjobs.ai`) === null,
+    "apex `conv-<uuid>@internjobs.ai` must NOT be parsed as a conv alias (subdomain isolation)",
+  );
   assert(replyToMod.validateConversationUuid("not-a-uuid") === null, "validateConversationUuid rejects malformed");
   assert(replyToMod.validateConversationUuid(uuid.toUpperCase()) === uuid, "validateConversationUuid lowercases");
 
   // POST /webhooks/email with HMAC + conversation_id payload.
+  // The Fly ingest endpoint is shape-agnostic about apex vs. subdomain in
+  // the `to` field — it only validates `conversation_id` independently.
   const payloadObj = {
     from: '"Founder" <founder@startup.example>',
-    to: `conv-${uuid}@internjobs.ai`,
+    to: `conv-${uuid}@agent.internjobs.ai`,
     subject: "Re: candidate intro",
     body: "Sounds good, let's chat.",
     ts: Date.now(),
@@ -341,7 +352,7 @@ try {
     channel: "email",
     channel_address: "founder@startup.example",
     body: "draft body",
-    agent_metadata: { reply_to: `conv-${uuid}@internjobs.ai` },
+    agent_metadata: { reply_to: `conv-${uuid}@agent.internjobs.ai` },
   };
   const provId = await routeAndSendForEmail(emailDraft, {
     smsProvider: { sendSms: async () => ({}) },

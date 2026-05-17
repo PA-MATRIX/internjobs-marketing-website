@@ -43,8 +43,10 @@ const DEFAULT_FROM = "InternJobs.ai <noreply@internjobs.ai>";
  *                                            `text` field; v1.2 ships text-only,
  *                                            no separate HTML path)
  * @param {string} [opts.replyTo]           - optional; Phase 04 uses this for the
- *                                            conv_{conversation_id}@internjobs.ai
- *                                            reply-to pattern. Mapped to `reply_to`.
+ *                                            conv-{conversation_id}@agent.internjobs.ai
+ *                                            reply-to pattern (subdomain
+ *                                            isolation 2026-05-16). Mapped
+ *                                            to `reply_to`.
  * @param {string} opts.accountId           - Cloudflare account ID (config.cloudflareEmailAccountId)
  * @param {string} opts.apiToken            - Cloudflare API token, Account-scoped
  *                                            with "Email Sending" permission

@@ -448,7 +448,8 @@ const server = createServer(async (req, res) => {
           }),
         );
         // Return 500 so the Worker falls back to operator-forward — the
-        // email is not lost; operator sees it in ops@internjobs.ai.
+        // email is not lost; operator sees it in OPERATOR_FALLBACK
+        // (rentalaraj@gmail.com, verified destination in CF Email Routing).
         sendJson(res, 500, { error: "internal_error" });
       }
       return;
@@ -1015,12 +1016,13 @@ function flattenRoleForEmbedding(role) {
 }
 
 // v1.2 EMAIL-03: loose UUID v4 syntactic validator. The catch-all Worker
-// parses `conv-{uuid}@internjobs.ai` and ships the UUID in the JSON
-// payload; we accept it only if it's syntactically a UUID (8-4-4-4-12
-// hex with hyphens). Malformed → null and the legacy From-address lookup
-// runs unchanged. We deliberately don't enforce v4 version/variant bits
-// (gen_random_uuid() emits v4 anyway, but cross-version compat keeps the
-// validator dumb and forgiving).
+// on `agent.internjobs.ai` parses `conv-{uuid}@agent.internjobs.ai` and
+// ships the UUID in the JSON payload; we accept it only if it's
+// syntactically a UUID (8-4-4-4-12 hex with hyphens). Malformed → null
+// and the legacy From-address lookup runs unchanged. We deliberately
+// don't enforce v4 version/variant bits (gen_random_uuid() emits v4
+// anyway, but cross-version compat keeps the validator dumb and
+// forgiving).
 function validateUuidLoose(value) {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim().toLowerCase();
