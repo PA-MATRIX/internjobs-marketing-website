@@ -216,6 +216,40 @@ class MemoryStore {
     return job;
   }
 
+  // v1.2 Phase 09 — MemoryStore stubs for the LinkedIn enrichment surface.
+  // Used by dev/test boot when DATABASE_URL is unset so the /onboard/*
+  // routes don't crash; production reads + writes go through PostgresStore.
+  async linkUserLinkedInProfile(studentId, profile) {
+    if (!studentId || !profile) return null;
+    if (!this.linkedinProfiles) this.linkedinProfiles = new Map();
+    const row = {
+      student_id: studentId,
+      linkedin_url: profile.linkedinUrl || "",
+      linkedin_id: profile.linkedinId || "",
+      headline: profile.headline || "",
+      summary: profile.summary || "",
+      current_company: profile.currentCompany || "",
+      current_title: profile.currentTitle || "",
+      schools: profile.schools || [],
+      experiences: profile.experiences || [],
+      skills: profile.skills || [],
+      enriched_at: new Date().toISOString(),
+      enriched_via: profile.enrichedVia || "proxycurl",
+      raw: profile.raw || null,
+    };
+    this.linkedinProfiles.set(studentId, row);
+    await this.writeAuditEvent(studentId, "linkedin_profile_enriched", "system", {
+      via: row.enriched_via,
+      hasUrl: Boolean(row.linkedin_url),
+    });
+    return row;
+  }
+
+  async getLinkedInProfile(studentId) {
+    if (!studentId || !this.linkedinProfiles) return null;
+    return this.linkedinProfiles.get(studentId) || null;
+  }
+
   async ensureStudentThread(studentId, channelAddress, metadata = {}) {
     const threadKey = `student:${studentId}:phone:${normalizeAddress(channelAddress)}`;
     const existing = this.studentThreads.get(threadKey);
@@ -704,6 +738,73 @@ class PostgresStore {
     );
     await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: "sprite_brightdata", status: "pending_provider_setup" });
     return result.rows[0];
+  }
+
+  // ─── v1.2 Phase 09 — LinkedIn enrichment via Proxycurl ─────────────────────
+  //
+  // linkUserLinkedInProfile UPSERTs the linkedin_profiles row (1:1 with
+  // students, UNIQUE on student_id). Called by the /onboard/start route's
+  // fire-and-forget enrichment task after Proxycurl resolves the email.
+  // The full provider response is stored as `raw` so the agent can
+  // reach for fields we don't yet normalize without a re-fetch.
+  //
+  // getLinkedInProfile is read by the student-inbound workflow on
+  // first-contact turns so the prompt carries the LinkedIn block.
+
+  async linkUserLinkedInProfile(studentId, profile) {
+    if (!studentId || !profile) return null;
+    const result = await this.pool.query(
+      `insert into linkedin_profiles
+         (student_id, linkedin_url, linkedin_id, headline, summary,
+          current_company, current_title, schools, experiences, skills,
+          enriched_via, raw)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       on conflict (student_id) do update set
+         linkedin_url = coalesce(nullif(excluded.linkedin_url, ''), linkedin_profiles.linkedin_url),
+         linkedin_id = coalesce(nullif(excluded.linkedin_id, ''), linkedin_profiles.linkedin_id),
+         headline = coalesce(nullif(excluded.headline, ''), linkedin_profiles.headline),
+         summary = coalesce(nullif(excluded.summary, ''), linkedin_profiles.summary),
+         current_company = coalesce(nullif(excluded.current_company, ''), linkedin_profiles.current_company),
+         current_title = coalesce(nullif(excluded.current_title, ''), linkedin_profiles.current_title),
+         schools = excluded.schools,
+         experiences = excluded.experiences,
+         skills = excluded.skills,
+         enriched_at = now(),
+         enriched_via = excluded.enriched_via,
+         raw = excluded.raw
+       returning *`,
+      [
+        studentId,
+        profile.linkedinUrl || "",
+        profile.linkedinId || "",
+        profile.headline || "",
+        profile.summary || "",
+        profile.currentCompany || "",
+        profile.currentTitle || "",
+        JSON.stringify(profile.schools || []),
+        JSON.stringify(profile.experiences || []),
+        JSON.stringify(profile.skills || []),
+        profile.enrichedVia || "proxycurl",
+        profile.raw ? JSON.stringify(profile.raw) : null,
+      ],
+    );
+    await this.writeAuditEvent(studentId, "linkedin_profile_enriched", "system", {
+      via: profile.enrichedVia || "proxycurl",
+      hasUrl: Boolean(profile.linkedinUrl),
+      schoolCount: (profile.schools || []).length,
+      experienceCount: (profile.experiences || []).length,
+      skillCount: (profile.skills || []).length,
+    });
+    return result.rows[0] || null;
+  }
+
+  async getLinkedInProfile(studentId) {
+    if (!studentId) return null;
+    const { rows } = await this.pool.query(
+      `select * from linkedin_profiles where student_id = $1 limit 1`,
+      [studentId],
+    );
+    return rows[0] || null;
   }
 
   async writeConsent(studentId, consentType, granted, source) {
