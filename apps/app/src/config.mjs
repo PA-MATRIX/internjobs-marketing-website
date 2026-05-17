@@ -91,6 +91,28 @@ export function getConfig(env = process.env) {
     // always wired so the bridge can push inbound regardless of which
     // provider is "primary" for outbound.
     smsProviderName: (env.SMS_PROVIDER || "spectrum").toLowerCase(),
+    // v1.2 Phase 09 — Standout-style LinkedIn enrichment.
+    // proxycurl.apiToken — bearer token for Proxycurl's Reverse Email
+    //   Lookup. Loaded into the Phase 09 enrichment client
+    //   (apps/app/src/onboarding/proxycurl.mjs). Fail-soft: empty token
+    //   means /onboard/start skips enrichment and the student still
+    //   reaches /onboard/qr — the agent's first message just won't be
+    //   contextualized with LinkedIn fields on that first turn.
+    proxycurl: {
+      apiToken: env.PROXYCURL_API_TOKEN || "",
+    },
+    // onboarding.agentNumber — the iMessage number students text the
+    //   START-XXXXXX pairing code to. Defaults to the prod number
+    //   +14063210019 (Mac mini bridge). Override per environment via
+    //   AGENT_NUMBER. Used by views.renderOnboardingQR /
+    //   renderOnboardingMobile to build the sms:// URI + the human-
+    //   readable copy.
+    // onboarding.pairingTtlHours — default 24h, overridable via
+    //   PAIRING_TTL_HOURS (e.g. a smoke test might set 1).
+    onboarding: {
+      agentNumber: env.AGENT_NUMBER || "+14063210019",
+      pairingTtlHours: Number(env.PAIRING_TTL_HOURS || "24"),
+    },
   };
 }
 

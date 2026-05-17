@@ -15,6 +15,9 @@ import { ensureGraphSchema, pingGraph } from "./memory/graph.mjs";
 import {
   renderLayout,
   renderOnboarding,
+  renderOnboardingQR,
+  renderOnboardingMobile,
+  renderOnboardingSuccess,
   renderPairing,
   renderPairingConfirmed,
   renderProfile,
@@ -28,6 +31,16 @@ import {
   renderDraftDetail,
   renderFeedbackLog,
 } from "./views.mjs";
+// v1.2 Phase 09 — LinkedIn enrichment + Standout-style pairing.
+// proxycurl client is loaded lazily inside the /onboard/start handler so
+// boot doesn't depend on PROXYCURL_API_TOKEN being set.
+import { enrichByEmail } from "./onboarding/proxycurl.mjs";
+import {
+  generatePairingCode,
+  parsePairingCode,
+  claimPairingCode,
+  lookupPairingStatus,
+} from "./onboarding/pairing.mjs";
 // routeAndSend was previously imported here for the /ops/drafts/:id/approve
 // path; after the 2026-05-17 autonomy pivot the approve/edit/reject routes
 // are gone and the Mastra workflow calls outbound.routeAndSend directly.
@@ -337,6 +350,180 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // ─── v1.2 Phase 09 — Standout-style onboarding ──────────────────────────
+    //
+    // Flow:
+    //   /auth/callback (Clerk LinkedIn OAuth) → /onboard/start
+    //     ↓ server-side
+    //   Proxycurl email→profile enrichment (fire-and-forget) → linkedin_profiles
+    //     ↓
+    //   generatePairingCode(student.id) → pairing_sessions row
+    //     ↓
+    //   Render /onboard/qr (desktop) OR /onboard/mobile (mobile UA) with the
+    //   sms:// URI baked into a QR / deep-link button
+    //     ↓
+    //   Student texts START-XXXXXX → Mac bridge → /webhooks/mac-bridge (below)
+    //     ↓
+    //   claimPairingCode binds students.channel_address = phone, fires the
+    //   first-contact workflow with the LinkedIn block in the prompt.
+
+    if (req.method === "GET" && url.pathname === "/onboard/start") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const student = await store.upsertStudentFromAuth(auth);
+      // Cookie used by /onboard/qr + /onboard/mobile + /onboard/status to look
+      // up the active pairing code without putting the code in the URL.
+      // Short-lived (matches the pairing TTL). HttpOnly so client JS can't
+      // read it — the status poll goes through the server. SameSite=Lax is
+      // fine since these are all same-origin GETs.
+      const ttlHours = config.onboarding.pairingTtlHours;
+      let pairingCode = null;
+      if (store?.pool) {
+        try {
+          pairingCode = await generatePairingCode(store.pool, student.id, {
+            ttlHours,
+            source: detectMobile(req) ? "mobile-deeplink" : "qr",
+          });
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              level: "error",
+              message: "pairing_code_generate_failed",
+              error: err?.message ?? String(err),
+            }),
+          );
+        }
+      } else if (config.enableDevAuth) {
+        // Dev/test mode (no DATABASE_URL). Generate a deterministic-shaped
+        // code so /onboard/qr can render and the smoke suite can exercise
+        // the route. The code is NOT persisted (no pairing_sessions row),
+        // so /onboard/status will always return paired: false in this mode.
+        pairingCode = "START-DEVCODE";
+      }
+
+      // Fire-and-forget Proxycurl enrichment. Caller doesn't wait — by the
+      // time the student gets to /onboard/qr and starts texting, the
+      // linkedin_profiles row is likely written. Worst case (slow API): the
+      // first-contact workflow falls back to the non-contextual prompt;
+      // subsequent turns will pick up the enrichment.
+      if (auth.email && config.proxycurl?.apiToken && store?.pool) {
+        enrichByEmail({
+          email: auth.email,
+          apiToken: config.proxycurl.apiToken,
+        })
+          .then(async (profile) => {
+            if (profile) {
+              await store.linkUserLinkedInProfile(student.id, {
+                ...profile,
+                enrichedVia: "proxycurl",
+              });
+            }
+          })
+          .catch((err) => {
+            console.error(
+              JSON.stringify({
+                level: "error",
+                message: "linkedin_enrichment_failed",
+                studentId: student.id,
+                error: err?.message ?? String(err),
+              }),
+            );
+          });
+      }
+
+      if (pairingCode) {
+        setPairingCodeCookie(res, pairingCode, ttlHours);
+      }
+
+      // Mobile UA → deep-link page; desktop → QR page.
+      redirect(res, detectMobile(req) ? "/onboard/mobile" : "/onboard/qr");
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/onboard/qr") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const pairingCode = getPairingCodeCookie(req);
+      if (!pairingCode) {
+        redirect(res, "/onboard/start");
+        return;
+      }
+      const agentNumber = config.onboarding.agentNumber;
+      const smsUri = buildSmsUri(agentNumber, pairingCode);
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Pair your phone",
+          config,
+          auth,
+          body: await renderOnboardingQR({ pairingCode, smsUri, agentNumber }),
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/onboard/mobile") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const pairingCode = getPairingCodeCookie(req);
+      if (!pairingCode) {
+        redirect(res, "/onboard/start");
+        return;
+      }
+      const agentNumber = config.onboarding.agentNumber;
+      const smsUri = buildSmsUri(agentNumber, pairingCode);
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Pair your phone",
+          config,
+          auth,
+          body: renderOnboardingMobile({ pairingCode, smsUri, agentNumber }),
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/onboard/status") {
+      // Polled by /onboard/qr + /onboard/mobile every 3s. Returns
+      // { paired: bool, claimed_phone?: string }. Auth required so a leaked
+      // code can't be probed externally; the cookie carries the code.
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const pairingCode = getPairingCodeCookie(req);
+      if (!pairingCode || !store?.pool) {
+        sendJson(res, 200, { paired: false });
+        return;
+      }
+      const status = await lookupPairingStatus(store.pool, pairingCode);
+      sendJson(res, 200, {
+        paired: Boolean(status?.paired),
+        ...(status?.claimedPhone ? { claimed_phone: status.claimedPhone } : {}),
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/onboard/success") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      // Drop the cookie now that we've paired (best-effort; route works
+      // without it either way).
+      clearPairingCodeCookie(res);
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "Paired",
+          config,
+          auth,
+          body: renderOnboardingSuccess(),
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/profile") {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -483,6 +670,102 @@ const server = createServer(async (req, res) => {
 
       const payload = JSON.parse(rawBody || "{}");
       const inbound = macBridgeProvider.parseInbound(payload);
+
+      // v1.2 Phase 09 — START- pairing-code branch. Runs BEFORE the legacy
+      // hex/IJ-XXXXXX confirmPairingCode path so a Standout-style code
+      // matches even if parseInbound's legacy regex happened to also pick
+      // something up. claimPairingCode binds the phone atomically; on
+      // success we fire the FIRST-CONTACT workflow with the LinkedIn
+      // context already in place.
+      const startCode = parsePairingCode(inbound.text);
+      if (startCode && store?.pool) {
+        const claim = await claimPairingCode(store.pool, startCode, inbound.channelAddress, {
+          channelType: inbound.channelType,
+        });
+        if (claim.ok) {
+          // Record the inbound for messaging_events observability and
+          // write an inbound_messages row so the workflow has something
+          // to consume. providerEventId from the bridge is reused so
+          // dedup still works on a retry.
+          await store.writeMessagingEvent({
+            provider: "mac-bridge",
+            providerEventId: inbound.providerEventId,
+            studentId: claim.studentId,
+            direction: "inbound",
+            channelType: inbound.channelType,
+            channelAddress: inbound.channelAddress,
+            eventType: "pairing_started",
+            deliveryStatus: "received",
+            metadata: { ...inbound.metadata, pairingCode: startCode, source: "phase-09" },
+          });
+          await store.writeAuditEvent(claim.studentId, "pairing_started", "provider", {
+            code: startCode,
+            channelType: inbound.channelType,
+          });
+
+          if (typeof store.writeInboundMessage === "function") {
+            try {
+              const messageId = await store.writeInboundMessage({
+                provider: "mac-bridge",
+                providerEventId: inbound.providerEventId,
+                channelType: inbound.channelType,
+                channelAddress: inbound.channelAddress,
+                studentId: claim.studentId,
+                body: inbound.text,
+                metadata: { ...inbound.metadata, firstContact: true, pairingCode: startCode },
+              });
+              if (messageId && store?.pool) {
+                runStudentInboundWorkflow({
+                  pool: store.pool,
+                  messageId,
+                  smsProvider: macBridgeProvider,
+                  config,
+                }).catch((err) => {
+                  console.error(
+                    JSON.stringify({
+                      level: "error",
+                      message: "student_inbound_workflow_failed",
+                      source: "mac-bridge-pairing",
+                      messageId,
+                      error: err?.message ?? String(err),
+                    }),
+                  );
+                });
+              }
+            } catch (err) {
+              console.error(
+                JSON.stringify({
+                  level: "error",
+                  message: "write_inbound_message_failed",
+                  source: "mac-bridge-pairing",
+                  error: err?.message ?? String(err),
+                }),
+              );
+            }
+          }
+
+          sendJson(res, 200, { ok: true, eventType: "pairing_started", studentId: claim.studentId });
+          return;
+        }
+
+        // Code matched the START-XXXXXX format but the claim failed
+        // (expired or already used). Record the attempt for ops review
+        // but don't fire any workflow.
+        await store.writeMessagingEvent({
+          provider: "mac-bridge",
+          providerEventId: inbound.providerEventId,
+          studentId: null,
+          direction: "inbound",
+          channelType: inbound.channelType,
+          channelAddress: inbound.channelAddress,
+          eventType: "pairing_expired",
+          deliveryStatus: "received",
+          metadata: { ...inbound.metadata, pairingCode: startCode, reason: claim.reason },
+        });
+        sendJson(res, 200, { ok: false, eventType: "pairing_expired", reason: claim.reason });
+        return;
+      }
+
       const confirmation = inbound.code
         ? await store.confirmPairingCode({ ...inbound, provider: "mac-bridge" })
         : await store.recordInboundMessage(inbound);
@@ -1118,4 +1401,67 @@ function safeStringEqual(a, b) {
   const right = Buffer.from(String(b));
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+// ─── v1.2 Phase 09 — onboarding helpers ─────────────────────────────────────
+
+// Build the sms:// URI scanned via QR (desktop) or tapped via deep-link
+// (mobile). iOS quirk: the canonical separator between recipient and query
+// params is `&` (the historical Apple shape) rather than `?` for an sms
+// URI — both work on modern iOS, but `&` is the safer choice across iOS
+// versions and Android. We URL-encode the recipient + body so unusual
+// numbers (+, dashes) and the code stay intact through the iOS scheme
+// handler.
+function buildSmsUri(agentNumber, code) {
+  const recipient = encodeURIComponent(String(agentNumber || ""));
+  const body = encodeURIComponent(String(code || ""));
+  return `sms:${recipient}&body=${body}`;
+}
+
+// Crude UA-based mobile detection. We only need to distinguish "phone in
+// the user's hand" from "desktop browser". A false negative (desktop
+// flagged mobile) still works — the deep-link button just doesn't open
+// Messages, the student copies the code instead. A false positive on
+// mobile means we show a QR they can't scan from the same device — the
+// fallback copy still works. Cheap heuristic, fine for v1.2.
+function detectMobile(req) {
+  const ua = String(req.headers["user-agent"] || "");
+  return /iPhone|iPod|Android.+Mobile/i.test(ua);
+}
+
+const PAIRING_COOKIE = "ij_pair";
+
+function setPairingCodeCookie(res, code, ttlHours) {
+  const maxAge = Math.max(1, Number(ttlHours) || 24) * 3600;
+  const attrs = [
+    `${PAIRING_COOKIE}=${encodeURIComponent(code)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${maxAge}`,
+  ];
+  if (config.isProduction) attrs.push("Secure");
+  res.appendHeader
+    ? res.appendHeader("Set-Cookie", attrs.join("; "))
+    : res.setHeader("Set-Cookie", attrs.join("; "));
+}
+
+function getPairingCodeCookie(req) {
+  const raw = String(req.headers.cookie || "");
+  const m = raw.match(new RegExp(`(?:^|;\\s*)${PAIRING_COOKIE}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+function clearPairingCodeCookie(res) {
+  const attrs = [
+    `${PAIRING_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (config.isProduction) attrs.push("Secure");
+  res.appendHeader
+    ? res.appendHeader("Set-Cookie", attrs.join("; "))
+    : res.setHeader("Set-Cookie", attrs.join("; "));
 }

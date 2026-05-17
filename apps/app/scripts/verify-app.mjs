@@ -93,6 +93,26 @@ try {
   });
   assert(profile.ok && (await profile.text()).includes("Profile context updated"), "profile context did not save");
 
+  // v1.2 Phase 09 — Standout-style onboarding smoke. Memory-store mode (no
+  // DATABASE_URL) emits a dev-stub pairing code so the QR + mobile + status
+  // pages render. Postgres-mode is exercised by the operator smoke suite +
+  // manual /onboard/* clicks during release.
+  const onboardStart = await fetch(`${baseUrl}/onboard/start`, { headers: authHeaders, redirect: "manual" });
+  assert(onboardStart.status === 302, "onboard/start should redirect");
+  const startSetCookie = onboardStart.headers.get("set-cookie") || "";
+  assert(startSetCookie.includes("ij_pair="), "onboard/start should set ij_pair cookie");
+  const pairCookie = startSetCookie.split(";")[0]; // "ij_pair=START-..."
+
+  const qr = await fetch(`${baseUrl}/onboard/qr`, { headers: { cookie: `${cookie}; ${pairCookie}` } });
+  assert(qr.ok, `onboard/qr returned ${qr.status}`);
+  const qrHtml = await qr.text();
+  assert(qrHtml.includes("Scan it"), "onboard/qr should render the QR landing");
+  assert(/START-[A-Z0-9]+/.test(qrHtml), "onboard/qr should embed a pairing code");
+
+  const status = await fetch(`${baseUrl}/onboard/status`, { headers: { cookie: `${cookie}; ${pairCookie}` } });
+  const statusBody = await status.json();
+  assert(status.ok && statusBody.paired === false, "onboard/status should report unpaired before claim");
+
   console.log("internjobs-app: waitlist smoke checks passed");
 } finally {
   child.kill();
