@@ -195,14 +195,32 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   //    clearly-named slot for when this is wired to @mastra/memory.
   const threadHistory = []; // future: Memory.query({ resourceId: 'student:<uuid>', threadId: <conv.id>, last: LAST_N_MESSAGES })
 
+  // 6b. v1.2 Phase 09 — first-contact detection. Zero prior sent drafts on
+  //     this conversation = the agent hasn't replied yet, so this turn is
+  //     the FIRST contact. We route the prompt through composeFirstContactPrompt
+  //     which prepends a "first message, reference their LinkedIn"
+  //     instruction and embeds the structured LinkedIn block from
+  //     linkedin_profiles. On all subsequent turns we use the normal
+  //     composePrompt path.
+  const priorOutbound = await countPriorOutbound(pool, conversation.id);
+  const isFirstContact = priorOutbound === 0;
+  const linkedinBlock = composeLinkedInBlock(profile.linkedin);
+
   // 7. Compose prompt.
-  const prompt = composePrompt({
-    profileBlob,
-    graphSummary,
-    threadHistory,
-    role,
-    inboundBody: inbound.body,
-  });
+  const prompt = isFirstContact
+    ? composeFirstContactPrompt({
+        profileBlob,
+        linkedinBlock,
+        role,
+        inboundBody: inbound.body,
+      })
+    : composePrompt({
+        profileBlob,
+        graphSummary,
+        threadHistory,
+        role,
+        inboundBody: inbound.body,
+      });
 
   // 8. Call LLM (proxy Worker → Workers AI, test stub, or canned fallback).
   const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
@@ -240,6 +258,11 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
     roleId: role.id,
     startupId: role.startup_id,
   });
+  // v1.2 Phase 09: stamp first-contact + LinkedIn-presence flags so /ops/drafts
+  // can show a "first contact" badge and ops can audit whether the LinkedIn
+  // enrichment landed in time for the first message.
+  agentMetadata.first_contact = isFirstContact;
+  agentMetadata.linkedin_present = Boolean(profile.linkedin);
   const channelAddress = inbound.channel_address || "";
   const { rows: draftRows } = await pool.query(
     `insert into drafts
@@ -552,6 +575,36 @@ async function loadStudentProfile(pool, studentId) {
   const fullName = pickName(nameRow.student_name, nameRow.snapshot_name);
   const firstName = deriveFirstName(fullName);
 
+  // v1.2 Phase 09: Proxycurl-enriched LinkedIn fields. May be null on a
+  // brand-new student whose /onboard/start enrichment hasn't completed yet
+  // (fire-and-forget) or on enrichment failure. composeProfileBlob handles
+  // null gracefully — the prompt just omits the LinkedIn block.
+  let linkedin = null;
+  try {
+    const { rows: liRows } = await pool.query(
+      `select linkedin_url, linkedin_id, headline, summary,
+              current_company, current_title, schools, experiences, skills
+         from linkedin_profiles
+        where student_id = $1
+        limit 1`,
+      [studentId],
+    );
+    linkedin = liRows[0] || null;
+  } catch (err) {
+    // Table absent (e.g. migration 0007 not yet applied in this env) is a
+    // soft fail — degrade to the non-LinkedIn prompt without crashing.
+    if (err?.code !== "42P01") {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "load_linkedin_profile_failed",
+          studentId,
+          error: err?.message ?? String(err),
+        }),
+      );
+    }
+  }
+
   return {
     fullName,
     firstName,
@@ -559,6 +612,7 @@ async function loadStudentProfile(pool, studentId) {
     projects: row?.projects || "",
     preferredWork: row?.preferred_work || "",
     notes: row?.notes || "",
+    linkedin,
   };
 }
 
@@ -592,6 +646,101 @@ function composeProfileBlob(profile) {
   if (profile.projects) parts.push("projects: " + profile.projects);
   if (profile.preferredWork) parts.push("preferred work: " + profile.preferredWork);
   if (profile.notes) parts.push("notes: " + profile.notes);
+  return parts.join("\n");
+}
+
+// v1.2 Phase 09 — render the LinkedIn-enriched fields as a structured block
+// the model can quote from. This is the core Standout-style payoff: by the
+// time the agent's first message goes out, the prompt already names the
+// candidate's school, current role, and a few skills, so the opening line
+// is contextual instead of "what do you study?".
+//
+// Kept separate from composeProfileBlob because (a) it has a strict "DO NOT
+// ASK FOR THIS" framing that doesn't apply to the student-typed
+// student_profile_context fields, and (b) callers may want to omit on
+// later turns once the conversation has its own context.
+export function composeLinkedInBlock(linkedin) {
+  if (!linkedin) return "";
+  const lines = ["student LinkedIn context (already pulled — DO NOT ask for it):"];
+  if (linkedin.linkedin_url) lines.push(`  url: ${linkedin.linkedin_url}`);
+  if (linkedin.headline) lines.push(`  headline: ${linkedin.headline}`);
+
+  const schools = Array.isArray(linkedin.schools) ? linkedin.schools : [];
+  if (schools.length) {
+    const top = schools[0] || {};
+    const ed = [top.school, top.degree, top.fieldOfStudy].filter(Boolean).join(", ");
+    if (ed) {
+      const year = top.endYear ? ` (${top.endYear})` : "";
+      lines.push(`  school: ${ed}${year}`);
+    }
+  }
+
+  const cur = [linkedin.current_title, linkedin.current_company].filter(Boolean).join(" at ");
+  if (cur) lines.push(`  current: ${cur}`);
+
+  const experiences = Array.isArray(linkedin.experiences) ? linkedin.experiences : [];
+  const recent = experiences.slice(0, 3).map((e) => {
+    const role = [e.title, e.company].filter(Boolean).join(" at ");
+    const dates = [e.startsAt, e.endsAt].filter(Boolean).join("–");
+    return role + (dates ? ` (${dates})` : "");
+  }).filter(Boolean);
+  if (recent.length) lines.push(`  recent: ${recent.join("; ")}`);
+
+  const skills = Array.isArray(linkedin.skills) ? linkedin.skills.slice(0, 7).filter(Boolean) : [];
+  if (skills.length) lines.push(`  skills: ${skills.join(", ")}`);
+
+  return lines.join("\n");
+}
+
+// First-contact detection. Cheap heuristic: count prior outbound drafts
+// against this conversation. Zero outbound = the agent hasn't replied yet,
+// so this turn is the FIRST contact. The first-contact branch:
+//   - prepends a "this is the first message" framing to the system prompt
+//   - tells the model to open with something specific from the LinkedIn
+//     block (a school, a past role, a skill) — no "what do you study?"
+//
+// We deliberately count drafts (not inbound_messages) because a student
+// may have texted multiple times before any agent reply lands.
+async function countPriorOutbound(pool, conversationId) {
+  if (!pool || !conversationId) return 0;
+  const { rows } = await pool.query(
+    `select count(*)::int as n from drafts where conversation_id = $1 and status = 'sent'`,
+    [conversationId],
+  );
+  return rows[0]?.n || 0;
+}
+
+// Compose the first-contact prompt. Called by composePrompt's first-turn
+// branch. Returns a string slotted into the user-role message of the LLM
+// call (the system message stays AGENT_SYSTEM_PROMPT — voice + safety).
+//
+// Exported so unit tests + future startup-side workflows can reuse the
+// shape without duplicating the structure.
+export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, inboundBody }) {
+  const parts = [
+    "--- First contact ---",
+    "This is the FIRST iMessage from a new student. They just paired their phone via the QR/sms deep-link onboarding flow.",
+    "Open warmly and reference something SPECIFIC from their LinkedIn (school, a past role, a skill).",
+    "Do NOT ask what they're studying or where they work — you already know. Do NOT ask for their resume.",
+    "",
+  ];
+  if (linkedinBlock) {
+    parts.push(linkedinBlock, "");
+  }
+  parts.push(
+    "--- Student profile (self-reported, may be empty on first contact) ---",
+    profileBlob || "(no profile context yet)",
+    "",
+    "--- Matched role ---",
+    `Title: ${role.title || ""}`,
+    `Description: ${role.description || ""}`,
+    `Requirements: ${role.requirements || ""}`,
+    "",
+    "--- New inbound from student ---",
+    inboundBody || "(empty)",
+    "",
+    "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must be contextual — name a school, role, or skill from their LinkedIn. Output only the SMS body.",
+  );
   return parts.join("\n");
 }
 
