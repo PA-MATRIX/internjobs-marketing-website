@@ -59,6 +59,17 @@ const OPERATOR_FALLBACK = "rentalaraj@gmail.com";
 // human email and is routed elsewhere by CF.
 const CONV_ALIAS_REGEX = /^conv-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@agent\.internjobs\.ai$/i;
 
+// v1.2 (2026-05-17): dedicated agent mailboxes — distinct identity addresses
+// the agent owns (Apple ID for iMessage activation, future per-channel agent
+// inboxes). Matched as a list rather than a regex because new addresses are
+// added by humans, one at a time. Mail to these addresses is POSTed to
+// /webhooks/agent-mail (NOT /webhooks/email) so the Fly app stores it in
+// agent_emails (not inbound_messages). Both paths share EMAIL_WORKER_SECRET
+// for HMAC.
+const AGENT_MAILBOXES = new Set([
+  "agent-mac@agent.internjobs.ai",
+]);
+
 export default {
   /**
    * @param {EmailMessage} message
@@ -82,6 +93,99 @@ export default {
         if (match) conversationId = match[1].toLowerCase();
       } catch (_) {
         conversationId = null;
+      }
+
+      // v1.2 (2026-05-17): dedicated agent mailbox path. If the To: is one
+      // of AGENT_MAILBOXES, store the message in the Fly agent_emails table
+      // AND mirror to the operator inbox for human visibility. The operator
+      // forward is best-effort and never blocks the primary path.
+      const toCandidate = (to.match(/<([^>]+)>/)?.[1] ?? to).trim().toLowerCase();
+      if (!conversationId && AGENT_MAILBOXES.has(toCandidate)) {
+        // Read raw body (same cap as the conv path).
+        let agentBody = "";
+        try {
+          const raw = new Response(message.raw);
+          agentBody = await raw.text();
+          if (agentBody.length > 1_000_000) agentBody = agentBody.slice(0, 1_000_000);
+        } catch (_) {
+          agentBody = "(body parse failed)";
+        }
+
+        // Collect headers as a flat object for storage. Iterating
+        // message.headers via .forEach mirrors the Headers iface.
+        const headers = {};
+        try {
+          message.headers.forEach((v, k) => { headers[k] = v; });
+        } catch (_) { /* swallow */ }
+
+        const agentPayload = JSON.stringify({
+          provider_event_id: `agent-mail:${crypto.randomUUID()}`,
+          to: toCandidate,
+          from,
+          subject,
+          body: agentBody,
+          headers,
+          ts: Date.now(),
+        });
+
+        // HMAC the payload with the shared secret.
+        const encoderA = new TextEncoder();
+        const keyA = await crypto.subtle.importKey(
+          "raw",
+          encoderA.encode(env.EMAIL_WORKER_SECRET ?? ""),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"],
+        );
+        const sigBufA = await crypto.subtle.sign("HMAC", keyA, encoderA.encode(agentPayload));
+        const sigHexA = bufferToHex(sigBufA);
+
+        // POST to Fly's agent-mail ingest. FLY_AGENT_MAIL_URL falls back
+        // to FLY_INGEST_URL's host if not set (we expect the worker secret
+        // to be configured separately).
+        const agentUrl = env.FLY_AGENT_MAIL_URL ?? (env.FLY_INGEST_URL ?? "").replace(/\/webhooks\/email\/?$/, "/webhooks/agent-mail");
+        let agentPostOk = false;
+        try {
+          const res = await fetch(agentUrl, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-email-worker-secret": env.EMAIL_WORKER_SECRET ?? "",
+              "x-email-hmac-sha256": sigHexA,
+            },
+            body: agentPayload,
+          });
+          agentPostOk = res.ok;
+          if (!agentPostOk) {
+            console.log(JSON.stringify({
+              level: "warn",
+              message: "fly_agent_mail_non_2xx",
+              status: res.status,
+              to: toCandidate,
+            }));
+          }
+        } catch (err) {
+          console.log(JSON.stringify({
+            level: "warn",
+            message: "fly_agent_mail_fetch_failed",
+            error: String(err?.message ?? err),
+            to: toCandidate,
+          }));
+        }
+
+        // Mirror to operator inbox regardless of post success — this is the
+        // agent's identity mailbox (Apple ID, etc.), human must see it too.
+        try {
+          await message.forward(OPERATOR_FALLBACK);
+        } catch (forwardErr) {
+          console.log(JSON.stringify({
+            level: "error",
+            message: "agent_mailbox_mirror_failed",
+            error: String(forwardErr?.message ?? forwardErr),
+            to: toCandidate,
+          }));
+        }
+        return;
       }
 
       // Subdomain non-conv path: an email arrived at the agent subdomain
