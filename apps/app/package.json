@@ -9,6 +9,7 @@
     "build": "node scripts/verify-app.mjs",
     "verify": "node scripts/verify-app.mjs",
     "smoke:ops": "node scripts/smoke-ops.mjs",
+    "smoke:graph": "node scripts/smoke-graph.mjs",
     "test:auth": "node --test src/auth.test.mjs",
     "migrate": "node scripts/migrate.mjs"
   },
@@ -19,6 +20,7 @@
     "@mastra/core": "1.35.0",
     "@mastra/memory": "1.18.2",
     "@mastra/pg": "1.11.0",
+    "falkordb": "6.6.2",
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
     "spectrum-ts": "^1.5.0"

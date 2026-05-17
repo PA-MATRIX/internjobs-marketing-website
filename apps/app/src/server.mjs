@@ -10,6 +10,7 @@ import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
 import { initMastra, isMastraReady } from "./mastra.mjs";
 import { runStudentInboundWorkflow } from "./workflows/student-inbound.mjs";
 import { writeRoleEmbedding, logEmbedErr } from "./embeddings.mjs";
+import { ensureGraphSchema, pingGraph } from "./memory/graph.mjs";
 import {
   renderLayout,
   renderOnboarding,
@@ -44,6 +45,39 @@ const smsProvider = createSpectrumSmsProvider(config);
 // — used during the verify-app.mjs smoke suite where ENABLE_DEV_AUTH=true.
 initMastra(config);
 
+// v1.2 MEMORY-01: bootstrap the FalkorDB graph schema on startup.
+// Fail-soft: if FALKORDB_URL is unset or the DB is unreachable, the
+// function logs a warning and returns false; the app boots normally.
+// Indexes are idempotent — re-running ensureGraphSchema on every boot
+// is the desired pattern (cheap, no-op when already present).
+ensureGraphSchema().catch((err) => {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      message: "graph_schema_bootstrap_failed",
+      error: err?.message ?? String(err),
+    }),
+  );
+});
+
+// v1.2 MEMORY-01: graphReady cache. /healthz hits PING but we don't want
+// to spam the graph DB on every probe. 30s cache window matches the
+// internal-network latency budget (a PING is sub-ms but the round-trip
+// + JSON parse adds up at high request rates).
+let _graphReadyCache = { value: false, ts: 0 };
+async function checkGraphReady() {
+  const now = Date.now();
+  if (now - _graphReadyCache.ts < 30_000) return _graphReadyCache.value;
+  let val = false;
+  try {
+    val = await pingGraph();
+  } catch (_) {
+    val = false;
+  }
+  _graphReadyCache = { value: val, ts: now };
+  return val;
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -64,6 +98,11 @@ const server = createServer(async (req, res) => {
       } catch (_err) {
         pgvectorReady = false;
       }
+
+      // v1.2 MEMORY-01: graphReady = FALKORDB_URL set AND PING round-trips.
+      // 30s cached (see checkGraphReady) so a stampede of /healthz hits
+      // doesn't beat up the graph DB.
+      const graphReady = Boolean(process.env.FALKORDB_URL) && (await checkGraphReady());
 
       sendJson(res, 200, {
         ok: true,
@@ -108,6 +147,11 @@ const server = createServer(async (req, res) => {
             config.r2?.secretAccessKey &&
             getR2Client() !== null,
         ),
+        // v1.2 MEMORY-01: self-hosted graph memory readiness. true iff
+        // FALKORDB_URL is set AND a PING + RETURN 1 round-trips. The
+        // student app boots fine without it (graph features degrade
+        // gracefully — agent has no cross-conversation recall).
+        graphReady,
       });
       return;
     }

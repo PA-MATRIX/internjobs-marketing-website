@@ -52,6 +52,7 @@
 import { logEmbedErr } from "../embeddings.mjs";
 import { buildConversationReplyTo } from "./reply-to.mjs";
 import { routeAndSend } from "../outbound.mjs";
+import { getStudentSummary, recordFact, PREDICATES } from "../memory/graph.mjs";
 
 // v1.2 2026-05-16 tear-out: chat completion now goes DIRECTLY to the
 // Cloudflare Workers AI REST API (no proxy Worker, no AI Gateway). The
@@ -146,6 +147,28 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   const profile = await loadStudentProfile(pool, studentId);
   const profileBlob = composeProfileBlob(profile);
 
+  // 3b. v1.2 MEMORY-01: graph-memory recall. Pull a per-student summary
+  //     from the self-hosted FalkorDB instance (cross-conversation, multi-
+  //     day recall). Fail-soft: if FALKORDB_URL is unset or the DB is
+  //     down, getStudentSummary returns an empty string and the prompt
+  //     omits the WHAT YOU REMEMBER section entirely. The agent then
+  //     operates in degraded mode (no cross-conversation recall) but the
+  //     turn still completes. This is the recall that makes lines like
+  //     "hey raj. been a minute — how'd the valon thing land?" possible.
+  let graphSummary = "";
+  try {
+    graphSummary = await getStudentSummary(studentId);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "graph_summary_failed",
+        studentId,
+        error: err?.message ?? String(err),
+      }),
+    );
+  }
+
   // 5. Match — done before conversation creation because conversations are
   //    keyed by (student_id, startup_id, role_id). No roles → no convo.
   const matchResult = await pickRole(pool, studentId, profile, inbound.body);
@@ -175,6 +198,7 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   // 7. Compose prompt.
   const prompt = composePrompt({
     profileBlob,
+    graphSummary,
     threadHistory,
     role,
     inboundBody: inbound.body,
@@ -327,7 +351,166 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   // 11. Mark inbound consumed.
   await markProcessed(pool, inbound.id);
 
+  // 12. v1.2 MEMORY-01: post-reply fact extraction (fire-and-forget).
+  //     After we've committed the workflow's user-visible outcome (draft +
+  //     send + mark processed), kick off a background extraction LLM call
+  //     that pulls structured facts from this turn and writes them to the
+  //     graph. The agent's NEXT turn (this conversation or a different
+  //     one days later) reads these via getStudentSummary in step 3b above.
+  //
+  //     Fire-and-forget by design: graph writes must NEVER block the
+  //     user-visible turn. A timeout, parse error, or DB-down condition
+  //     here is silently logged and dropped. The agent already responded;
+  //     we're just enriching memory for future turns.
+  if (inbound.body) {
+    recordTurnFacts({
+      studentId,
+      inboundBody: inbound.body,
+      agentReply: generated.body,
+      sourceMessageId: inbound.id,
+      model: DEFAULT_MODEL,
+    }).catch((err) => {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "graph_record_turn_failed",
+          studentId,
+          messageId: inbound.id,
+          error: err?.message ?? String(err),
+        }),
+      );
+    });
+  }
+
   return { draftId, conversationId: conversation.id, matchSource, sent };
+}
+
+// ─── Post-reply fact extraction (MEMORY-01) ─────────────────────────────────
+
+/**
+ * Extract facts from a completed turn and persist to the graph.
+ *
+ * Calls Workers AI 70B with a tight JSON-only extraction prompt, parses
+ * the response, and writes each fact via recordFact (which handles
+ * temporal close-out for single-valued predicates internally).
+ *
+ * All failures are caught and logged; this function never throws.
+ * Intended call surface: fire-and-forget at the end of the workflow.
+ */
+async function recordTurnFacts({ studentId, inboundBody, agentReply, sourceMessageId, model }) {
+  // Skip extraction when Workers AI isn't configured — recordFact is fine
+  // with zero calls; an empty graph is the same as no MEMORY-01 surface.
+  const accountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_AI_API_TOKEN;
+  if (!accountId || !apiToken) return;
+
+  const extractionPrompt = buildFactExtractionPrompt({ inboundBody, agentReply });
+  let factsRaw = null;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "system",
+              content:
+                "You extract structured facts from a chat turn. Output VALID JSON only — no prose, no markdown fences. Output strictly an array, even if empty.",
+            },
+            { role: "user", content: extractionPrompt },
+          ],
+          // Low temperature: extraction should be deterministic. 256 tokens
+          // is plenty for up to 5 short facts (avg ~30 tokens each).
+          max_tokens: 400,
+          temperature: 0.1,
+        }),
+      },
+    );
+    if (!res.ok) return;
+    const json = await res.json().catch(() => null);
+    factsRaw = typeof json?.result?.response === "string" ? json.result.response : null;
+  } catch (_err) {
+    return;
+  }
+
+  const facts = parseFactsJson(factsRaw);
+  if (!facts || facts.length === 0) return;
+
+  // Persist each fact. recordFact is fail-soft (returns null if FalkorDB
+  // is unreachable) so we don't need a per-call try/catch wrapper.
+  for (const f of facts.slice(0, 5)) {
+    await recordFact({
+      subjectId: studentId,
+      subjectType: "Student",
+      predicate: f.predicate,
+      objectValue: f.object,
+      confidence: typeof f.confidence === "number" ? f.confidence : 0.7,
+      sourceMessageId,
+    });
+  }
+}
+
+function buildFactExtractionPrompt({ inboundBody, agentReply }) {
+  // Recognized predicates mirror graph.mjs PREDICATES. Listed verbatim so
+  // the LLM stays on the canonical vocabulary; free-text predicates fall
+  // through to OTHER via normalizePredicate, but the prompt steers toward
+  // the canonical set for queryability.
+  const predicates = [
+    PREDICATES.INTERESTED_IN, // multi-valued — accumulates
+    PREDICATES.STUDIES_AT, // single-valued — close-out on change
+    PREDICATES.SKILLS_IN, // multi-valued
+    PREDICATES.PREFERS, // single-valued
+    PREDICATES.MENTIONED, // multi-valued (roles/companies brought up)
+    PREDICATES.STATUS, // single-valued (e.g. "actively looking")
+    PREDICATES.OTHER,
+  ].join(", ");
+  return [
+    "Extract up to 5 facts about the USER (not the agent) from the conversation turn below.",
+    "Each fact: { predicate, object, confidence }.",
+    `predicate is one of: ${predicates}.`,
+    "object is a short string (max 80 chars).",
+    "confidence is a number 0..1 reflecting how strongly the turn supports the fact.",
+    "Skip pleasantries. Skip facts about the agent. Skip facts already obvious from prior context.",
+    "Output JSON array. Empty array if no clear facts.",
+    "",
+    "User said:",
+    String(inboundBody || "").slice(0, 1500),
+    "",
+    "Agent said:",
+    String(agentReply || "").slice(0, 1500),
+    "",
+    "JSON:",
+  ].join("\n");
+}
+
+function parseFactsJson(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  // The model sometimes prefixes/suffixes the JSON with stray prose despite
+  // instructions. Find the first `[` and last `]` and slice — best-effort.
+  let s = raw.trim();
+  const open = s.indexOf("[");
+  const close = s.lastIndexOf("]");
+  if (open === -1 || close === -1 || close < open) return null;
+  s = s.slice(open, close + 1);
+  try {
+    const arr = JSON.parse(s);
+    if (!Array.isArray(arr)) return null;
+    return arr.filter(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        typeof item.predicate === "string" &&
+        typeof item.object === "string" &&
+        item.object.length > 0,
+    );
+  } catch (_) {
+    return null;
+  }
 }
 
 // ─── Profile + thread helpers ────────────────────────────────────────────────
@@ -607,13 +790,26 @@ export const AGENT_SYSTEM_PROMPT = [
   "Keep replies under 320 characters when over SMS.",
 ].join("\n");
 
-function composePrompt({ profileBlob, threadHistory, role, inboundBody }) {
+function composePrompt({ profileBlob, graphSummary, threadHistory, role, inboundBody }) {
   // The persona + voice + safety live in AGENT_SYSTEM_PROMPT (system role).
   // This prompt carries only the per-turn dynamic context (profile, thread
   // history, matched role, new inbound). Keeping them separate lets the 70B
   // model treat the system content as instructions and the user content as
   // data, which gives noticeably tighter style adherence than mashing them.
   const parts = [];
+  // v1.2 MEMORY-01: WHAT YOU REMEMBER block sits FIRST. The 70B model
+  // weights early instruction more heavily than late, and cross-conversation
+  // recall is the highest-value context the agent has (a student profile
+  // is static, but graph facts capture lived conversational context like
+  // "mentioned the Acme intro is pending"). Omitted when empty so a
+  // first-turn candidate doesn't see a useless empty section.
+  if (graphSummary && graphSummary.trim().length > 0) {
+    parts.push(
+      "--- What you remember about this user ---",
+      graphSummary.trim(),
+      "",
+    );
+  }
   parts.push(
     "--- Student profile ---",
     profileBlob || "(no profile context on file)",
