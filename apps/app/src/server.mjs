@@ -6,6 +6,7 @@ import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from ".
 import { createStore } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
 import { createSpectrumSmsProvider } from "./sms/spectrum.mjs";
+import { createMacBridgeSmsProvider } from "./sms/mac-bridge.mjs";
 import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
 import { initMastra, isMastraReady } from "./mastra.mjs";
 import { runStudentInboundWorkflow } from "./workflows/student-inbound.mjs";
@@ -37,7 +38,17 @@ import { getR2Client } from "./storage/r2.mjs";
 
 const config = getConfig();
 const store = createStore(config);
-const smsProvider = createSpectrumSmsProvider(config);
+
+// v1.2 (2026-05-17): SMS provider selector. SMS_PROVIDER=mac-bridge swaps
+// outbound routing to the self-hosted Mac mini; default 'spectrum' keeps
+// Photon cloud as the outbound path. The /webhooks/mac-bridge route below
+// is wired unconditionally so the Mac bridge can push inbound regardless.
+// We also keep a 'macBridgeProvider' handle so the webhook handler can use
+// it for inbound parsing/verification even when spectrum is the outbound.
+const spectrumProvider = createSpectrumSmsProvider(config);
+const macBridgeProvider = createMacBridgeSmsProvider(config);
+const smsProvider =
+  config.smsProviderName === "mac-bridge" ? macBridgeProvider : spectrumProvider;
 
 // v1.2 Phase 04: initialize Mastra in-process. Idempotent + side-effect-light
 // (Mastra defers actual schema creation until first memory/workflow API call).
@@ -434,6 +445,96 @@ const server = createServer(async (req, res) => {
             JSON.stringify({
               level: "error",
               message: "write_inbound_message_failed",
+              error: err?.message ?? String(err),
+            }),
+          );
+        }
+      }
+
+      sendJson(res, confirmation.error ? 422 : 200, {
+        ok: !confirmation.error,
+        duplicate: confirmation.duplicate,
+        error: confirmation.error,
+        eventType: confirmation.eventType,
+      });
+      return;
+    }
+
+    // ─── Inbound iMessage/SMS via self-hosted Mac bridge (v1.2 2026-05-17) ───
+    //
+    // apps/mac-bridge (running on a Mac mini at HostMyApple) POSTs every
+    // inbound message here, signed with x-bridge-signature: sha256=<hex>
+    // over the raw body using BRIDGE_HMAC_SECRET. Payload shape:
+    //   { providerEventId, platform: 'imessage'|'sms', from, spaceId,
+    //     messageId, text, ts }
+    //
+    // Mirrors /webhooks/photon: pairing-code path runs first when the body
+    // matches, otherwise we recordInboundMessage + fire the agent workflow
+    // fire-and-forget. The smsProvider used by the workflow is whichever
+    // one is selected by SMS_PROVIDER — on the Mac path that's
+    // macBridgeProvider, so outbound replies go back through the bridge.
+    if (req.method === "POST" && url.pathname === "/webhooks/mac-bridge") {
+      const rawBody = await readBody(req);
+      const verified = macBridgeProvider.verifyWebhook(req, rawBody);
+      if (!verified.ok) {
+        sendJson(res, 401, { error: "unauthorized", reason: verified.reason });
+        return;
+      }
+
+      const payload = JSON.parse(rawBody || "{}");
+      const inbound = macBridgeProvider.parseInbound(payload);
+      const confirmation = inbound.code
+        ? await store.confirmPairingCode({ ...inbound, provider: "mac-bridge" })
+        : await store.recordInboundMessage(inbound);
+
+      if (confirmation.student && confirmation.welcomeNeeded) {
+        const welcome = await macBridgeProvider.sendSms(
+          confirmation.student.channelAddress,
+          createWelcomeText(confirmation.student),
+        );
+        await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
+      }
+
+      if (
+        !confirmation.error &&
+        confirmation.eventType === "student_reply" &&
+        confirmation.student &&
+        typeof store.writeInboundMessage === "function"
+      ) {
+        try {
+          const messageId = await store.writeInboundMessage({
+            provider: "mac-bridge",
+            providerEventId: inbound.providerEventId,
+            channelType: inbound.channelType,
+            channelAddress: inbound.channelAddress,
+            studentId: confirmation.student.id,
+            body: inbound.text,
+            metadata: inbound.metadata || {},
+          });
+          if (messageId && store?.pool) {
+            runStudentInboundWorkflow({
+              pool: store.pool,
+              messageId,
+              smsProvider: macBridgeProvider,
+              config,
+            }).catch((err) => {
+              console.error(
+                JSON.stringify({
+                  level: "error",
+                  message: "student_inbound_workflow_failed",
+                  source: "mac-bridge",
+                  messageId,
+                  error: err?.message ?? String(err),
+                }),
+              );
+            });
+          }
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              level: "error",
+              message: "write_inbound_message_failed",
+              source: "mac-bridge",
               error: err?.message ?? String(err),
             }),
           );

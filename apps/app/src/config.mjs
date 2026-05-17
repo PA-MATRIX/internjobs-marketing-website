@@ -73,6 +73,24 @@ export function getConfig(env = process.env) {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY || "",
       bucket: env.R2_BUCKET || "internjobs-agent-store",
     },
+    // v1.2 (2026-05-17): self-hosted iMessage via mac-bridge.
+    // url            — public HTTPS endpoint of the Mac mini bridge,
+    //                  fronted by a Cloudflare Tunnel
+    //                  (e.g. https://bridge.internjobs.ai).
+    // hmacSecret     — shared HMAC-SHA256 secret. Same value lives in
+    //                  apps/mac-bridge/.env on the Mac. Both directions
+    //                  use it: bridge → Fly (/webhooks/mac-bridge) and
+    //                  Fly → bridge (POST /v1/send).
+    macBridge: {
+      url: env.BRIDGE_URL || env.MAC_BRIDGE_URL || "",
+      hmacSecret: env.BRIDGE_HMAC_SECRET || "",
+    },
+    // SMS provider selector. Defaults to 'spectrum' (Photon cloud, the
+    // v1.1/v1.2 baseline). Set to 'mac-bridge' on Fly to switch outbound
+    // routing to the self-hosted Mac. The /webhooks/mac-bridge route is
+    // always wired so the bridge can push inbound regardless of which
+    // provider is "primary" for outbound.
+    smsProviderName: (env.SMS_PROVIDER || "spectrum").toLowerCase(),
   };
 }
 
