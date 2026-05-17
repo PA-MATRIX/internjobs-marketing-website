@@ -46,16 +46,20 @@ export function getConfig(env = process.env) {
     // tests assert the approve → 'sent' transition without hitting
     // Photon/Cloudflare. NEVER set this in production.
     outboundDryRun: env.OUTBOUND_DRY_RUN === "true",
-    // v1.2 (swap 2026-05-16): Cloudflare Workers AI via internjobs-ai-proxy.
-    // aiWorker.url    — public Worker URL (https://internjobs-ai-proxy.<acct>.workers.dev)
-    // aiWorker.secret — shared bearer in x-ai-worker-secret header; the
-    //                   Worker constant-time compares it against its
-    //                   wrangler-stored AI_WORKER_SECRET.
-    // The Fly app never holds a Cloudflare API token — all AI calls flow
-    // through the Worker, which uses its native env.AI binding.
-    aiWorker: {
-      url: env.AI_WORKER_URL || "",
-      secret: env.AI_WORKER_SECRET || "",
+    // v1.2 (tear-out 2026-05-16): Cloudflare Workers AI DIRECT REST.
+    // No proxy Worker, no AI Gateway intermediary.
+    // cloudflareAi.accountId — CF account UUID (same value as the Email
+    //                          path's CLOUDFLARE_EMAIL_ACCOUNT_ID; mirrored
+    //                          under a cleaner name so AI usage doesn't
+    //                          read "email" at the call site).
+    // cloudflareAi.apiToken  — CF API token with Workers AI scope. Sent
+    //                          as Authorization: Bearer in calls to
+    //                          api.cloudflare.com/client/v4/accounts/{id}/ai/run/...
+    // AI Gateway can be added later by prefixing the URL — no config
+    // shape change required.
+    cloudflareAi: {
+      accountId: env.CLOUDFLARE_AI_ACCOUNT_ID || "",
+      apiToken: env.CLOUDFLARE_AI_API_TOKEN || "",
     },
     // v1.2 STORAGE-01 (scope-add 2026-05-16): R2 storage scaffold.
     // Cloudflare R2 (S3-compatible) for per-entity artifact tree. Private
@@ -87,15 +91,16 @@ export function getMissingProviderConfig(config) {
   if (!config.cloudflareEmailAccountId) warnings.push("CLOUDFLARE_EMAIL_ACCOUNT_ID (warn — required for outbound email in Phase 05)");
   if (!config.cloudflareEmailApiToken) warnings.push("CLOUDFLARE_EMAIL_API_TOKEN (warn — required for outbound email in Phase 05)");
 
-  // v1.2 swap 2026-05-16: Workers AI proxy. Warning, not hard block — the
-  // workflow falls back to canned-stub when both are missing so dev/test
-  // boots still work. Treat as a paired warning (either both or neither).
-  const ai = config.aiWorker || {};
-  const aiSet = [ai.url, ai.secret].filter(Boolean).length;
+  // v1.2 tear-out 2026-05-16: Workers AI direct REST. Warning, not hard
+  // block — the workflow falls back to canned-stub when either is missing
+  // so dev/test boots still work. Treat as a paired warning (either both
+  // or neither).
+  const ai = config.cloudflareAi || {};
+  const aiSet = [ai.accountId, ai.apiToken].filter(Boolean).length;
   if (aiSet === 1) {
-    warnings.push("AI_WORKER_* (warn — partial Workers AI proxy config: set AI_WORKER_URL + AI_WORKER_SECRET together, or neither)");
+    warnings.push("CLOUDFLARE_AI_* (warn — partial Workers AI config: set CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN together, or neither)");
   } else if (aiSet === 0) {
-    warnings.push("AI_WORKER_URL + AI_WORKER_SECRET (warn — agent workflow runs in canned-stub mode until both set)");
+    warnings.push("CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN (warn — agent workflow runs in canned-stub mode until both set)");
   }
 
   // STORAGE-01: R2 envs are entirely optional in v1.2 (no ingestion is

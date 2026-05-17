@@ -83,14 +83,16 @@ const server = createServer(async (req, res) => {
         // v1.2 Phase 04 (AGENT-01..03): Mastra readiness surface.
         // mastraReady     — Mastra in-process instance constructed.
         // pgvectorReady   — vector extension actually installed in Postgres.
-        // aiProxyReady    — both AI_WORKER_URL + AI_WORKER_SECRET set. We
-        //                   do not call the Worker on /healthz (no network
-        //                   hit on the hot path); presence-only check.
-        //                   Replaces the deprecated openaiKeyPresent flag
-        //                   (2026-05-16 Workers AI swap).
+        // workersAiReady  — both CLOUDFLARE_AI_ACCOUNT_ID +
+        //                   CLOUDFLARE_AI_API_TOKEN set. We do not call
+        //                   the CF API on /healthz (no network hit on the
+        //                   hot path); presence-only check. Replaces the
+        //                   deprecated aiProxyReady flag (2026-05-16
+        //                   Workers AI direct tear-out — proxy Worker
+        //                   removed in favor of direct REST).
         mastraReady: isMastraReady(),
         pgvectorReady,
-        aiProxyReady: Boolean(config.aiWorker?.url && config.aiWorker?.secret),
+        workersAiReady: Boolean(config.cloudflareAi?.accountId && config.cloudflareAi?.apiToken),
         // v1.2 STORAGE-01 (scope-add 2026-05-16): r2Ready is true iff all
         // four R2 envs are set (accountId + accessKeyId + secretAccessKey)
         // AND the client constructed without error. Unset envs are NOT a

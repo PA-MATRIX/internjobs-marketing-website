@@ -1,32 +1,40 @@
-// ─── Embedding hooks (v1.2 Phase 04, AGENT-03 — 2026-05-16 Workers AI swap) ─
+// ─── Embedding hooks (v1.2 Phase 04, AGENT-03 — 2026-05-16 Workers AI direct) ─
 //
 // Locked model + dimension (matches migration 0005 student_embeddings and
 // role_embeddings vector(768) shape). Per PITFALLS #18.
 //
-//   provider:  Cloudflare Workers AI (via internjobs-ai-proxy Worker)
+//   provider:  Cloudflare Workers AI (DIRECT REST — no proxy Worker)
 //   model:     @cf/baai/bge-base-en-v1.5
 //   dimension: 768
-//   transport: HTTPS fetch to AI_WORKER_URL with x-ai-worker-secret header
+//   transport: HTTPS fetch to api.cloudflare.com/client/v4/accounts/{id}/ai/run/...
+//              with Authorization: Bearer {CLOUDFLARE_AI_API_TOKEN}.
+//
+// 2026-05-16 tear-out: The Fly Node app no longer goes through a proxy
+// Worker. The user provided a CF API token scoped for Workers AI direct
+// access, so we call the REST API straight from Node. One less moving part.
+// AI Gateway can be added later by changing the URL (gateway:{id} prefix)
+// without touching this code's call shape.
 //
 // Background-only contract: callers MUST fire embedding writes WITHOUT
-// awaiting (`.catch(logErr)`), not inline. A failing proxy call must NOT
+// awaiting (`.catch(logErr)`), not inline. A failing CF call must NOT
 // block a profile save or role create. See store.mjs saveProfileContext
 // and server.mjs roles handlers.
 //
 // Test seam:
-//   • If AI_WORKER_URL or AI_WORKER_SECRET is missing, workersAiEmbed
-//     returns null (no throw). writeStudentEmbedding / writeRoleEmbedding
-//     silently no-op when given a null vector. This lets dev/test runs
-//     proceed without secrets — same fail-soft posture as the old OpenAI
-//     path.
+//   • If CLOUDFLARE_AI_ACCOUNT_ID or CLOUDFLARE_AI_API_TOKEN is missing,
+//     openaiEmbed returns null (no throw). writeStudentEmbedding /
+//     writeRoleEmbedding silently no-op when given a null vector. This
+//     lets dev/test runs proceed without secrets — same fail-soft posture
+//     as the prior OpenAI / proxy-Worker paths.
 //   • For deterministic testing, set EMBED_PROVIDER=stub. The stub returns
 //     a 768-dim float array seeded by a hash of the input — same input
 //     always yields the same vector, different inputs yield different
 //     vectors. Used by the Phase 04 smoke test.
 //
 // Naming: the exported function is still called `openaiEmbed` for
-// import-site back-compat (workflows + hooks). It now talks to the proxy
-// Worker, not OpenAI. Renaming the symbol is a future hygiene pass.
+// import-site back-compat (workflows + hooks). It now talks to Workers AI
+// directly, not OpenAI and not the proxy Worker. Renaming the symbol is
+// a future hygiene pass.
 
 import { createHash } from "node:crypto";
 
@@ -36,39 +44,53 @@ const EMBED_DIM = 768;
 export async function openaiEmbed(text) {
   if (process.env.EMBED_PROVIDER === "stub") return stubEmbed(text);
 
-  const url = process.env.AI_WORKER_URL;
-  const secret = process.env.AI_WORKER_SECRET;
-  if (!url || !secret) return null;
+  const accountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_AI_API_TOKEN;
+  if (!accountId || !apiToken) return null;
 
   const trimmed = String(text || "").slice(0, 8000);
   if (!trimmed.trim()) return null;
 
   try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/embed`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-ai-worker-secret": secret,
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${EMBED_MODEL}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ text: trimmed }),
       },
-      body: JSON.stringify({ text: trimmed }),
-    });
+    );
     if (!res.ok) {
       console.error(
         JSON.stringify({
           level: "error",
-          message: "ai_worker_embed_non_2xx",
+          message: "workers_ai_embed_non_2xx",
           status: res.status,
         }),
       );
       return null;
     }
     const json = await res.json().catch(() => null);
-    const vec = json?.embedding;
+    // Workers AI envelope: { result: { data: [[...768 floats]], shape, pooling }, success, errors }
+    if (json?.success === false) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "workers_ai_embed_unsuccessful",
+          errors: json?.errors || null,
+        }),
+      );
+      return null;
+    }
+    const vec = Array.isArray(json?.result?.data) ? json.result.data[0] : null;
     if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
       console.error(
         JSON.stringify({
           level: "error",
-          message: "ai_worker_embed_bad_shape",
+          message: "workers_ai_embed_bad_shape",
           got: vec?.length ?? null,
           expected: EMBED_DIM,
         }),
@@ -80,7 +102,7 @@ export async function openaiEmbed(text) {
     console.error(
       JSON.stringify({
         level: "error",
-        message: "ai_worker_embed_failed",
+        message: "workers_ai_embed_failed",
         error: err?.message ?? String(err),
       }),
     );

@@ -10,11 +10,12 @@
 //                             window as core 1.35.0)
 //   @mastra/memory@1.18.2   (used only if/when we wire LLM thread memory)
 //
-// 2026-05-16 swap: the openai npm package was removed. Embeddings and
-// chat completions now POST to the internjobs-ai-proxy Worker (Cloudflare
-// Workers AI native binding) via plain `fetch()` from embeddings.mjs and
-// workflows/student-inbound.mjs. The Fly Node app no longer holds any
-// LLM-provider SDK or API token.
+// 2026-05-16 tear-out: the openai npm package was removed AND the
+// internjobs-ai-proxy Worker was torn out. Embeddings and chat completions
+// now POST directly to the Cloudflare Workers AI REST API (no proxy, no
+// AI Gateway) via plain `fetch()` from embeddings.mjs and
+// workflows/student-inbound.mjs. The Fly Node app holds a Workers-AI-
+// scoped CF API token (CLOUDFLARE_AI_API_TOKEN) — one less moving part.
 //
 // Schema convention (PITFALLS #1, mandatory):
 //   schemaName: 'mastra' for BOTH PostgresStore and PgVector. Never 'public'.

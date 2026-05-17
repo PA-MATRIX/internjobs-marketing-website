@@ -3,13 +3,13 @@
 // Exercises the v1.2 Phase 04 contract end-to-end against a real Postgres
 // (any branch with migrations 0001..0004 applied). Runs in two modes:
 //
-//   Default (no AI_WORKER_URL + AI_WORKER_SECRET set):
+//   Default (no CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN set):
 //     LLM_PROVIDER=stub + EMBED_PROVIDER=stub — workflow uses canned strings
 //     for both embedding vectors and the draft body. No external calls.
 //     This is the mode we run in CI / pre-deploy.
 //
-//   With AI_WORKER_URL + AI_WORKER_SECRET set:
-//     Real Cloudflare Workers AI calls via the internjobs-ai-proxy Worker.
+//   With CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN set:
+//     Real Cloudflare Workers AI REST calls (direct, no proxy Worker).
 //     Used to validate the hot path before deploying. Not the default
 //     (Workers AI has free-tier quotas but we still don't burn them in CI).
 //
@@ -49,10 +49,10 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-// Force stub mode unless the operator has set up the Workers AI proxy and
-// explicitly opts in (both AI_WORKER_URL + AI_WORKER_SECRET present).
-// This keeps the smoke suite hermetic by default.
-if (!process.env.AI_WORKER_URL || !process.env.AI_WORKER_SECRET) {
+// Force stub mode unless the operator has set up Workers AI direct and
+// explicitly opts in (both CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN
+// present). This keeps the smoke suite hermetic by default.
+if (!process.env.CLOUDFLARE_AI_ACCOUNT_ID || !process.env.CLOUDFLARE_AI_API_TOKEN) {
   process.env.LLM_PROVIDER = "stub";
   process.env.EMBED_PROVIDER = "stub";
 }

@@ -22,10 +22,10 @@
 //      The contract surface (conversation row created, draft row written)
 //      is unchanged.
 //   7. Compose prompt: system + profile + history + matched role + new body.
-//   8. Call LLM → returns generated body. In v1.2 (post 2026-05-16 swap)
-//      this is a POST to the internjobs-ai-proxy Worker (/chat) using the
-//      Workers AI binding. Without AI_WORKER_URL + AI_WORKER_SECRET (or
-//      with LLM_PROVIDER=stub for tests) we synthesize a deterministic
+//   8. Call LLM → returns generated body. In v1.2 (post 2026-05-16
+//      tear-out) this is a direct POST to the Cloudflare Workers AI REST
+//      API. Without CLOUDFLARE_AI_ACCOUNT_ID + CLOUDFLARE_AI_API_TOKEN
+//      (or with LLM_PROVIDER=stub for tests) we synthesize a deterministic
 //      canned draft so the rest of the pipeline stays exercised. Phase 06
 //      canary validates the real LLM path.
 //   9. Insert drafts row with status='pending_review', recipient_type='student',
@@ -41,13 +41,13 @@
 import { logEmbedErr } from "../embeddings.mjs";
 import { buildConversationReplyTo } from "./reply-to.mjs";
 
-// v1.2 2026-05-16 swap: chat completion now goes through the
-// internjobs-ai-proxy Worker (Cloudflare Workers AI binding). The Node
-// app never sees a CF API token; auth is the shared AI_WORKER_SECRET.
+// v1.2 2026-05-16 tear-out: chat completion now goes DIRECTLY to the
+// Cloudflare Workers AI REST API (no proxy Worker, no AI Gateway). The
+// Fly Node app holds a CLOUDFLARE_AI_API_TOKEN scoped for Workers AI.
 //
 // Default model identifier flows through to drafts.agent_metadata.model.
-// The proxy Worker pins the actual CF model name (@cf/meta/llama-3.1-8b-
-// instruct); AGENT_MODEL is kept as a label override for traceability.
+// AGENT_MODEL is kept as an env override for traceability / future model
+// swaps without code changes.
 const DEFAULT_MODEL = process.env.AGENT_MODEL || "@cf/meta/llama-3.1-8b-instruct";
 const LAST_N_MESSAGES = 20; // PITFALLS #19
 
@@ -58,10 +58,10 @@ const LAST_N_MESSAGES = 20; // PITFALLS #19
  * @param {import('pg').Pool} deps.pool   Postgres pool from PostgresStore.
  * @param {object}            [deps.llm]  Optional LLM stub used by tests.
  *                                         { complete: async ({prompt, model}) => string }.
- *                                         If omitted, the internjobs-ai-proxy
- *                                         Worker is called when AI_WORKER_URL
- *                                         + AI_WORKER_SECRET are set, else a
- *                                         canned-string stub is used.
+ *                                         If omitted, Workers AI REST is
+ *                                         called when CLOUDFLARE_AI_ACCOUNT_ID
+ *                                         + CLOUDFLARE_AI_API_TOKEN are set,
+ *                                         else a canned-string stub is used.
  * @param {string}            deps.messageId  The inbound_messages.id to process.
  *
  * @returns {Promise<{
@@ -384,12 +384,12 @@ async function runLLM({ llm, prompt, model }) {
 
   // 2. Canned-stub mode (used by the Phase 04 smoke test). Active when:
   //    - LLM_PROVIDER=stub is set explicitly, OR
-  //    - AI_WORKER_URL / AI_WORKER_SECRET are missing (no live proxy).
+  //    - CLOUDFLARE_AI_ACCOUNT_ID / CLOUDFLARE_AI_API_TOKEN are missing.
   //    This preserves the dev/test contract from the OpenAI era so nothing
   //    in the smoke suite needs a network egress.
-  const aiUrl = process.env.AI_WORKER_URL;
-  const aiSecret = process.env.AI_WORKER_SECRET;
-  if (process.env.LLM_PROVIDER === "stub" || !aiUrl || !aiSecret) {
+  const accountId = process.env.CLOUDFLARE_AI_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_AI_API_TOKEN;
+  if (process.env.LLM_PROVIDER === "stub" || !accountId || !apiToken) {
     return {
       body:
         "Hi! Thanks for reaching out — I'd love to chat about the role. " +
@@ -398,24 +398,30 @@ async function runLLM({ llm, prompt, model }) {
     };
   }
 
-  // 3. Real path: POST to the internjobs-ai-proxy Worker (Workers AI binding).
-  //    Default provider name `workers-ai-proxy` is the swap-mode marker.
+  // 3. Real path: POST directly to Cloudflare Workers AI REST API.
+  //    No proxy Worker, no AI Gateway. The token is scoped for Workers AI
+  //    direct (`Workers AI Read` perm). AI Gateway can be added later by
+  //    prefixing the URL with `/v1/{account_id}/{gateway_id}/workers-ai`
+  //    without touching the response-shape parsing here.
   try {
-    const res = await fetch(`${aiUrl.replace(/\/$/, "")}/chat`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-ai-worker-secret": aiSecret,
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "Draft concise SMS replies." },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 512,
+          temperature: 0.7,
+        }),
       },
-      body: JSON.stringify({
-        messages: [
-          { role: "system", content: "Draft concise SMS replies." },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 200,
-        temperature: 0.7,
-      }),
-    });
+    );
     if (!res.ok) {
       console.error(
         JSON.stringify({
@@ -431,10 +437,23 @@ async function runLLM({ llm, prompt, model }) {
       };
     }
     const json = await res.json().catch(() => null);
-    const body = typeof json?.response === "string" ? json.response : "";
-    // Surface the actual model the proxy used (it may pin a newer version
-    // than the env-provided label).
-    return { body, model: json?.model || model };
+    // Workers AI envelope: { result: { response: "<text>" }, success, errors }
+    if (json?.success === false) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "llm_call_unsuccessful",
+          errors: json?.errors || null,
+          model,
+        }),
+      );
+      return {
+        body: "(automated draft unavailable — operator review required)",
+        model: model + "+error",
+      };
+    }
+    const body = typeof json?.result?.response === "string" ? json.result.response : "";
+    return { body, model };
   } catch (err) {
     console.error(
       JSON.stringify({
