@@ -393,6 +393,12 @@ const server = createServer(async (req, res) => {
             }),
           );
         }
+      } else if (config.enableDevAuth) {
+        // Dev/test mode (no DATABASE_URL). Generate a deterministic-shaped
+        // code so /onboard/qr can render and the smoke suite can exercise
+        // the route. The code is NOT persisted (no pairing_sessions row),
+        // so /onboard/status will always return paired: false in this mode.
+        pairingCode = "START-DEVCODE";
       }
 
       // Fire-and-forget Proxycurl enrichment. Caller doesn't wait — by the
