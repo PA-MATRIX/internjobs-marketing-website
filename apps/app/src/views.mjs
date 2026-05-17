@@ -175,8 +175,8 @@ export function renderStartupOnboarding({ startup }) {
         <label>Website (optional) <input name="website" type="url" value="${website}" /></label>
         <label class="checkbox-row">
           <input type="checkbox" name="consent_messaging" value="1" required />
-          I agree that InternJobs.ai will draft messages to students on behalf of my company.
-          A human operator reviews every message before it is sent.
+          I agree that InternJobs.ai will send messages to students on behalf of my company via an autonomous agent.
+          Messages are logged for review and flaggable for follow-up if needed.
         </label>
         <button type="submit" class="button primary">Save and continue</button>
       </form>
@@ -242,9 +242,32 @@ export function renderRoleForm({ role, action }) {
     </section>`;
 }
 
-// ─── Operator approval gate views (v1.2 Phase 05) ────────────────────────────
+// ─── Operator audit log views (v1.2 — autonomy pivot 2026-05-17) ────────────
+//
+// renderMessageLog is the read-only audit log of every agent-drafted
+// message, regardless of status. Replaces the prior renderDraftQueue
+// (which showed only status='pending_review' approval-queue rows). After
+// the autonomy pivot, the agent sends autonomously and operators view
+// what was sent here; the only mutating action is the per-row "Flag for
+// review" link, which writes a draft_feedback row (feedback_type='flagged')
+// without changing the draft itself.
 
-export function renderDraftQueue({ drafts, filter, page, banner }) {
+function statusBadge(status) {
+  const known = {
+    sent: ["badge-fresh", "Sent"],
+    failed: ["badge-stale", "Failed"],
+    sending: ["badge-stale", "Sending"],
+    flagged: ["badge-stale", "Flagged"],
+    // Legacy pre-pivot states. Kept so historical rows still render.
+    pending_review: ["badge-stale", "Pending (legacy)"],
+    approved: ["badge-stale", "Approved (legacy)"],
+    rejected: ["badge-stale", "Rejected (legacy)"],
+  };
+  const [cls, label] = known[status] || ["badge-stale", String(status || "—")];
+  return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+}
+
+export function renderMessageLog({ drafts, filter, page, banner }) {
   const safeFilter = filter === "student" || filter === "startup" ? filter : "";
   const linkFor = (t) => {
     const params = new URLSearchParams();
@@ -264,11 +287,11 @@ export function renderDraftQueue({ drafts, filter, page, banner }) {
   if (!drafts.length) {
     return `
       <section class="panel">
-        <p class="eyebrow">Operator queue</p>
-        <h1>No drafts pending review.</h1>
+        <p class="eyebrow">Message log</p>
+        <h1>No messages yet.</h1>
         ${banner || ""}
         ${filterBar}
-        <p class="lede">The agent has not produced any drafts since the last cycle, or operators have cleared the queue.</p>
+        <p class="lede">The agent has not produced any messages yet. As students and startups exchange messages, this log will fill up — every send is recorded here for post-hoc review.</p>
       </section>`;
   }
 
@@ -276,32 +299,34 @@ export function renderDraftQueue({ drafts, filter, page, banner }) {
     .map((d) => {
       const ageMin = Math.max(0, Math.floor((Date.now() - new Date(d.created_at).getTime()) / 60000));
       const ageLabel = ageMin < 60 ? `${ageMin}m ago` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m ago`;
-      const stale = ageMin > 120;
       const recipientBadge = `<span class="badge ${d.recipient_type === "student" ? "badge-student" : "badge-startup"}">${escapeHtml((d.recipient_type || "").toUpperCase())}</span>`;
-      const ageBadge = `<span class="badge ${stale ? "badge-stale" : "badge-fresh"}">${escapeHtml(ageLabel)}</span>`;
+      const ageBadge = `<span class="badge badge-fresh">${escapeHtml(ageLabel)}</span>`;
       const preview = String(d.body || "").slice(0, 120);
       return `
         <tr>
+          <td>${statusBadge(d.status)}</td>
           <td>${recipientBadge}</td>
           <td>${escapeHtml(d.student_name || "—")}</td>
           <td>${escapeHtml(d.startup_name || "—")}</td>
           <td>${escapeHtml(d.role_title || "—")}</td>
           <td class="ops-body-cell">${escapeHtml(preview)}${d.body?.length > 120 ? "…" : ""}</td>
           <td>${ageBadge}</td>
-          <td><a class="button secondary small" href="/ops/drafts/${escapeHtml(d.id)}">Review</a></td>
+          <td><a class="button secondary small" href="/ops/drafts/${escapeHtml(d.id)}">View</a></td>
         </tr>`;
     })
     .join("");
 
   return `
     <section class="panel">
-      <p class="eyebrow">Operator queue</p>
-      <h1>Drafts pending review</h1>
+      <p class="eyebrow">Message log</p>
+      <h1>Sent &amp; flagged messages</h1>
       ${banner || ""}
       ${filterBar}
+      <p class="lede">Read-only audit log. The agent sends autonomously; flag any message that needs prompt-tuning review.</p>
       <table class="ops-table">
         <thead>
           <tr>
+            <th>Status</th>
             <th>Type</th>
             <th>Student</th>
             <th>Startup</th>
@@ -316,36 +341,56 @@ export function renderDraftQueue({ drafts, filter, page, banner }) {
     </section>`;
 }
 
+// Back-compat re-export so external callers (none in tree, but defensive)
+// don't break if they imported the old name.
+export const renderDraftQueue = renderMessageLog;
+
 export function renderDraftDetail({ draft, priorMessages = [], errorBanner }) {
   const ageMin = Math.max(0, Math.floor((Date.now() - new Date(draft.created_at).getTime()) / 60000));
-  const draftedAt = `<p class="fine">Drafted ${ageMin}m ago at ${new Date(draft.created_at).toLocaleString()}</p>`;
+  const sentSuffix = draft.sent_at
+    ? ` &middot; sent ${escapeHtml(new Date(draft.sent_at).toLocaleString())}`
+    : "";
+  const draftedAt = `<p class="fine">Drafted ${ageMin}m ago at ${escapeHtml(new Date(draft.created_at).toLocaleString())}${sentSuffix}</p>`;
   const priorBlock = priorMessages.length
     ? priorMessages
         .map(
           (m) => `<div class="ops-thread-row ops-thread-${escapeHtml(m.direction)}">
             <span class="ops-thread-tag">${escapeHtml(m.direction)}</span>
             <span class="ops-thread-body">${escapeHtml(String(m.body || "").slice(0, 300))}</span>
-            <span class="ops-thread-time">${m.created_at ? new Date(m.created_at).toLocaleString() : ""}</span>
+            <span class="ops-thread-time">${m.created_at ? escapeHtml(new Date(m.created_at).toLocaleString()) : ""}</span>
           </div>`,
         )
         .join("")
     : '<p class="fine">No prior messages in this thread.</p>';
 
+  const providerLine = draft.provider_message_id
+    ? `<div><dt>Provider message id</dt><dd>${escapeHtml(draft.provider_message_id)}</dd></div>`
+    : "";
+
+  // Show send-error blob when the draft is in 'failed' state.
+  const sendErr = draft.agent_metadata?.send_error;
+  const sendErrorBlock = draft.status === "failed" && sendErr
+    ? `<div class="ops-banner ops-banner-error">Send failed: ${escapeHtml(String(sendErr).slice(0, 300))}</div>`
+    : "";
+
   return `
     <section class="panel">
-      <p class="eyebrow">Draft review</p>
+      <p class="eyebrow">Message detail</p>
       <h1>${escapeHtml(draft.recipient_type === "student" ? "Reply to student" : "Reply to startup")}</h1>
       ${draftedAt}
       ${errorBanner || ""}
+      ${sendErrorBlock}
 
       <div class="ops-detail-grid">
         <div>
           <h2>Context</h2>
           <dl class="details">
+            <div><dt>Status</dt><dd>${statusBadge(draft.status)}</dd></div>
             <div><dt>Student</dt><dd>${escapeHtml(draft.student_name || "—")}</dd></div>
             <div><dt>Startup</dt><dd>${escapeHtml(draft.startup_name || "—")}</dd></div>
             <div><dt>Role</dt><dd>${escapeHtml(draft.role_title || "—")}</dd></div>
             <div><dt>Channel</dt><dd>${escapeHtml(draft.channel || "—")} → ${escapeHtml(draft.channel_address || "—")}</dd></div>
+            ${providerLine}
             <div><dt>Requirements</dt><dd>${escapeHtml(String(draft.role_requirements || "").slice(0, 300))}</dd></div>
           </dl>
           <h2>Prior messages</h2>
@@ -353,26 +398,16 @@ export function renderDraftDetail({ draft, priorMessages = [], errorBanner }) {
         </div>
 
         <div>
-          <h2>Draft body</h2>
+          <h2>Message body</h2>
           <pre class="ops-draft-body">${escapeHtml(draft.body || "")}</pre>
 
           <div class="ops-actions">
-            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/approve" class="ops-form-inline">
-              <button type="submit" class="button primary">Approve as-is</button>
-            </form>
-
-            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/edit" class="ops-form-stack">
-              <label>Edit then approve
-                <textarea name="edited_body" rows="6" required>${escapeHtml(draft.body || "")}</textarea>
+            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/flag" class="ops-form-stack">
+              <label>Flag for prompt-tuning review (optional reason)
+                <input name="flag_reason" placeholder="What's wrong with this message?" />
               </label>
-              <button type="submit" class="button secondary">Edit &amp; Approve</button>
-            </form>
-
-            <form method="POST" action="/ops/drafts/${escapeHtml(draft.id)}/reject" class="ops-form-stack">
-              <label>Reject (optional reason)
-                <input name="rejection_reason" placeholder="Optional reason..." />
-              </label>
-              <button type="submit" class="button warn">Reject</button>
+              <p class="fine">This does NOT recall the sent message — the agent already sent it autonomously. Flagging signals the human prompt-tuner that this is a bad output to learn from.</p>
+              <button type="submit" class="button warn">Flag for review</button>
             </form>
           </div>
         </div>
@@ -384,8 +419,9 @@ export function renderFeedbackLog({ rows }) {
   if (!rows.length) {
     return `
       <section class="panel">
-        <p class="eyebrow">Operator feedback log</p>
-        <h1>No rejected or edited drafts yet.</h1>
+        <p class="eyebrow">Flagged messages log</p>
+        <h1>No flagged messages yet.</h1>
+        <p class="lede">When operators flag autonomous-agent messages for prompt-tuning review, they'll appear here.</p>
       </section>`;
   }
   const tbody = rows
@@ -394,7 +430,7 @@ export function renderFeedbackLog({ rows }) {
       const corrected = r.feedback_type === "edited" ? String(r.corrected_body || "").slice(0, 200) : "";
       return `
         <tr>
-          <td><span class="badge ${r.feedback_type === "rejected" ? "badge-stale" : "badge-fresh"}">${escapeHtml(r.feedback_type)}</span></td>
+          <td><span class="badge ${r.feedback_type === "rejected" || r.feedback_type === "flagged" ? "badge-stale" : "badge-fresh"}">${escapeHtml(r.feedback_type)}</span></td>
           <td>${escapeHtml(r.recipient_type || "—")}</td>
           <td>${escapeHtml(r.student_name || "—")}</td>
           <td>${escapeHtml(r.startup_name || "—")}</td>
@@ -407,8 +443,9 @@ export function renderFeedbackLog({ rows }) {
     .join("");
   return `
     <section class="panel">
-      <p class="eyebrow">Operator feedback log</p>
-      <h1>Rejected and edited drafts</h1>
+      <p class="eyebrow">Flagged messages log</p>
+      <h1>Flagged for prompt-tuning review</h1>
+      <p class="lede">Operator-flagged messages from the autonomous agent. Legacy 'rejected' / 'edited' rows from the pre-2026-05-17 approval gate may also appear if the filter is widened.</p>
       <table class="ops-table">
         <thead>
           <tr>
@@ -418,7 +455,7 @@ export function renderFeedbackLog({ rows }) {
             <th>Startup</th>
             <th>Role</th>
             <th>Original</th>
-            <th>Correction / reason</th>
+            <th>Reason</th>
             <th>When</th>
           </tr>
         </thead>

@@ -340,11 +340,20 @@ class MemoryStore {
     return draft;
   }
 
-  async listPendingDrafts({ type, limit = 50, offset = 0 } = {}) {
-    let rows = [...this.drafts.values()].filter((d) => d.status === "pending_review");
+  // Autonomy pivot 2026-05-17: listPendingDrafts is gone (it filtered on
+  // status='pending_review', which is no longer the default state).
+  // listAllDrafts returns every draft regardless of status, newest first,
+  // for the read-only audit log.
+  async listAllDrafts({ type, limit = 50, offset = 0 } = {}) {
+    let rows = [...this.drafts.values()];
     if (type) rows = rows.filter((d) => d.recipient_type === type);
-    rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    rows.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return rows.slice(offset, offset + limit);
+  }
+
+  // Back-compat shim for the smoke suite & any external import.
+  async listPendingDrafts(opts) {
+    return this.listAllDrafts(opts);
   }
 
   async getDraftById(id) {
@@ -388,9 +397,13 @@ class MemoryStore {
     return row;
   }
 
-  async listDraftFeedback({ limit = 100 } = {}) {
+  async listDraftFeedback({ limit = 100, feedbackType } = {}) {
     // Newest first; enrich with denormalized fields from the draft.
-    return [...this.draftFeedback]
+    // Autonomy pivot 2026-05-17: optional feedbackType filter (default
+    // 'flagged' from the route layer; null returns everything for diag).
+    let rows = [...this.draftFeedback];
+    if (feedbackType) rows = rows.filter((r) => r.feedback_type === feedbackType);
+    return rows
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit)
       .map((row) => {
@@ -950,28 +963,36 @@ class PostgresStore {
   // Filters: status='pending_review' (the agent-write state from Phase 04),
   // optional recipient_type, LIMIT/OFFSET.
 
-  async listPendingDrafts({ type, limit = 50, offset = 0 } = {}) {
+  // Autonomy pivot 2026-05-17: listAllDrafts returns every draft regardless
+  // of status (sent/failed/sending/flagged), newest first. Replaces the
+  // prior listPendingDrafts which filtered on status='pending_review'.
+  async listAllDrafts({ type, limit = 50, offset = 0 } = {}) {
     const params = [limit, offset];
     let typeClause = "";
     if (type === "student" || type === "startup") {
       params.push(type);
-      typeClause = ` and d.recipient_type = $${params.length}`;
+      typeClause = ` where d.recipient_type = $${params.length}`;
     }
     const { rows } = await this.pool.query(
       `select d.id, d.recipient_type, d.channel, d.channel_address, d.body, d.status,
-              d.created_at, d.updated_at, d.agent_metadata,
+              d.sent_at, d.provider_message_id, d.created_at, d.updated_at, d.agent_metadata,
               s.name as student_name, st.name as startup_name, r.title as role_title
          from drafts d
          left join conversations c on d.conversation_id = c.id
          left join students s on c.student_id = s.id
          left join startups st on c.startup_id = st.id
          left join roles r on c.role_id = r.id
-        where d.status = 'pending_review'${typeClause}
-        order by d.created_at asc
+        ${typeClause}
+        order by d.created_at desc
         limit $1 offset $2`,
       params,
     );
     return rows;
+  }
+
+  // Back-compat alias.
+  async listPendingDrafts(opts) {
+    return this.listAllDrafts(opts);
   }
 
   async getDraftById(id) {
@@ -1069,7 +1090,13 @@ class PostgresStore {
     return rows[0];
   }
 
-  async listDraftFeedback({ limit = 100 } = {}) {
+  async listDraftFeedback({ limit = 100, feedbackType } = {}) {
+    const params = [limit];
+    let typeClause = "";
+    if (feedbackType) {
+      params.push(feedbackType);
+      typeClause = ` where df.feedback_type = $${params.length}`;
+    }
     const { rows } = await this.pool.query(
       `select df.id, df.feedback_type, df.original_body, df.corrected_body, df.reason,
               df.created_at, df.operator_id,
@@ -1081,9 +1108,10 @@ class PostgresStore {
          left join students s on c.student_id = s.id
          left join startups st on c.startup_id = st.id
          left join roles r on c.role_id = r.id
+        ${typeClause}
         order by df.created_at desc
         limit $1`,
-      [limit],
+      params,
     );
     return rows;
   }
