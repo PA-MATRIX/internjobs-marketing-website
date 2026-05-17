@@ -27,6 +27,8 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] **Phase 04: Mastra Agent Core** — Workflow that drafts (never sends); thread memory in dedicated `mastra` schema; pgvector with HNSW index.
 - [ ] **Phase 05: Operator Audit Log (was: Approval Gate)** — `/ops/drafts` is a read-only audit log of every autonomous-agent send; operators flag bad messages post-hoc for prompt-tuning review (no pre-send approval after the 2026-05-17 autonomy pivot).
 - [ ] **Phase 06: Two-Sided Integration Smoke Test** — All 11 INTEG-01 steps pass end-to-end in production.
+- [x] **Phase 07: Self-Hosted iMessage Bridge** — Replace Photon-cloud iMessage with Mac mini + spectrum-ts local + Cloudflare Tunnel; MacBridgeSmsProvider on Fly behind the existing SmsProvider seam. Cost drop $250→$73/mo. (Added 2026-05-17.)
+- [ ] **Phase 08: Agentic Inbox + MCP** — Deploy Cloudflare's `agentic-inbox` as the agent's identity-mailbox surface for `agent-mac@agent.internjobs.ai` (and future per-channel agents). Mastra workflow consumes the built-in MCP server for read/draft/send. Sunsets the home-rolled `/webhooks/agent-mail` shipped earlier in this session. (Added 2026-05-17.)
 
 ## Phase Details
 
@@ -128,6 +130,45 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 4. Test transcript + Neon row snapshots are recorded in `VERIFICATION.md` for the phase (closes the v1.1 audit gap that no RRR verification artifacts existed for v1.0/v1.1 phases).
 
 **Plans:** TBD
+
+### Phase 07: Self-Hosted iMessage Bridge
+
+**Goal:** Run iMessage on dedicated infrastructure we own (Mac mini + spectrum-ts local mode + Cloudflare Tunnel), eliminating Photon's $250/mo/line Business pricing and replacing it with $73/mo of fully-owned compute + a US Mobile SIM.
+
+**Depends on:** Phase 01 (SmsProvider seam — MacBridgeSmsProvider implements the same interface)
+
+**Requirements:** SMS-01 (new SmsProvider impl), v1.2 cost/sovereignty scope-add
+
+**Success Criteria** (what must be TRUE):
+1. `https://bridge.internjobs.ai/health` is reachable from anywhere on the public internet and returns 200 OK.
+2. Outbound iMessage routes through the Mac mini when `SMS_PROVIDER=mac-bridge` on Fly; spectrum-ts cloud remains the default until the agent Apple ID is activated (Phase 09 user action).
+3. `/webhooks/mac-bridge` enforces HMAC-SHA256 over `BRIDGE_HMAC_SECRET`; signed payloads land an `inbound_messages` row when the channel_address matches a confirmed student.
+4. The Mac bridge + cloudflared survive a host restart (`@reboot` crontab; launchd was not viable over SSH on macOS 26.3 — documented constraint).
+5. End-to-end smoke test: Mac → CF Tunnel → bridge URL → /v1/send returns 200 with valid HMAC, 401 with bad sig.
+
+**Plans:** `.planning/milestones/v1.2-two-sided-agent-mvp/phase-07-self-hosted-imessage-bridge/PLAN.md`
+
+**Status:** Code-complete (commits `61e9707` + `d89fe4a` + `d5f3eb1`). Real iMessage round-trip blocked on Phase 09 user actions (Apple ID + US Mobile SIM activation).
+
+### Phase 08: Agentic Inbox + MCP
+
+**Goal:** Deploy Cloudflare's `agentic-inbox` Worker as the agent's identity-mailbox surface, with a per-mailbox Durable Object, R2 attachment storage, CF Access SSO gate, and a built-in MCP server the Mastra workflow consumes for read/draft/send tools. Establishes the agent's omnichannel reach (iMessage via Phase 07, email via this phase).
+
+**Depends on:** Phase 03 (existing CF Email Routing for `agent.internjobs.ai`), Phase 07 (Mac bridge for the matching iMessage identity)
+
+**Requirements:** EMAIL-AGENT-01 (new), v1.2 omnichannel scope-add
+
+**Success Criteria** (what must be TRUE):
+1. `agentic-inbox` Worker deployed at a custom domain under our control, gated by CF Access.
+2. `agent-mac@agent.internjobs.ai` inbound mail lands in the `MailboxDO` and is visible in the UI.
+3. The Worker's `/mcp` endpoint responds to MCP protocol calls authenticated via CF Access service token.
+4. The Mastra workflow on Fly can invoke the MCP `send_email` tool against agentic-inbox and produce an outbound message.
+5. Existing `conv-{uuid}@agent.internjobs.ai` student-conversation pipeline (Phase 03) continues to work unchanged — no regression.
+6. Home-rolled `/webhooks/agent-mail` + `agent_emails` table (migration `0006`) are sunset cleanly; agentic-inbox owns identity mailbox storage going forward.
+
+**Plans:** `.planning/milestones/v1.2-two-sided-agent-mvp/phase-08-agentic-inbox-mcp/PLAN.md`
+
+**Status:** Plan written. Wave 2a (deploy + CF Access setup) and Wave 2b (MCP tool wiring) not started. Blocked on user CF Access configuration in the Cloudflare Zero Trust dashboard (one-click Access on the Worker → paste POLICY_AUD + TEAM_DOMAIN back).
 
 ## Progress
 
