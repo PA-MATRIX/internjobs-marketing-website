@@ -57,10 +57,21 @@ import { routeAndSend } from "../outbound.mjs";
 // Cloudflare Workers AI REST API (no proxy Worker, no AI Gateway). The
 // Fly Node app holds a CLOUDFLARE_AI_API_TOKEN scoped for Workers AI.
 //
+// 2026-05-17 voice-upgrade (AGENT-VOICE): model bumped from Llama 3.1 8B
+// to Llama 3.3 70B fp8-fast for conversational quality. fp8-fast is the
+// cost-optimized 70B variant on Workers AI (8-bit quantized, fast-path
+// inference). Live-probed reachable on this account 2026-05-17 against
+// account 0fffd3dc637bdb26d4963df445a69fd3. If fp8-fast ever drops off
+// the catalog for this account, fall back to @cf/meta/llama-3.1-70b-instruct
+// (also live-probed reachable 2026-05-17). The non-fast `llama-3.3-70b-instruct`
+// returned "No route for that URI" on this account so it is NOT a fallback.
+// Embedding model stays @cf/baai/bge-base-en-v1.5 (768-dim) — pgvector tables
+// are locked at vector(768) by migration 0005.
+//
 // Default model identifier flows through to drafts.agent_metadata.model.
 // AGENT_MODEL is kept as an env override for traceability / future model
 // swaps without code changes.
-const DEFAULT_MODEL = process.env.AGENT_MODEL || "@cf/meta/llama-3.1-8b-instruct";
+const DEFAULT_MODEL = process.env.AGENT_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const LAST_N_MESSAGES = 20; // PITFALLS #19
 
 /**
@@ -129,6 +140,9 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   }
 
   // 3. Load student profile context (best-effort; absence is fine).
+  //    Also pulls students.name + the latest profile_snapshots.display_name
+  //    so the agent can address the candidate by first name (voice rule
+  //    introduced 2026-05-17 with AGENT-VOICE).
   const profile = await loadStudentProfile(pool, studentId);
   const profileBlob = composeProfileBlob(profile);
 
@@ -302,6 +316,7 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
 // ─── Profile + thread helpers ────────────────────────────────────────────────
 
 async function loadStudentProfile(pool, studentId) {
+  // student_profile_context: interests / projects / preferred work / notes.
   const { rows } = await pool.query(
     `select interests, projects, preferred_work, notes
        from student_profile_context
@@ -310,7 +325,36 @@ async function loadStudentProfile(pool, studentId) {
     [studentId],
   );
   const row = rows[0];
+
+  // students.name (post-Clerk-OAuth) + most-recent profile_snapshots.display_name
+  // (LinkedIn-provided). Either may be empty; both may be empty. We pick the
+  // most informative non-empty value, normalize it, then derive a first name
+  // for voice use ("hey raj" vs "hi there"). The first name is intentionally
+  // best-effort: a candidate with only "Raj P." in their LinkedIn display
+  // name is addressed as "raj"; if both columns are empty we fall back to
+  // null and the prompt instructs the agent to omit the name.
+  const { rows: nameRows } = await pool.query(
+    `select s.name as student_name,
+            ps.display_name as snapshot_name
+       from students s
+       left join lateral (
+         select display_name
+           from profile_snapshots
+          where student_id = s.id
+          order by collected_at desc
+          limit 1
+       ) ps on true
+      where s.id = $1
+      limit 1`,
+    [studentId],
+  );
+  const nameRow = nameRows[0] || {};
+  const fullName = pickName(nameRow.student_name, nameRow.snapshot_name);
+  const firstName = deriveFirstName(fullName);
+
   return {
+    fullName,
+    firstName,
     interests: row?.interests || [],
     projects: row?.projects || "",
     preferredWork: row?.preferred_work || "",
@@ -318,8 +362,32 @@ async function loadStudentProfile(pool, studentId) {
   };
 }
 
+function pickName(...candidates) {
+  for (const c of candidates) {
+    const v = typeof c === "string" ? c.trim() : "";
+    if (v) return v;
+  }
+  return "";
+}
+
+function deriveFirstName(fullName) {
+  if (!fullName) return "";
+  // First whitespace-delimited token. Strip trailing punctuation (period,
+  // comma) so "Raj." becomes "Raj". Case-preserve — the system prompt
+  // tells the LLM to lowercase it in output anyway.
+  const tok = String(fullName).trim().split(/\s+/)[0] || "";
+  return tok.replace(/[.,;:!?'"]+$/g, "");
+}
+
 function composeProfileBlob(profile) {
   const parts = [];
+  // The agent uses firstName (sparingly) per the voice rules; fullName is
+  // there for cases where the agent needs to reference the candidate
+  // formally (rare on SMS).
+  if (profile.firstName) parts.push("first_name: " + profile.firstName);
+  if (profile.fullName && profile.fullName !== profile.firstName) {
+    parts.push("full_name: " + profile.fullName);
+  }
   if (profile.interests?.length) parts.push("interests: " + profile.interests.join(", "));
   if (profile.projects) parts.push("projects: " + profile.projects);
   if (profile.preferredWork) parts.push("preferred work: " + profile.preferredWork);
@@ -443,6 +511,54 @@ async function upsertConversation(pool, { studentId, startupId, roleId }) {
 
 // ─── Prompt composition ──────────────────────────────────────────────────────
 
+// ─── Agent voice (2026-05-17 AGENT-VOICE) ────────────────────────────────────
+//
+// The agent has a distinct conversational voice tuned from few-shot exemplars
+// of a competitor's recruiting-agent SMS thread. Goal: candidates feel they're
+// texting a sharp human recruiter, not an autoresponder. Combined with the
+// 2026-05-17 autonomy pivot (no operator approval gate pre-send), this voice
+// is what the candidate experiences directly.
+//
+// Style rules in one line: lowercase except proper nouns, short bursts,
+// hyphen-break " - " for adjacent clauses, no emojis, direct, push back when
+// the candidate is wrong, first-person, never call self an AI/bot/assistant.
+export const AGENT_VOICE = [
+  "VOICE & STYLE:",
+  "- All lowercase except proper nouns (people, companies, products, schools). Never start a sentence with a capital unless it's a proper noun.",
+  "- Short bursts. One or two thoughts per message. Break adjacent clauses with \" - \" (space-hyphen-space) instead of em-dashes or periods.",
+  "- No emojis. No exclamation points except sparingly for genuine emphasis (\"crush the interview\").",
+  "- Direct, confident. Push back politely when the candidate misremembers or contradicts you (\"right - I never said you'd get an email from me\").",
+  "- First person (\"I\"). You have a personality and memory. NEVER refer to yourself as an AI, model, assistant, bot, chatbot, or any synonym.",
+  "- Use the candidate's first name sparingly (max once per turn).",
+  "- Specific over generic. Name the actual role, company, school. Never \"various roles\" or \"great opportunities\".",
+  "- When asked for something out of scope (send email, edit a calendar, do something you can't): be honest. \"I can't do X, but I can do Y.\"",
+  "- Offer concrete next steps (\"want me to pull the brief?\", \"want me to lay it out?\"). Don't end with a vague \"let me know\".",
+  "- Remember context across the thread. If the candidate mentioned a company or constraint earlier, reference it later.",
+].join("\n");
+
+// 3-5 of the strongest exemplars from the competitor reference, formatted as
+// User / Agent pairs. These steer the model toward the desired register
+// more reliably than rules alone — especially the pushback exemplar (the
+// "right - I never said..." line) which encodes confident correction.
+export const AGENT_VOICE_EXEMPLARS = [
+  "EXAMPLES OF THE TONE WE WANT:",
+  "",
+  "User: \"You confirmed in one chat so that's ok\"",
+  "Agent: \"ha, caught me. fair. doesn't change the rule going forward but yeah, I named it.\"",
+  "",
+  "User: \"Hi are you able to send email to me\"",
+  "Agent: \"yeah, I've got your email on file. what do you want me to send over?\"",
+  "",
+  "User: \"details about the role\"",
+  "Agent: \"straight answer: I can't fire off emails from this thread. I work over text. what I can do right now is drop the full brief in here - role, team, why it's open, comp, process. want me to lay it out?\"",
+  "",
+  "User: \"I didn't get any email\"",
+  "Agent: \"right - I never said you'd get an email from me. I don't send email. you won't get one from this thread.\"",
+  "",
+  "User: \"hi\"",
+  "Agent: \"hey - been a minute. how'd the last role land?\"",
+].join("\n");
+
 // Baseline safety guardrails injected into every system prompt. v1.2
 // autonomy pivot (2026-05-17): with no operator approval gate pre-send,
 // these prompt-level rules are the FIRST line of defense. v1.3 will add
@@ -459,15 +575,29 @@ export const AGENT_SAFETY_GUARDRAILS = [
   "- If you're unsure how to answer, ask the student a clarifying question rather than guessing.",
 ].join("\n");
 
+// Composed system message: persona + voice + exemplars + safety. Exported so
+// runLLM and any future call site (e.g. a future startup-email-drafting
+// workflow) share the same prompt frame.
+export const AGENT_SYSTEM_PROMPT = [
+  "You're a recruiting agent at InternJobs.ai. You text students about specific internship roles you have for them. You have a strong, distinct voice.",
+  "",
+  AGENT_VOICE,
+  "",
+  AGENT_VOICE_EXEMPLARS,
+  "",
+  AGENT_SAFETY_GUARDRAILS,
+  "",
+  "Keep replies under 320 characters when over SMS.",
+].join("\n");
+
 function composePrompt({ profileBlob, threadHistory, role, inboundBody }) {
+  // The persona + voice + safety live in AGENT_SYSTEM_PROMPT (system role).
+  // This prompt carries only the per-turn dynamic context (profile, thread
+  // history, matched role, new inbound). Keeping them separate lets the 70B
+  // model treat the system content as instructions and the user content as
+  // data, which gives noticeably tighter style adherence than mashing them.
   const parts = [];
   parts.push(
-    "You are an agent helping a student communicate with a startup about a job opportunity.",
-    "Draft a short, friendly SMS reply on the student's behalf. Keep it under 320 characters.",
-    "Never invent facts about the student or the startup. If a question can't be answered from the context, ask politely.",
-    "",
-    AGENT_SAFETY_GUARDRAILS,
-    "",
     "--- Student profile ---",
     profileBlob || "(no profile context on file)",
     "",
@@ -484,7 +614,7 @@ function composePrompt({ profileBlob, threadHistory, role, inboundBody }) {
     "--- New inbound from student ---",
     inboundBody || "(empty)",
     "",
-    "Draft reply:",
+    "Reply in the voice defined in the system message. Do not preface with \"Sure!\" or any meta-acknowledgement. Output only the SMS body.",
   );
   return parts.join("\n");
 }
@@ -519,6 +649,15 @@ async function runLLM({ llm, prompt, model }) {
   //    direct (`Workers AI Read` perm). AI Gateway can be added later by
   //    prefixing the URL with `/v1/{account_id}/{gateway_id}/workers-ai`
   //    without touching the response-shape parsing here.
+  //
+  // 2026-05-17 AGENT-VOICE: model is Llama 3.3 70B fp8-fast (see DEFAULT_MODEL
+  // comment block). max_tokens raised 512 → 800 — 70B with rich context can
+  // generate slightly longer outputs, but conversational SMS targets 1-3
+  // sentences so 800 is a safety ceiling not a target. temperature lowered
+  // 0.7 → 0.5 for tighter style adherence (the voice rules are precise).
+  // System message uses AGENT_SYSTEM_PROMPT (persona + voice + exemplars +
+  // safety) — the per-turn dynamic context (profile / thread / role / inbound)
+  // is in the user message via composePrompt.
   try {
     const res = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
@@ -530,17 +669,11 @@ async function runLLM({ llm, prompt, model }) {
         },
         body: JSON.stringify({
           messages: [
-            {
-              role: "system",
-              content:
-                "Draft concise SMS replies on a student's behalf to a startup recruiter. " +
-                "Keep replies under 320 characters. Be friendly and natural.\n\n" +
-                AGENT_SAFETY_GUARDRAILS,
-            },
+            { role: "system", content: AGENT_SYSTEM_PROMPT },
             { role: "user", content: prompt },
           ],
-          max_tokens: 512,
-          temperature: 0.7,
+          max_tokens: 800,
+          temperature: 0.5,
         }),
       },
     );
