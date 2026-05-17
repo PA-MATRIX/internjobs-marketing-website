@@ -4,3 +4,6 @@ dist
 .env
 .env.*
 *.log
+
+apps/mac-bridge/.env
+apps/mac-bridge/node_modules
