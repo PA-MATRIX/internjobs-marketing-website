@@ -276,10 +276,12 @@ export function createBlueBubblesClient({ baseUrl, password, log = () => {} }) {
 
       ws.on("open", () => {
         log("info", "bluebubbles_ws_open");
-        // Socket.IO CONNECT to default namespace. Some servers auto-CONNECT
-        // on EIO=4, but sending an explicit "40" is harmless and ensures we
-        // join the default ns.
-        try { ws.send("40"); } catch { /* ignore */ }
+        // NOTE: Socket.IO CONNECT ("40") is sent in handleFrame() AFTER we
+        // receive the server's Engine.IO OPEN frame ("0{...}"). Sending "40"
+        // before "0{...}" lands gets silently dropped by BlueBubbles' server,
+        // leaving us in a half-open state where the WS is "connected" but no
+        // "42[event,...]" packets ever arrive. Diagnosed 2026-05-18 during
+        // Phase 07b smoke testing.
       });
 
       ws.on("message", (raw) => {
@@ -302,16 +304,37 @@ export function createBlueBubblesClient({ baseUrl, password, log = () => {} }) {
 
     function handleFrame(frame) {
       if (!frame || frame.length === 0) return;
+      // Verbose-mode raw frame logger (gated to BRIDGE_LOG_LEVEL=debug).
+      // Useful for diagnosing Socket.IO handshake / event-name issues.
+      try { log("debug", "bluebubbles_raw_frame", { frame: frame.slice(0, 200) }); } catch { /* swallow */ }
       // Engine.IO packet type is the first char.
       //   "0" OPEN, "1" CLOSE, "2" PING, "3" PONG, "4" MESSAGE
       const type = frame[0];
 
       if (type === "0") {
-        // OPEN — parse handshake JSON to extract pingInterval.
+        // OPEN — parse handshake JSON to extract pingInterval, then send
+        // Socket.IO CONNECT ("40") to join the default namespace.
+        //
+        // BlueBubbles behavior (Phase 07b 2026-05-18 diagnosis):
+        //   • Sending "40" BEFORE the server's "0{...}" → silently dropped,
+        //     leaves us in a half-connected state where no events arrive.
+        //   • Sending "40" too quickly AFTER "0{...}" → BB acks with
+        //     "40{sid}" then immediately sends "41" (DISCONNECT). Likely an
+        //     internal race in BB's session manager.
+        //   • Waiting ~50ms before sending "40" → BB completes the session
+        //     setup and events flow correctly.
         try {
           const handshake = JSON.parse(frame.slice(1));
-          // Reset backoff on a successful handshake.
           backoffMs = 1000;
+          // Defer "40" send by 50ms (see comment above). Capture ws reference
+          // so a reconnect happening in the meantime doesn't send "40" on
+          // the wrong socket.
+          const wsRef = ws;
+          setTimeout(() => {
+            if (wsRef && wsRef.readyState === 1 /* OPEN */) {
+              try { wsRef.send("40"); } catch { /* swallow */ }
+            }
+          }, 50);
           // Heartbeat: respond to server PINGs. Some servers also expect the
           // client to send PINGs at pingInterval; we play both safe by
           // replying to "2" with "3" (below) AND polling at pingInterval/2.

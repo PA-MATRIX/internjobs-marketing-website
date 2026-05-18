@@ -39,12 +39,17 @@ export async function startListener({ config, log }) {
     log,
   });
 
-  // Health probe at startup. We don't fail-fast on this (BlueBubbles may be
-  // booting alongside us, or the user might not have finished setup yet),
-  // but we log clearly so operators can spot it.
-  client.health().then((ok) => {
-    log(ok ? "info" : "warn", "bluebubbles_health_initial", { ok });
-  });
+  // NOTE 2026-05-18: REMOVED the startup health() probe. BlueBubbles' server
+  // appears to enforce a single-session-per-password limit; a REST call
+  // moments after the WS handshake disconnects the WS with Socket.IO "41".
+  // Caught during Phase 07b smoke testing — the WS stays alive when we don't
+  // race a REST call against it at startup. Outbound REST calls (send, react,
+  // markRead, sendTyping) come after the WS is fully established AND don't
+  // recur at the same rate, so they don't trigger the same race.
+  //
+  // If we ever need a health probe, run it AFTER seeing at least one "42[..."
+  // event frame on the WS (proving the session is established) OR space REST
+  // calls out by ~250ms after WS handshake.
 
   const unsubscribe = client.subscribe({
     onMessage: (payload) => handleInbound(payload, { client, config, log }).catch((err) => {
