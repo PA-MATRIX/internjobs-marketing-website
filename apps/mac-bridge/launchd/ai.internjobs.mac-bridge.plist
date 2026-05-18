@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ai.internjobs.mac-bridge — Mac-side bridge for iMessage traffic.
+
+  DEPENDENCY: BlueBubbles Server must be running locally (127.0.0.1:1234)
+  before this LaunchAgent starts. mac-bridge connects to BlueBubbles over
+  HTTP + Socket.IO and will retry on backoff if BlueBubbles is down, but
+  for clean boots make sure BlueBubbles.app is in your Login Items (or
+  managed via the Phase 07b Wave-2 Astrolabe LaunchDaemon).
+
+  The bridge itself runs as a LaunchAgent (per-user) because BlueBubbles
+  must run as the logged-in user to access Messages.app — running the
+  bridge in the same session avoids cross-user TCC issues.
+-->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
