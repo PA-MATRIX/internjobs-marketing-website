@@ -41,14 +41,12 @@ async function request<T>(
 	}
 
 	if (!res.ok) {
-		const msg =
-			(body &&
-				typeof body === "object" &&
-				"error" in body &&
-				typeof (body as Record<string, unknown>).error === "string" &&
-				((body as Record<string, unknown>).error as string)) ||
-			res.statusText ||
-			"Request failed";
+		let msg: string | null = null;
+		if (body && typeof body === "object" && "error" in body) {
+			const errField = (body as Record<string, unknown>).error;
+			if (typeof errField === "string") msg = errField;
+		}
+		if (!msg) msg = res.statusText || "Request failed";
 		throw new ApiError(res.status, body, msg);
 	}
 	return body as T;
