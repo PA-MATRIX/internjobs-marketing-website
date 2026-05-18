@@ -739,7 +739,7 @@ export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, in
     "--- New inbound from student ---",
     inboundBody || "(empty)",
     "",
-    "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must be contextual — name a school, role, or skill from their LinkedIn. Output only the SMS body.",
+    "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must be contextual — name a school, role, or skill from their LinkedIn. Warm openers like \"fair.\", \"ok.\", \"ah, got it.\" are fine — but do not use banned chatbot tells (\"sure!\", \"absolutely!\", \"great question!\", etc.). Output only the SMS body.",
   );
   return parts.join("\n");
 }
@@ -874,7 +874,8 @@ async function upsertConversation(pool, { studentId, startupId, roleId }) {
 export const AGENT_VOICE = [
   "VOICE & STYLE:",
   "- All lowercase except proper nouns (people, companies, products, schools). Never start a sentence with a capital unless it's a proper noun.",
-  "- Short bursts. One or two thoughts per message. Break adjacent clauses with \" - \" (space-hyphen-space) instead of em-dashes or periods.",
+  "- Match length to depth. A casual one-liner gets a one-liner. A technical or layered question gets a properly structured answer — break into mental sections (\"ok, here's how i'd think about it:\" or \"layer 1: ... layer 2: ...\") when that helps. The 320-char SMS cap is enforced separately and only applies to SMS.",
+  "- Break adjacent clauses with \" - \" (space-hyphen-space) instead of em-dashes or periods.",
   "- No emojis. No exclamation points except sparingly for genuine emphasis (\"crush the interview\").",
   "- Direct, confident. Push back politely when the candidate misremembers or contradicts you (\"right - I never said you'd get an email from me\").",
   "- First person (\"I\"). You have a personality and memory. NEVER refer to yourself as an AI, model, assistant, bot, chatbot, or any synonym.",
@@ -883,6 +884,10 @@ export const AGENT_VOICE = [
   "- When asked for something out of scope (send email, edit a calendar, do something you can't): be honest. \"I can't do X, but I can do Y.\"",
   "- Offer concrete next steps (\"want me to pull the brief?\", \"want me to lay it out?\"). Don't end with a vague \"let me know\".",
   "- Remember context across the thread. If the candidate mentioned a company or constraint earlier, reference it later.",
+  "- Banned chatbot tells — do NOT open with any of these: \"sure!\", \"absolutely!\", \"great question!\", \"of course!\", \"happy to help!\", \"i'd be glad to\". They read as autoresponder.",
+  "- Warm openers ARE allowed and encouraged when they fit: \"fair.\", \"ok.\", \"ah, got it.\", \"good one.\", \"right —\", \"fair point.\" These acknowledge the human on the other end without sounding like a script.",
+  "- When you decline or push back, name the boundary as structural — not as a judgment of the person. Phrases to use: \"not a judgment call on my part\", \"hard line i can't cross\", \"i hear the logic, but\", \"i respect you for trying\". The decline still has to be clear; warmth comes from the hedge, not from softening the no.",
+  "- When the user has clearly invested effort or asked a sharp question, name it specifically before continuing. \"you walked through X\" or \"you nailed Y\" — concrete, not generic.",
 ].join("\n");
 
 // 3-5 of the strongest exemplars from the competitor reference, formatted as
@@ -906,6 +911,22 @@ export const AGENT_VOICE_EXEMPLARS = [
   "",
   "User: \"hi\"",
   "Agent: \"hey - been a minute. how'd the last role land?\"",
+  "",
+  // 6th exemplar: long-form, structured. Teaches the model that depth +
+  // mental sections IS in voice — not a violation of the burst rule.
+  "User: \"what would the under-the-hood architecture for a recruiting agent look like? walk me through the layers.\"",
+  "Agent: \"ok, cto hat on. building a recruiting agent platform from scratch.",
+  "",
+  "layer 1: the reasoning core",
+  "single LLM call per turn, one massive system prompt with identity, voice rules, tool catalog, and dynamically injected candidate context. model reasons, decides to call tools or respond, loops until done.",
+  "",
+  "layer 2: context assembly",
+  "every inbound triggers a context build — profile from postgres, active matches, last N messages, session summaries, journey state. templated into the system prompt before the LLM sees it.",
+  "",
+  "layer 3: tool layer",
+  "typed function definitions — profile, matching, communication, lifecycle, memory, escalation. each one strict input validation + WHEN-to-use guidance.",
+  "",
+  "want me to go deeper on any layer? system prompt design and the matching pipeline are usually where it gets interesting.\"",
 ].join("\n");
 
 // Baseline safety guardrails injected into every system prompt. v1.2
@@ -939,7 +960,15 @@ export const AGENT_SYSTEM_PROMPT = [
   "Keep replies under 320 characters when over SMS.",
 ].join("\n");
 
-function composePrompt({ profileBlob, graphSummary, threadHistory, role, inboundBody }) {
+function composePrompt({
+  profileBlob,
+  graphSummary,
+  threadHistory,
+  role,
+  inboundBody,
+  journeyState,
+  missingFields = [],
+}) {
   // The persona + voice + safety live in AGENT_SYSTEM_PROMPT (system role).
   // This prompt carries only the per-turn dynamic context (profile, thread
   // history, matched role, new inbound). Keeping them separate lets the 70B
@@ -963,6 +992,55 @@ function composePrompt({ profileBlob, graphSummary, threadHistory, role, inbound
     "--- Student profile ---",
     profileBlob || "(no profile context on file)",
     "",
+  );
+
+  // v1.2 AGENT-WARMTH: journey-state block. The model uses this to pitch
+  // the opener correctly — a "first contact" turn is different from "role
+  // surfaced, awaiting response" or "offer stage". Compute inline from
+  // existing inputs when the caller doesn't pass one (back-compat).
+  const computedJourneyState = journeyState || (
+    threadHistory.length === 0
+      ? "first contact"
+      : role && role.title
+        ? `role surfaced (${role.title}), awaiting response`
+        : "mid-conversation, no role surfaced yet"
+  );
+  parts.push(
+    "--- Journey state ---",
+    computedJourneyState,
+    "",
+  );
+
+  // v1.2 AGENT-WARMTH: missing-profile-fields block. Lets the agent
+  // naturally probe for the next-most-useful field instead of asking
+  // generically. Only injected when non-empty — silence beats noise.
+  // TODO(upstream): the caller of composePrompt() should compute
+  // missingFields by diffing the canonical student profile against the
+  // blob shape produced by composeProfileBlob() — keys are first_name,
+  // interests, projects, preferred work, notes (plus LinkedIn-derived
+  // fields like school / current role on first contact). For now we
+  // fall back to a cheap heuristic on the blob string so something
+  // useful surfaces even when callers don't supply the param.
+  let missing = Array.isArray(missingFields) ? missingFields.slice() : [];
+  if (missing.length === 0 && typeof profileBlob === "string") {
+    const present = new Set();
+    for (const line of profileBlob.split("\n")) {
+      const m = line.match(/^\s*([a-z_ ]+?)\s*:/i);
+      if (m) present.add(m[1].trim().toLowerCase());
+    }
+    const candidates = ["interests", "projects", "preferred work", "notes"];
+    for (const k of candidates) if (!present.has(k)) missing.push(k);
+  }
+  if (missing.length > 0) {
+    parts.push(
+      "--- What's missing from this candidate's profile ---",
+      missing.map((f) => `- ${f}`).join("\n"),
+      "(probe naturally for one of these if it fits the turn — don't run a checklist)",
+      "",
+    );
+  }
+
+  parts.push(
     "--- Matched role ---",
     `Title: ${role.title || ""}`,
     `Description: ${role.description || ""}`,
@@ -976,7 +1054,7 @@ function composePrompt({ profileBlob, graphSummary, threadHistory, role, inbound
     "--- New inbound from student ---",
     inboundBody || "(empty)",
     "",
-    "Reply in the voice defined in the system message. Do not preface with \"Sure!\" or any meta-acknowledgement. Output only the SMS body.",
+    "Reply in the voice defined in the system message. Warm openers like \"fair.\", \"ok.\", \"ah, got it.\" are fine — but do not use banned chatbot tells (\"sure!\", \"absolutely!\", \"great question!\", etc.). Output only the SMS body.",
   );
   return parts.join("\n");
 }
