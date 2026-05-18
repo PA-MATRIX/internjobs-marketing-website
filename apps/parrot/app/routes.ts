@@ -14,4 +14,8 @@ export default [
 	route("chat", "routes/chat.tsx"),
 	route("meetings", "routes/meetings.tsx"),
 	route("sign-in", "routes/login.tsx"),
+	// Wave 2b: operator-only employee invite UI. The API enforces the
+	// operator role; the page itself just renders the form (and the
+	// fetch call will 403 for non-operators).
+	route("admin/invite", "routes/admin.invite.tsx"),
 ] satisfies RouteConfig;

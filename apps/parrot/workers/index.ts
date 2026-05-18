@@ -79,11 +79,26 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		email: employee.email,
 		displayName: employee.displayName,
 	});
+	// Compute whether this employee is an operator. Same logic as
+	// workers/lib/operator.ts (avoids round-tripping through the
+	// middleware just to read the flag).
+	const allowlist = (c.env.PARROT_OPERATOR_EMAILS || "")
+		.split(",")
+		.map((e) => e.trim().toLowerCase())
+		.filter(Boolean);
+	const meta = employee.publicMetadata as
+		| { role?: unknown }
+		| null
+		| undefined;
+	const isOperator =
+		meta?.role === "operator" ||
+		allowlist.includes(employee.email.toLowerCase());
 	return c.json({
 		employee_id: profile.employeeId,
 		email: profile.email,
 		display_name: profile.displayName,
 		created_at: profile.createdAt,
+		role: isOperator ? "operator" : "employee",
 	});
 });
 

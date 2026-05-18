@@ -20,6 +20,12 @@ const NAV: NavItem[] = [
 	{ href: "/meetings", label: "Meetings" },
 ];
 
+// Wave 2b: operator-only links. Rendered as a separate "Admin" section
+// when the /api/me response says role === "operator".
+const ADMIN_NAV: NavItem[] = [
+	{ href: "/admin/invite", label: "Invite employee" },
+];
+
 export interface WorkspaceShellProps {
 	children: ReactNode;
 	/** Optional override for the page heading shown in the top bar. */
@@ -68,6 +74,33 @@ export function WorkspaceShell({ children, title }: WorkspaceShellProps) {
 							);
 						})}
 					</ul>
+
+					{me?.role === "operator" && (
+						<div className="mt-6">
+							<p className="px-5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+								Admin
+							</p>
+							<ul className="mt-2 space-y-1 px-3">
+								{ADMIN_NAV.map((item) => {
+									const active = location.pathname.startsWith(item.href);
+									return (
+										<li key={item.href}>
+											<Link
+												to={item.href}
+												className={`block rounded-md px-3 py-2 text-sm no-underline transition-colors ${
+													active
+														? "bg-slate-900 text-white"
+														: "text-slate-700 hover:bg-slate-100"
+												}`}
+											>
+												{item.label}
+											</Link>
+										</li>
+									);
+								})}
+							</ul>
+						</div>
+					)}
 				</nav>
 				<div className="border-t border-slate-200 px-3 py-3 text-xs text-slate-500">
 					<p>Wave 1 scaffolding</p>

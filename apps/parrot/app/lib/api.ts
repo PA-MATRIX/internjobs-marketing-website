@@ -57,6 +57,7 @@ export interface MeResponse {
 	email: string;
 	display_name: string;
 	created_at: string;
+	role?: "operator" | "employee";
 }
 
 export interface InboxMessage {
