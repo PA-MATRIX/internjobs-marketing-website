@@ -79,9 +79,9 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		email: employee.email,
 		displayName: employee.displayName,
 	});
-	// Compute whether this employee is an operator. Same logic as
-	// workers/lib/operator.ts (avoids round-tripping through the
-	// middleware just to read the flag).
+	// Compute whether this employee is an operator. Mirrors
+	// workers/lib/operator.ts.isOperator() so the front-end can render
+	// the Admin nav without an extra round-trip.
 	const allowlist = (c.env.PARROT_OPERATOR_EMAILS || "")
 		.split(",")
 		.map((e) => e.trim().toLowerCase())
@@ -91,6 +91,7 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		| null
 		| undefined;
 	const isOperator =
+		employee.orgRole === "org:admin" ||
 		meta?.role === "operator" ||
 		allowlist.includes(employee.email.toLowerCase());
 	return c.json({

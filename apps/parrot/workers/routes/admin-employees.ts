@@ -29,6 +29,7 @@ import type { ParrotContext } from "../lib/mailbox";
 import { requireOperator } from "../lib/operator";
 import {
 	createClerkUser,
+	createOrgMembership,
 	parseAndSlugify,
 	ClerkApiError,
 	disableClerkUser,
@@ -80,7 +81,7 @@ adminEmployees.post("/", async (c) => {
 		);
 	}
 
-	// 1) Create Clerk user.
+	// 1) Create Clerk user in the student production Clerk app.
 	let clerkUserId: string;
 	try {
 		const clerkUser = await createClerkUser(c.env, {
@@ -98,6 +99,27 @@ adminEmployees.post("/", async (c) => {
 			);
 		}
 		throw e;
+	}
+
+	// 1b) Add the new user to the InternJobs Team organization so they
+	// can pass the org-membership gate on workspace.internjobs.ai.
+	// Soft-fail — we report the error but don't undo the Clerk user.
+	// Re-provisioning the org membership is a one-API-call recovery
+	// from the dashboard or a future re-invite endpoint.
+	let orgMembershipId: string | null = null;
+	let orgMembershipError: string | null = null;
+	try {
+		const { id } = await createOrgMembership(c.env, {
+			userId: clerkUserId,
+			role: "org:member",
+		});
+		orgMembershipId = id;
+	} catch (e) {
+		orgMembershipError = (e as Error).message;
+		console.warn(
+			`Org membership creation failed for ${clerkUserId}:`,
+			orgMembershipError,
+		);
 	}
 
 	// 2) Persist row first (so a routing-rule failure doesn't leave us
@@ -155,6 +177,8 @@ adminEmployees.post("/", async (c) => {
 			status: employeeRow.status,
 			created_at: employeeRow.created_at,
 		},
+		org_membership_id: orgMembershipId,
+		org_membership_error: orgMembershipError,
 		routing_rule_id: routingRuleId,
 		routing_error: routingError,
 		welcome_email_sent: welcomeSent,

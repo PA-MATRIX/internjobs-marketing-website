@@ -1,49 +1,35 @@
-// v1.2 Phase 10 Wave 2b: operator-role gate.
+// v1.2 Phase 10 Wave 2b (revised 2026-05-18): operator-role gate.
 //
-// Two paths to operator:
-//   (a) Clerk publicMetadata.role === "operator" (preferred long-term;
-//       set once via the Clerk dashboard for each admin).
-//   (b) Email match against the comma-separated PARROT_OPERATOR_EMAILS
-//       allowlist (bootstrap path — the very first operator needs to
-//       exist before we have a UI to grant the role).
+// Primary gate: the session JWT's active-org role is `org:admin`. That's
+// the role Clerk hands to whoever created the InternJobs Team org and
+// to anyone explicitly promoted to admin via the Clerk dashboard.
 //
-// The middleware always requires that the request already passed Clerk
-// auth (so `c.var.employee` is set). It's mounted on every
-// /api/admin/* route in workers/index.ts.
+// Fallback (kept for bootstrap and emergency access while org membership
+// is still being rolled out): PARROT_OPERATOR_EMAILS comma-separated
+// allowlist. Documented as deprecated in workers/types.ts.
+//
+// Note: by the time this middleware runs, workers/app.ts has already
+// enforced that the session carries the InternJobs Team org as active.
+// So `c.var.employee.orgRole` reflects that org specifically.
 
 import { createMiddleware } from "hono/factory";
 import type { ParrotContext } from "./mailbox";
-import type { Env } from "../types";
-import type { JWTPayload } from "jose";
+import type { Env, Employee } from "../types";
 
 export function isOperator(
 	env: Env,
-	email: string,
-	publicMetadata?: Record<string, unknown> | null,
+	employee: Pick<Employee, "email" | "orgRole" | "publicMetadata">,
 ): boolean {
-	if (publicMetadata?.role === "operator") return true;
+	if (employee.orgRole === "org:admin") return true;
+	// Legacy compatibility — publicMetadata.role set via the Clerk
+	// dashboard before Organizations existed.
+	if (employee.publicMetadata?.role === "operator") return true;
 	const allowlist = (env.PARROT_OPERATOR_EMAILS || "")
 		.split(",")
 		.map((e) => e.trim().toLowerCase())
 		.filter(Boolean);
-	if (allowlist.includes(email.toLowerCase())) return true;
+	if (allowlist.includes(employee.email.toLowerCase())) return true;
 	return false;
-}
-
-/**
- * Extract Clerk publicMetadata off the verified JWT claims. Returns
- * `null` if no metadata is in the token (which is the default unless
- * the JWT template explicitly includes `public_metadata`).
- */
-export function extractPublicMetadata(
-	claims: JWTPayload,
-): Record<string, unknown> | null {
-	const c = claims as Record<string, unknown>;
-	const meta = c.public_metadata ?? c.publicMetadata;
-	if (meta && typeof meta === "object") {
-		return meta as Record<string, unknown>;
-	}
-	return null;
 }
 
 export const requireOperator = createMiddleware<ParrotContext>(
@@ -52,15 +38,7 @@ export const requireOperator = createMiddleware<ParrotContext>(
 		if (!employee) {
 			return c.json({ error: "unauthenticated" }, 401);
 		}
-		// `publicMetadata` is stashed onto `employee` by the Clerk
-		// middleware in workers/app.ts (when present). We treat absence
-		// as "no role" and fall back to the email allowlist.
-		const meta = (
-			employee as unknown as {
-				publicMetadata?: Record<string, unknown>;
-			}
-		).publicMetadata;
-		if (!isOperator(c.env, employee.email, meta)) {
+		if (!isOperator(c.env, employee)) {
 			return c.json({ error: "forbidden_operator_only" }, 403);
 		}
 		await next();

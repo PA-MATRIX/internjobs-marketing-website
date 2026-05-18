@@ -34,14 +34,15 @@
 		"enabled": true
 	},
 	// Wave 2b: bind the worker to workspace.internjobs.ai. We use a
-	// Workers Route (not a custom domain) so DNS stays as a CNAME at the
-	// edge — no Cloudflare-managed cert in the way of CF Access if we
-	// later add it. The zone for internjobs.ai already exists; we add
-	// the DNS record via the deploy step.
+	// Workers Custom Domain rather than a route — the Custom Domains
+	// API auto-creates the DNS record and provisions a cert, which lets
+	// us deploy with only the OAuth scopes wrangler already has
+	// (workers_scripts:write). A plain Workers Route would require a
+	// separately-created DNS record (zone:edit), which our token lacks.
 	"routes": [
 		{
-			"pattern": "workspace.internjobs.ai/*",
-			"zone_name": "internjobs.ai"
+			"pattern": "workspace.internjobs.ai",
+			"custom_domain": true
 		}
 	],
 	"compatibility_flags": [

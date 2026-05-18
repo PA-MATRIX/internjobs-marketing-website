@@ -63,6 +63,123 @@ export async function createClerkUser(
 	return (await res.json()) as ClerkUser;
 }
 
+/**
+ * Add a Clerk user to the InternJobs Team org with the given role.
+ * Synchronous (no invitation acceptance step). Used by /api/admin/employees
+ * right after creating the Clerk user, so the new employee can immediately
+ * pass the org-membership gate on workspace.internjobs.ai.
+ */
+export async function createOrgMembership(
+	env: Env,
+	input: { userId: string; role?: string },
+): Promise<{ id: string; role: string }> {
+	const secretKey = env.PARROT_CLERK_SECRET_KEY;
+	if (!secretKey) {
+		throw new Error(
+			"createOrgMembership: PARROT_CLERK_SECRET_KEY not configured",
+		);
+	}
+	const orgId = env.PARROT_INTERNJOBS_TEAM_ORG_ID;
+	if (!orgId) {
+		throw new Error(
+			"createOrgMembership: PARROT_INTERNJOBS_TEAM_ORG_ID not configured",
+		);
+	}
+
+	const res = await fetch(
+		`https://api.clerk.com/v1/organizations/${orgId}/memberships`,
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${secretKey}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				user_id: input.userId,
+				role: input.role || "org:member",
+			}),
+		},
+	);
+
+	if (!res.ok) {
+		const body = await res.text().catch(() => "");
+		throw new ClerkApiError(
+			res.status,
+			`createOrgMembership failed (${res.status}): ${body.slice(0, 500)}`,
+		);
+	}
+
+	const data = (await res.json()) as { id: string; role: string };
+	return data;
+}
+
+export interface ClerkOrgInvitation {
+	id: string;
+	email_address: string;
+	role: string;
+	status: string;
+	organization_id: string;
+	created_at: number;
+}
+
+/**
+ * Send a Clerk Organization invitation. Clerk emails the recipient with
+ * a magic link; on accept they sign in (or sign up, if new) and are
+ * automatically added to the org with the specified role. Replaces the
+ * old "create-user + send-our-own-welcome-email" path.
+ */
+export async function createOrgInvitation(
+	env: Env,
+	input: {
+		emailAddress: string;
+		role?: string;
+		publicMetadata?: Record<string, unknown>;
+		redirectUrl?: string;
+	},
+): Promise<ClerkOrgInvitation> {
+	const secretKey = env.PARROT_CLERK_SECRET_KEY;
+	if (!secretKey) {
+		throw new Error(
+			"createOrgInvitation: PARROT_CLERK_SECRET_KEY not configured",
+		);
+	}
+	const orgId = env.PARROT_INTERNJOBS_TEAM_ORG_ID;
+	if (!orgId) {
+		throw new Error(
+			"createOrgInvitation: PARROT_INTERNJOBS_TEAM_ORG_ID not configured",
+		);
+	}
+
+	const res = await fetch(
+		`https://api.clerk.com/v1/organizations/${orgId}/invitations`,
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${secretKey}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				email_address: input.emailAddress,
+				role: input.role || "org:member",
+				...(input.publicMetadata
+					? { public_metadata: input.publicMetadata }
+					: {}),
+				...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
+			}),
+		},
+	);
+
+	if (!res.ok) {
+		const body = await res.text().catch(() => "");
+		throw new ClerkApiError(
+			res.status,
+			`createOrgInvitation failed (${res.status}): ${body.slice(0, 500)}`,
+		);
+	}
+
+	return (await res.json()) as ClerkOrgInvitation;
+}
+
 export async function disableClerkUser(env: Env, userId: string): Promise<void> {
 	const secretKey = env.PARROT_CLERK_SECRET_KEY;
 	if (!secretKey) {

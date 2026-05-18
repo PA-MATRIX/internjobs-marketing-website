@@ -1,11 +1,19 @@
-// v1.2 Phase 10 Wave 1 + Wave 2b: Parrot worker env bindings.
+// v1.2 Phase 10 Wave 2b (revised 2026-05-18): Parrot worker env bindings.
 //
-// Wave 1 baseline: Clerk session JWT verification (PARROT_CLERK_*),
-// MATTERMOST_URL var.
+// Architecture pivot: instead of a second Clerk instance, Parrot now reuses
+// the existing student production Clerk app at clerk.internjobs.ai and
+// gates access by membership in the "InternJobs Team" organization
+// (PARROT_INTERNJOBS_TEAM_ORG_ID). Cookies set on .internjobs.ai during
+// student sign-in propagate naturally to workspace.internjobs.ai —
+// students never become employees because they're not org members.
 //
-// Wave 2b additions (employee onboarding + OIDC SSO bridge):
-//   - PARROT_CLERK_SECRET_KEY now also used to call the Clerk Backend API
-//     (POST /v1/users) when an operator invites a new employee.
+// Env semantics:
+//   - PARROT_CLERK_* point at the STUDENT production Clerk app (sk_live_…,
+//     pk_live_…, JWKS at clerk.internjobs.ai). Same Clerk app powers
+//     app.internjobs.ai for students.
+//   - PARROT_INTERNJOBS_TEAM_ORG_ID — the org_id every Parrot session JWT
+//     must carry in its `o.id` claim. Configured via Clerk Dashboard or
+//     organizationSyncOptions to auto-activate on workspace.internjobs.ai.
 //   - CLOUDFLARE_* secrets let the Worker provision Email Routing rules
 //     and send the welcome email via the Email Service REST API.
 //   - OIDC_SIGNING_KEY (PEM-encoded RS256 private key) + OIDC_PUBLIC_JWK
@@ -13,11 +21,6 @@
 //     Mattermost talks to.
 //   - MATTERMOST_OIDC_CLIENT_ID / _SECRET pair authenticates the
 //     Mattermost server when it POSTs to /oidc/token.
-//   - PARROT_OPERATOR_EMAILS — comma-separated list of @internjobs.ai
-//     addresses that are allowed to invite employees. First-run
-//     bootstrap: the operator is whoever signs in first with a
-//     publicMetadata.role === "operator" Clerk claim, OR an email in
-//     this allowlist.
 //   - WORKSPACE — DO namespace for the singleton WorkspaceDO that holds
 //     the employee directory + OIDC code/token tables.
 
@@ -40,15 +43,23 @@ type CfEnvBase = Omit<
 >;
 
 export interface Env extends CfEnvBase {
-	/** Clerk publishable key for the Parrot (internal-employee) Clerk instance. */
+	/** Clerk publishable key for the student production Clerk instance
+	 *  (clerk.internjobs.ai). Parrot reuses this app, gated by org membership. */
 	PARROT_CLERK_PUBLISHABLE_KEY: string;
-	/** Clerk secret key — used by @clerk/backend's authenticateRequest AND
-	 *  by /api/admin/employees to create new Clerk users. */
+	/** Clerk secret key — used to verify JWTs AND to call Clerk Backend API
+	 *  (org invitations, user lookups). */
 	PARROT_CLERK_SECRET_KEY: string;
-	/** JWKS URL for the Parrot Clerk instance. */
+	/** JWKS URL for the student production Clerk instance. */
 	PARROT_CLERK_JWKS_URL: string;
 	/** Optional explicit issuer; if unset we derive it from the JWKS URL. */
 	PARROT_CLERK_ISSUER?: string;
+
+	/** org_id of the "InternJobs Team" organization. Every Parrot request
+	 *  must carry this in its session JWT's `o.id` claim. */
+	PARROT_INTERNJOBS_TEAM_ORG_ID: string;
+	/** Slug of the "InternJobs Team" org. Used by Clerk's
+	 *  organizationSyncOptions to auto-activate the org on this subdomain. */
+	PARROT_INTERNJOBS_TEAM_ORG_SLUG?: string;
 
 	/** Public URL of the self-hosted Mattermost Team Edition instance. */
 	MATTERMOST_URL: string;
@@ -64,7 +75,9 @@ export interface Env extends CfEnvBase {
 	CLOUDFLARE_EMAIL_ACCOUNT_ID?: string;
 	/** Cloudflare zone ID for internjobs.ai. */
 	CLOUDFLARE_INTERNJOBS_ZONE_ID?: string;
-	/** Comma-separated allowlist of operator emails. */
+	/** Deprecated bootstrap allowlist. Org membership is the real gate;
+	 *  this only matters if someone needs emergency operator access while
+	 *  the org config is broken. Remove once org gate is proven. */
 	PARROT_OPERATOR_EMAILS?: string;
 
 	// — Wave 2b: OIDC bridge
@@ -104,7 +117,14 @@ export interface Employee {
 	givenName?: string;
 	/** Last name (best-effort split from displayName/Clerk claims). */
 	familyName?: string;
-	/** Clerk publicMetadata (when present on the JWT). Used by the
-	 *  operator gate in workers/lib/operator.ts. */
+	/** Clerk publicMetadata (when present on the JWT). Kept for legacy
+	 *  callers; org membership is the primary gate now. */
 	publicMetadata?: Record<string, unknown> | null;
+	/** Active org_id from the session JWT's `o.id` claim. Set when Clerk's
+	 *  organizationSyncOptions auto-activates the InternJobs Team org. */
+	orgId?: string | null;
+	/** Active org role (e.g. "org:admin", "org:member"). */
+	orgRole?: string | null;
+	/** Active org slug. */
+	orgSlug?: string | null;
 }

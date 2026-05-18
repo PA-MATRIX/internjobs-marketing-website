@@ -1,29 +1,37 @@
-// v1.2 Phase 10 Wave 1: Parrot Hono root — Clerk JWT verification.
+// v1.2 Phase 10 Wave 2b (revised 2026-05-18): Parrot Hono root — Clerk
+// session JWT verification + org-membership gate.
 //
 // BIG architectural diff vs apps/agentic-inbox/workers/app.ts:
 //   - agentic-inbox guards every request with a Cloudflare Access JWT
-//     (cf-access-jwt-assertion header). One shared CF Access policy
-//     fronts every mailbox.
-//   - Parrot guards every request with a Clerk session JWT issued by a
-//     SECOND Clerk instance (PARROT_CLERK_*). Each employee has their
-//     own identity → their own EmployeeMailboxDO.
+//     (cf-access-jwt-assertion header).
+//   - Parrot reuses the STUDENT production Clerk instance
+//     (clerk.internjobs.ai) and requires the active session to carry the
+//     "InternJobs Team" org in its `o.id` claim. Students sign in via the
+//     same Clerk app but are not org members, so workspace.internjobs.ai
+//     rejects them. Employees are org members → they're admitted.
 //
 // Token transport:
 //   - Bearer header (Authorization: Bearer <token>) for API requests
 //     from the SPA, or
 //   - `__session` cookie (Clerk's default) for direct navigations.
+//     Because Clerk is configured at clerk.internjobs.ai, the cookie is
+//     scoped to `.internjobs.ai` and reaches workspace.internjobs.ai
+//     without any handshake.
 //
 // Verification uses `jose.createRemoteJWKSet` against
-// PARROT_CLERK_JWKS_URL. We do NOT use @clerk/backend's
-// authenticateRequest here because Workers' request model differs from
-// the Node http one apps/app uses, and a plain JWT verify is enough for
-// Wave 1 (we re-issue handshake cookies only if we add a Clerk hosted
-// sign-in page later in this wave).
+// PARROT_CLERK_JWKS_URL (pointing at the student app's JWKS).
 //
-// On unauth:
-//   - API requests (/api/*) → 401 JSON
-//   - All other requests → redirect to /sign-in (the Clerk-hosted
-//     sign-in page or the React /sign-in route, whichever ships first).
+// Org-membership gate:
+//   The JWT must carry `o.id` === env.PARROT_INTERNJOBS_TEAM_ORG_ID.
+//   Clerk only includes the `o` claim when an org is active for the
+//   session. For workspace.internjobs.ai, Clerk's
+//   organizationSyncOptions auto-activates the InternJobs Team org for
+//   any user who is a member; non-members get `o` unset → 403.
+//
+// On unauth / wrong-org:
+//   - API requests (/api/*) → 401 / 403 JSON
+//   - All other requests → redirect to the Clerk Account Portal at
+//     accounts.internjobs.ai (with redirect_url back here).
 
 import { Hono } from "hono";
 import { jwtVerify, createRemoteJWKSet, type JWTPayload } from "jose";
@@ -121,6 +129,21 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 				? (c.publicMetadata as Record<string, unknown>)
 				: null;
 
+	// Clerk v2 session JWTs nest active-org info under `o`:
+	//   "o": { "id": "org_…", "rol": "org:admin", "slg": "internjobs-team" }
+	// Older formats also surface `org_id` / `org_role` / `org_slug` flat.
+	const orgClaim =
+		c.o && typeof c.o === "object" ? (c.o as Record<string, unknown>) : null;
+	const orgId =
+		(orgClaim && typeof orgClaim.id === "string" ? orgClaim.id : null) ||
+		(typeof c.org_id === "string" ? (c.org_id as string) : null);
+	const orgRole =
+		(orgClaim && typeof orgClaim.rol === "string" ? orgClaim.rol : null) ||
+		(typeof c.org_role === "string" ? (c.org_role as string) : null);
+	const orgSlug =
+		(orgClaim && typeof orgClaim.slg === "string" ? orgClaim.slg : null) ||
+		(typeof c.org_slug === "string" ? (c.org_slug as string) : null);
+
 	return {
 		employeeId,
 		email,
@@ -129,7 +152,18 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		familyName,
 		picture,
 		publicMetadata,
+		orgId,
+		orgRole,
+		orgSlug,
 	};
+}
+
+/** Build the Clerk Account Portal sign-in URL with a redirect_url back
+ *  to the path the user was trying to reach. */
+function buildSignInRedirect(path: string): string {
+	const target = `https://workspace.internjobs.ai${path === "/" ? "" : path}`;
+	const portal = "https://accounts.internjobs.ai/sign-in";
+	return `${portal}?redirect_url=${encodeURIComponent(target)}`;
 }
 
 const app = new Hono<ParrotContext>();
@@ -206,7 +240,7 @@ app.use("*", async (c, next) => {
 	const token = extractToken(c.req.raw);
 	if (!token) {
 		if (isApi) return c.json({ error: "unauthenticated" }, 401);
-		return c.redirect("/sign-in", 302);
+		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
 	let claims: JWTPayload;
@@ -221,21 +255,36 @@ app.use("*", async (c, next) => {
 		if (isApi) {
 			return c.json({ error: "invalid_or_expired_token" }, 401);
 		}
-		return c.redirect("/sign-in", 302);
+		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
 	const employee = deriveEmployeeFromClaims(claims);
 	if (!employee) {
 		if (isApi) return c.json({ error: "missing_required_claims" }, 401);
-		return c.redirect("/sign-in", 302);
+		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
-	// Enforce @internjobs.ai email domain — Parrot is internal-only.
-	if (!employee.email.toLowerCase().endsWith("@internjobs.ai")) {
+	// Org-membership gate (replaces the @internjobs.ai email-domain check).
+	// The session must have the InternJobs Team org active; non-members of
+	// that org have no `o` claim in their JWT and get bounced.
+	const requiredOrgId = c.env.PARROT_INTERNJOBS_TEAM_ORG_ID;
+	if (!requiredOrgId) {
+		// Misconfiguration — fail closed rather than admit everyone.
 		if (isApi) {
-			return c.json({ error: "forbidden_external_email" }, 403);
+			return c.json({ error: "parrot_team_org_id_missing" }, 503);
 		}
-		return c.redirect("/sign-in?reason=external_email", 302);
+		return c.text(
+			"Parrot is not configured. Set PARROT_INTERNJOBS_TEAM_ORG_ID.",
+			503,
+		);
+	}
+	if (employee.orgId !== requiredOrgId) {
+		if (isApi) {
+			return c.json({ error: "forbidden_not_team_member" }, 403);
+		}
+		// Send them through sign-in again — Clerk will surface the org
+		// switcher if they're a member but a different org is active.
+		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
 	c.set("employee", employee);
