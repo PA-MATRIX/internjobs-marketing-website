@@ -24,7 +24,22 @@
 import type { EmployeeMailboxDO } from "./durableObject";
 import type { WorkspaceDO } from "./durableObject/workspace";
 
-export interface Env extends Cloudflare.Env {
+/**
+ * Worker-specific env. We `Omit` the binding/var slots we re-declare
+ * so the literal types `wrangler types` emits (e.g.
+ * `MATTERMOST_URL: "https://internjobs-mattermost.fly.dev"`) don't
+ * collide with our wider string types.
+ */
+type CfEnvBase = Omit<
+	Cloudflare.Env,
+	| "MATTERMOST_URL"
+	| "EMPLOYEE_MAILBOX"
+	| "WORKSPACE"
+	| "EMAIL"
+	| "BUCKET"
+>;
+
+export interface Env extends CfEnvBase {
 	/** Clerk publishable key for the Parrot (internal-employee) Clerk instance. */
 	PARROT_CLERK_PUBLISHABLE_KEY: string;
 	/** Clerk secret key — used by @clerk/backend's authenticateRequest AND
@@ -89,4 +104,7 @@ export interface Employee {
 	givenName?: string;
 	/** Last name (best-effort split from displayName/Clerk claims). */
 	familyName?: string;
+	/** Clerk publicMetadata (when present on the JWT). Used by the
+	 *  operator gate in workers/lib/operator.ts. */
+	publicMetadata?: Record<string, unknown> | null;
 }

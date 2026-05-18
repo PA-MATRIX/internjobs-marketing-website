@@ -114,6 +114,12 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 			: typeof c.image_url === "string"
 				? (c.image_url as string)
 				: null;
+	const publicMetadata =
+		c.public_metadata && typeof c.public_metadata === "object"
+			? (c.public_metadata as Record<string, unknown>)
+			: c.publicMetadata && typeof c.publicMetadata === "object"
+				? (c.publicMetadata as Record<string, unknown>)
+				: null;
 
 	return {
 		employeeId,
@@ -122,6 +128,7 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		givenName,
 		familyName,
 		picture,
+		publicMetadata,
 	};
 }
 
@@ -141,6 +148,25 @@ app.use("*", async (c, next) => {
 		path.startsWith("/sign-in/") ||
 		path.startsWith("/sign-up") ||
 		path.startsWith("/_clerk")
+	) {
+		return next();
+	}
+
+	// Wave 2b OIDC bridge — these endpoints are part of the OAuth 2.0
+	// spec and Mattermost calls them WITHOUT a Clerk session. The
+	// /oidc/authorize route handles its own redirect-to-Clerk if the
+	// user isn't signed in; /oidc/token + /oidc/userinfo enforce their
+	// own auth (client_secret + Bearer access_token respectively).
+	//
+	// `/oidc/authorize` is also let through, but its handler will check
+	// for a Clerk session itself (and if absent, build a sign-in URL
+	// that preserves the OAuth params via `redirect_url`).
+	if (
+		path === "/oidc/.well-known/openid-configuration" ||
+		path === "/oidc/jwks" ||
+		path === "/oidc/authorize" ||
+		path === "/oidc/token" ||
+		path === "/oidc/userinfo"
 	) {
 		return next();
 	}

@@ -24,6 +24,8 @@ import {
 	generateMessageId,
 	validateSender,
 } from "./lib/email-helpers";
+import { adminEmployees } from "./routes/admin-employees";
+import { oidc } from "./routes/oidc";
 
 type AppContext = Context<ParrotContext>;
 
@@ -252,5 +254,15 @@ app.get(
 				"Mattermost Team Edition is deployed in Wave 2 and exposes its iframe URL + SSO bridge here.",
 		}),
 );
+
+// -- Wave 2b: employee admin + OIDC bridge --------------------------
+// Both subtrees are mounted on the same Hono app so they inherit the
+// CORS + Clerk auth middleware from workers/app.ts. /api/admin/*
+// additionally requires the operator role (gate in adminEmployees);
+// /oidc/* lives OUTSIDE /api/* deliberately — Mattermost's OAuth
+// client expects standard OIDC paths at the root.
+
+app.route("/api/admin/employees", adminEmployees);
+app.route("/oidc", oidc);
 
 export { app };

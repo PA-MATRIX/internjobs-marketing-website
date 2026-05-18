@@ -157,7 +157,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				 FROM employees WHERE id = ?`,
 				id,
 			),
-		][0] as EmployeeRecord | undefined;
+		][0] as unknown as EmployeeRecord | undefined;
 		return row ?? null;
 	}
 
@@ -168,7 +168,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				 FROM employees WHERE clerk_user_id = ?`,
 				clerkUserId,
 			),
-		][0] as EmployeeRecord | undefined;
+		][0] as unknown as EmployeeRecord | undefined;
 		return row ?? null;
 	}
 
@@ -181,7 +181,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				 FROM employees WHERE workspace_email = ?`,
 				workspaceEmail.toLowerCase(),
 			),
-		][0] as EmployeeRecord | undefined;
+		][0] as unknown as EmployeeRecord | undefined;
 		return row ?? null;
 	}
 
@@ -191,7 +191,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				`SELECT id, clerk_user_id, workspace_email, personal_email, display_name, status, created_at, updated_at
 				 FROM employees ORDER BY created_at DESC`,
 			),
-		] as EmployeeRecord[];
+		] as unknown as EmployeeRecord[];
 	}
 
 	async setEmployeeStatus(
@@ -248,7 +248,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				`SELECT * FROM oidc_codes WHERE code = ?`,
 				code,
 			),
-		][0] as OidcCodeRecord | undefined;
+		][0] as unknown as OidcCodeRecord | undefined;
 		if (!row) return null;
 		const now = Math.floor(Date.now() / 1000);
 		if (row.used !== 0 || row.expires_at < now) return null;
@@ -298,7 +298,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 				`SELECT * FROM oidc_tokens WHERE token = ?`,
 				token,
 			),
-		][0] as OidcTokenRecord | undefined;
+		][0] as unknown as OidcTokenRecord | undefined;
 		if (!row) return null;
 		const now = Math.floor(Date.now() / 1000);
 		if (row.expires_at < now) return null;
