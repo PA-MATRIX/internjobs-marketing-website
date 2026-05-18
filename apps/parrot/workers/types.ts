@@ -15,6 +15,15 @@ export interface Env extends Cloudflare.Env {
 	PARROT_CLERK_JWKS_URL: string;
 	/** Optional explicit issuer; if unset we derive it from the JWKS URL. */
 	PARROT_CLERK_ISSUER?: string;
+	/**
+	 * Public URL of the self-hosted Mattermost Team Edition instance
+	 * (Phase 10 Wave 2). Used by the React app's ChatPane to render
+	 * the embedded chat iframe. Defaults to the Fly-managed hostname
+	 * `https://internjobs-mattermost.fly.dev`; override via wrangler
+	 * `vars` (prod) or `.dev.vars` (local) once a custom domain like
+	 * `https://mattermost.internjobs.ai` is wired up.
+	 */
+	MATTERMOST_URL: string;
 }
 
 /**

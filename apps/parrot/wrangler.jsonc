@@ -41,7 +41,12 @@
 		// PARROT_CLERK_* secrets are set via `wrangler secret put` (loaded
 		// from Infisical at /internjobs-ai/parrot/*) — never pinned here.
 		"DOMAINS": "internjobs.ai",
-		"EMAIL_ADDRESSES": []
+		"EMAIL_ADDRESSES": [],
+		// Wave 2: public URL of the self-hosted Mattermost instance
+		// (apps/parrot-mattermost). The Fly-managed default is fine for
+		// v1.2; flip to https://mattermost.internjobs.ai when/if we add
+		// the Cloudflare CNAME + Fly cert.
+		"MATTERMOST_URL": "https://internjobs-mattermost.fly.dev"
 	},
 	"send_email": [
 		{
