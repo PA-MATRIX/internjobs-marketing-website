@@ -33,6 +33,7 @@ import type { Employee, Env } from "./types";
 import type { ParrotContext } from "./lib/mailbox";
 
 export { EmployeeMailboxDO } from "./durableObject";
+export { WorkspaceDO } from "./durableObject/workspace";
 
 declare module "react-router" {
 	export interface AppLoadContext {
@@ -89,33 +90,39 @@ function extractToken(req: Request): string | null {
 }
 
 function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
+	const c = claims as Record<string, unknown>;
 	const employeeId = typeof claims.sub === "string" ? claims.sub : null;
 	const email =
 		(typeof claims.email === "string" && claims.email) ||
-		(typeof (claims as Record<string, unknown>).primary_email_address ===
-			"string" &&
-			((claims as Record<string, unknown>).primary_email_address as string)) ||
-		(typeof (claims as Record<string, unknown>).email_address === "string" &&
-			((claims as Record<string, unknown>).email_address as string)) ||
+		(typeof c.primary_email_address === "string" &&
+			(c.primary_email_address as string)) ||
+		(typeof c.email_address === "string" && (c.email_address as string)) ||
 		null;
 	if (!employeeId || !email) return null;
 
+	const givenName =
+		typeof c.given_name === "string" ? (c.given_name as string) : undefined;
+	const familyName =
+		typeof c.family_name === "string" ? (c.family_name as string) : undefined;
 	const displayName =
-		(typeof (claims as Record<string, unknown>).name === "string" &&
-			((claims as Record<string, unknown>).name as string)) ||
-		[
-			typeof (claims as Record<string, unknown>).given_name === "string"
-				? ((claims as Record<string, unknown>).given_name as string)
-				: "",
-			typeof (claims as Record<string, unknown>).family_name === "string"
-				? ((claims as Record<string, unknown>).family_name as string)
-				: "",
-		]
-			.filter(Boolean)
-			.join(" ") ||
+		(typeof c.name === "string" && (c.name as string)) ||
+		[givenName ?? "", familyName ?? ""].filter(Boolean).join(" ") ||
 		email.split("@")[0];
+	const picture =
+		typeof c.picture === "string"
+			? (c.picture as string)
+			: typeof c.image_url === "string"
+				? (c.image_url as string)
+				: null;
 
-	return { employeeId, email, displayName };
+	return {
+		employeeId,
+		email,
+		displayName,
+		givenName,
+		familyName,
+		picture,
+	};
 }
 
 const app = new Hono<ParrotContext>();

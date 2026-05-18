@@ -33,6 +33,17 @@
 	"observability": {
 		"enabled": true
 	},
+	// Wave 2b: bind the worker to workspace.internjobs.ai. We use a
+	// Workers Route (not a custom domain) so DNS stays as a CNAME at the
+	// edge — no Cloudflare-managed cert in the way of CF Access if we
+	// later add it. The zone for internjobs.ai already exists; we add
+	// the DNS record via the deploy step.
+	"routes": [
+		{
+			"pattern": "workspace.internjobs.ai/*",
+			"zone_name": "internjobs.ai"
+		}
+	],
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
@@ -66,6 +77,12 @@
 			{
 				"name": "EMPLOYEE_MAILBOX",
 				"class_name": "EmployeeMailboxDO"
+			},
+			{
+				// Wave 2b: singleton DO holding the employee directory +
+				// OIDC bridge state (auth codes, opaque access tokens).
+				"name": "WORKSPACE",
+				"class_name": "WorkspaceDO"
 			}
 		]
 	},
@@ -74,6 +91,12 @@
 			"tag": "v1",
 			"new_sqlite_classes": [
 				"EmployeeMailboxDO"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"WorkspaceDO"
 			]
 		}
 	]
