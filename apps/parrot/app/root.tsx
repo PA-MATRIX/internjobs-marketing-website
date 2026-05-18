@@ -1,10 +1,13 @@
-// v1.2 Phase 10 Wave 1: Parrot root layout.
+// v1.2 Phase 10 Wave 2b: Parrot root layout.
 //
-// Simpler than apps/agentic-inbox/app/root.tsx — Parrot doesn't (yet)
-// depend on Cloudflare's Kumo design system. We bring in React Query
-// because the InboxPane will use it once we port the agentic-inbox
-// queries.
+// Wave 2b additions:
+//   - ClerkProvider mounted globally so the in-app <SignIn/> works at
+//     workspace.internjobs.ai/sign-in (employee email-OTP form). The
+//     publishable key is the STUDENT production app's pk_live_…; the
+//     student app powers app.internjobs.ai's LinkedIn-only form.
+//     Subdomains separate the two forms — Clerk is the same instance.
 
+import { ClerkProvider } from "@clerk/react-router";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -14,8 +17,24 @@ import {
 	Outlet,
 	Scripts,
 	ScrollRestoration,
+	useLoaderData,
+	type LoaderFunctionArgs,
 } from "react-router";
 import "./index.css";
+
+// Plain SSR loader — just hands the publishable key (safe to ship to
+// the browser) down to ClerkProvider. We skip @clerk/react-router's
+// `rootAuthLoader` because it does additional Node-flavoured work
+// that's brittle on the Workers runtime, and our worker middleware
+// (workers/app.ts) already enforces auth server-side independently.
+export async function loader({ context }: LoaderFunctionArgs) {
+	const env =
+		(context as { cloudflare?: { env?: Record<string, string> } }).cloudflare
+			?.env || {};
+	return {
+		clerkPublishableKey: env.PARROT_CLERK_PUBLISHABLE_KEY || "",
+	};
+}
 
 function makeQueryClient() {
 	return new QueryClient({
@@ -75,10 +94,30 @@ export function HydrateFallback() {
 
 export default function App() {
 	const [queryClient] = useState(getQueryClient);
+	const data = useLoaderData<typeof loader>() as
+		| { clerkPublishableKey?: string }
+		| undefined;
+	const publishableKey = data?.clerkPublishableKey || "";
+
 	return (
-		<QueryClientProvider client={queryClient}>
-			<Outlet />
-		</QueryClientProvider>
+		<ClerkProvider
+			publishableKey={publishableKey}
+			signInUrl="/sign-in"
+			signInFallbackRedirectUrl="/"
+			afterSignInUrl="/"
+			appearance={{
+				elements: {
+					// Hide the "Secured by Clerk" branding row (Pro plan
+					// lets us turn this off in-dashboard too, but the CSS
+					// rule is belt + suspenders).
+					footer: { display: "none" },
+				},
+			}}
+		>
+			<QueryClientProvider client={queryClient}>
+				<Outlet />
+			</QueryClientProvider>
+		</ClerkProvider>
 	);
 }
 
