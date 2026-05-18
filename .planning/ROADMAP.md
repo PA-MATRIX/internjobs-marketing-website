@@ -28,7 +28,8 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] **Phase 05: Operator Audit Log (was: Approval Gate)** — `/ops/drafts` is a read-only audit log of every autonomous-agent send; operators flag bad messages post-hoc for prompt-tuning review (no pre-send approval after the 2026-05-17 autonomy pivot).
 - [ ] **Phase 06: Two-Sided Integration Smoke Test** — All 11 INTEG-01 steps pass end-to-end in production.
 - [x] **Phase 07: Self-Hosted iMessage Bridge** — Replace Photon-cloud iMessage with Mac mini + spectrum-ts local + Cloudflare Tunnel; MacBridgeSmsProvider on Fly behind the existing SmsProvider seam. Cost drop $250→$73/mo. (Added 2026-05-17.)
-- [ ] **Phase 08: Agentic Inbox + MCP** — Deploy Cloudflare's `agentic-inbox` as the agent's identity-mailbox surface for `agent-mac@agent.internjobs.ai` (and future per-channel agents). Mastra workflow consumes the built-in MCP server for read/draft/send. Sunsets the home-rolled `/webhooks/agent-mail` shipped earlier in this session. (Added 2026-05-17.)
+- [ ] **Phase 08: Agentic Inbox + MCP**
+- [ ] **Phase 10: Parrot — Internal Employee Workspace** — workspace.internjobs.ai unifying email + chat + video for InternJobs employees (~50-60). Mattermost-embedded, Daily.co flat-rate, second Clerk instance. Plan written, awaiting execute-start signal. — Deploy Cloudflare's `agentic-inbox` as the agent's identity-mailbox surface for `agent-mac@agent.internjobs.ai` (and future per-channel agents). Mastra workflow consumes the built-in MCP server for read/draft/send. Sunsets the home-rolled `/webhooks/agent-mail` shipped earlier in this session. (Added 2026-05-17.)
 
 ## Phase Details
 
@@ -169,6 +170,26 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 **Plans:** `.planning/milestones/v1.2-two-sided-agent-mvp/phase-08-agentic-inbox-mcp/PLAN.md`
 
 **Status:** Plan written. Wave 2a (deploy + CF Access setup) and Wave 2b (MCP tool wiring) not started. Blocked on user CF Access configuration in the Cloudflare Zero Trust dashboard (one-click Access on the Worker → paste POLICY_AUD + TEAM_DOMAIN back).
+
+### Phase 10: Parrot — Internal Employee Workspace
+
+**Goal:** Single signed-in workspace at workspace.internjobs.ai unifying email + chat + video for ~50-60 InternJobs employees/interns. Reuses agentic-inbox MailboxDO pattern (per-employee mailboxes), embeds Mattermost Team Edition (self-hosted Fly, official Daily.co plugin) and Daily.co flat-rate plan. New Clerk instance isolates internal directory from student/startup. Cross-pane actions: chat → meeting, email → chat, meeting recap → email. Strategic positioning: same way Chert is "iMessage infra as product," Parrot is "internal workspace as product" — InternJobs eats own dogfood first, spin out later.
+
+**Depends on:** Phase 08 (agentic-inbox MailboxDO pattern)
+
+**Requirements:** WORKSPACE-01 (new), v1.2 scope-add
+
+**Success Criteria** (what must be TRUE):
+1. workspace.internjobs.ai resolves to Parrot Worker, gated by second Clerk instance (employees only).
+2. Each employee has name@internjobs.ai auto-provisioned on first login, stored in per-mailbox Durable Object.
+3. Mattermost Team Edition self-hosted, embedded in Parrot UI Chat pane, SSO-bridged via Clerk JWT.
+4. Daily.co (flat-rate plan) embedded in Meetings pane; "Start Meeting" CTAs in Inbox + Chat.
+5. Cross-pane: chat → email this thread; email → move to chat channel; meeting → auto-summary to chat or email.
+6. Existing v1.2 surfaces (app.internjobs.ai, agent.internjobs.ai, maya@) unaffected.
+
+**Plans:** `.planning/milestones/v1.2-two-sided-agent-mvp/phase-10-parrot-employee-workspace/PLAN.md`
+
+**Status:** Plan written + user decisions locked (Mattermost, Daily.co flat-rate, plain submodule names). Awaiting execution-start signal. Independent of Phase 07b SIP-off — can run in parallel.
 
 ## Progress
 
