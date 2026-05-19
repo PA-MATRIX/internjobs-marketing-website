@@ -645,26 +645,28 @@ app.post(
 	"/api/crosspane/start-meeting",
 	requireEmployeeMailbox,
 	async (c: AppContext) => {
-		// Phase 13: Start Meeting is a UI seam for Phase 11 (Daily.co).
-		// We record the request via the notifications table so we can
-		// measure pilot demand. When Phase 11 ships, this handler gets a
-		// real Daily.co POST /rooms call; the audit write stays as-is.
-		const stub = c.var.mailboxStub;
-		// event_type 'urgent_todo' is the nearest available type; a
-		// dedicated 'start_meeting_requested' type will be added when
-		// Phase 11 expands the CHECK constraint.
-		void stub.addNotification({
-			event_type: "urgent_todo",
-			title: "Meeting requested (Phase 11 pending)",
-			body: "Employee clicked Start Meeting — Daily.co integration deferred.",
-			url: "/meetings",
-		});
-		return c.json({
-			ok: true,
-			reason: "meetings_coming_soon",
-			message:
-				"Meetings coming soon — Daily.co integration is on the roadmap.",
-		});
+		// Phase 11 Wave 3: calls Daily.co to create an ephemeral 1-hour room.
+		// Falls back to Phase 13 toast behavior when DAILY_API_KEY is absent
+		// (or Daily.co errors) — the DO's startEphemeralMeeting() preserves
+		// the Phase 13 audit row in that case, so pilot demand is still
+		// captured.
+		//
+		// Skills referenced:
+		//   cloudflare/skills: durable-objects — per-employee room +
+		//     notification via EmployeeMailboxDO.startEphemeralMeeting().
+		const result = await c.var.mailboxStub.startEphemeralMeeting(
+			c.env.DAILY_API_KEY,
+		);
+		if (!result.ok) {
+			// Fallback path (key absent or Daily.co error): Phase 13
+			// behavior preserved — 200 OK with the toast-trigger reason.
+			return c.json({
+				ok: true,
+				reason: result.reason,
+				message: result.message,
+			});
+		}
+		return c.json({ ok: true, url: result.url, name: result.name });
 	},
 );
 

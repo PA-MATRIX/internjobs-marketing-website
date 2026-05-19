@@ -255,4 +255,39 @@ export const employeeMailboxMigrations: Migration[] = [
 			ALTER TABLE profile ADD COLUMN personal_room_url TEXT;
 		`,
 	},
+	{
+		// v1.2 Phase 11 Wave 3: add 'meeting_started' event_type for Daily.co rooms.
+		//
+		// SQLite does not support ALTER TABLE ... MODIFY CONSTRAINT, so we must
+		// recreate the notifications table with the new CHECK constraint.
+		// Migration pattern: CREATE new table → INSERT FROM old → DROP old → RENAME.
+		//
+		// Phase 13's reuse of 'urgent_todo' for meeting demand was a deliberate
+		// temporary measure (see 13-02-SUMMARY.md). This migration supersedes it
+		// by providing a dedicated type. Phase 11 updates the start-meeting handler
+		// to write 'meeting_started' rows instead.
+		//
+		// Atomicity: the runner in applyMigrations() wraps each migration's
+		// sql.exec() block in storage.transactionSync() (when storage is passed),
+		// so the CREATE / INSERT / DROP / RENAME / CREATE-INDEX chain is
+		// applied as a single transaction. On failure mid-chain, the original
+		// `notifications` table remains intact.
+		name: "7_meeting_started_event_type",
+		sql: `
+			CREATE TABLE notifications_new (
+				id TEXT PRIMARY KEY,
+				employee_id TEXT NOT NULL,
+				event_type TEXT NOT NULL CHECK (event_type IN ('urgent_todo','starred_email','chat_mention','meeting_started')),
+				title TEXT NOT NULL,
+				body TEXT,
+				url TEXT,
+				read INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			INSERT INTO notifications_new SELECT * FROM notifications;
+			DROP TABLE notifications;
+			ALTER TABLE notifications_new RENAME TO notifications;
+			CREATE INDEX idx_notifications_employee_read ON notifications(employee_id, read, created_at DESC);
+		`,
+	},
 ];

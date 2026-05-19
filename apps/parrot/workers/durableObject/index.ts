@@ -957,7 +957,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	}
 
 	async addNotification(input: {
-		event_type: "urgent_todo" | "starred_email" | "chat_mention";
+		event_type:
+			| "urgent_todo"
+			| "starred_email"
+			| "chat_mention"
+			| "meeting_started";
 		title: string;
 		body?: string;
 		url?: string;
@@ -1390,5 +1394,80 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		const row = rows[0];
 		if (!row.personal_room_url || !row.personal_room_name) return null;
 		return { url: row.personal_room_url, name: row.personal_room_name };
+	}
+
+	/**
+	 * Phase 11 Wave 3: ephemeral Daily.co room for ad-hoc "Start Meeting" CTA.
+	 *
+	 * Unlike `ensurePersonalRoom()` (which provisions ONE always-on room per
+	 * employee), this creates a SHORT-LIVED room each time it is called:
+	 *   - Name: `parrot-meet-<uuid8>` (random, non-deterministic).
+	 *   - Expiry: now + 3600 seconds (Daily.co auto-deletes after 1 hour).
+	 *
+	 * On success, writes a `meeting_started` notification row (audit trail +
+	 * notification drawer entry) and returns the room URL. The caller (the
+	 * /api/crosspane/start-meeting route handler) opens the URL in a new tab.
+	 *
+	 * Fail-soft contract: when `apiKey` is undefined OR Daily.co rejects the
+	 * call, falls back to the Phase 13 behavior — writes an `urgent_todo`
+	 * notification ("Meeting requested") so pilot demand is still captured —
+	 * and returns `{ ok: false, reason: 'meetings_coming_soon' }`. The UI
+	 * shows the existing Phase 13 toast. ZERO regression from the seam-only
+	 * path.
+	 *
+	 * Skills referenced:
+	 *   cloudflare/skills: durable-objects — per-employee room + notification
+	 *     under the DO's single-writer guarantee.
+	 *   cloudflare/skills: cloudflare — Workers fetch() via daily.ts helper.
+	 */
+	async startEphemeralMeeting(
+		apiKey: string | undefined,
+	): Promise<
+		| { ok: true; url: string; name: string }
+		| { ok: false; reason: string; message: string }
+	> {
+		// 1. Derive a fresh ephemeral room name. The 8-char uuid slice keeps
+		//    it short + obvious in logs while still effectively unique
+		//    (32 bits of entropy is plenty for 1-hour rooms — collisions
+		//    are detectable via Daily.co's 409 response and would only
+		//    trigger the fail-soft path).
+		const roomName = `parrot-meet-${crypto.randomUUID().slice(0, 8)}`;
+
+		// 2. 1-hour expiry from now. Daily.co accepts a Unix-seconds value.
+		const exp = Math.floor(Date.now() / 1000) + 3600;
+
+		// 3. Create the room. createRoom returns null on missing key OR
+		//    any Daily.co error (already logged inside daily.ts).
+		const room = await createRoom(apiKey, roomName, { exp });
+
+		if (!room) {
+			// Fallback: preserve Phase 13 behavior. Record demand via the
+			// existing `urgent_todo` notification (the audit row is the
+			// pilot-demand signal — see PILOT-RUNBOOK §7).
+			await this.addNotification({
+				event_type: "urgent_todo",
+				title: "Meeting requested",
+				body: "Employee clicked Start Meeting — Daily.co room provisioning unavailable.",
+				url: "/meetings",
+			});
+			return {
+				ok: false,
+				reason: "meetings_coming_soon",
+				message:
+					"Meetings coming soon — Daily.co integration is on the roadmap.",
+			};
+		}
+
+		// 4. Real-room path: record the meeting_started notification so the
+		//    employee's drawer reflects the event + we have an audit trail
+		//    of every ephemeral room they spawned.
+		await this.addNotification({
+			event_type: "meeting_started",
+			title: "Meeting started",
+			body: roomName,
+			url: room.url,
+		});
+
+		return { ok: true, url: room.url, name: roomName };
 	}
 }
