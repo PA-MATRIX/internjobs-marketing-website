@@ -15,6 +15,8 @@ import {
 	Mail,
 	MessageSquare,
 	Video,
+	Phone,
+	MessageCircle,
 	UserPlus,
 } from "lucide-react";
 import { UserMenu } from "./UserMenu";
@@ -31,6 +33,11 @@ const NAV: NavItem[] = [
 	{ href: "/inbox", label: "Email", Icon: Mail },
 	{ href: "/chat", label: "Chat", Icon: MessageSquare },
 	{ href: "/meetings", label: "Meetings", Icon: Video },
+	// v1.2 Phase 12 Wave 1: Phone + SMS placeholders (seam, not integration).
+	// Routes render a "Coming soon — Telnyx via Cloudflare Agents SDK" card.
+	// Telephony backend lands in v1.3+ (see apps/parrot/app/routes/phone.tsx).
+	{ href: "/phone", label: "Phone", Icon: Phone },
+	{ href: "/sms", label: "SMS", Icon: MessageCircle },
 ];
 
 const ADMIN_NAV: NavItem[] = [

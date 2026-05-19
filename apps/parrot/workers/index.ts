@@ -226,6 +226,23 @@ app.get(
 	async (c: AppContext) => c.json(await c.var.mailboxStub.getFolders()),
 );
 
+// -- Dashboard Mothership Agent (Phase 12 Wave 1) -------------------
+// Cross-channel todos surfaced from email/chat/phone/sms/meeting.
+// Wave 1: returns `{ todos: [] }` (the DO stub returns an empty array
+// until Wave 2 lands the ingest pipeline). The `view` query param is
+// already plumbed through so the React UI can ship final-state code:
+//   ?view=all | mentions | today | week
+app.get(
+	"/api/dashboard/todos",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const stub = c.var.mailboxStub;
+		const view = c.req.query("view") ?? "all";
+		const todos = await stub.getTodos(view);
+		return c.json({ todos });
+	},
+);
+
 // -- Meetings (Daily.co — Wave 3 stub) ------------------------------
 
 app.post("/api/meetings/create", requireEmployeeMailbox, async (c) => {

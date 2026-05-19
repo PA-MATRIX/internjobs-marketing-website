@@ -417,4 +417,17 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			this.db.insert(schema.attachments).values(attachments).run();
 		}
 	}
+
+	// ── Dashboard Mothership Agent (Phase 12) ──────────────────────
+	//
+	// Wave 1 ships this as a no-op stub: the `todos` table is empty by
+	// definition until Wave 2 wires the ingest paths (extractTodosFromEmail
+	// in createEmail() + the DO alarm calling extractTodosFromChat()).
+	//
+	// The shape returns `unknown[]` so the Hono route can serialize whatever
+	// row shape Wave 2 lands without a contract change here. Wave 2 will
+	// type the return as `Todo[]` once the column shape is in production use.
+	async getTodos(_view: string): Promise<unknown[]> {
+		return [];
+	}
 }

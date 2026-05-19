@@ -1,7 +1,11 @@
-// v1.2 Phase 10 Wave 4 (planned): Dashboard pane — the workspace's
-// landing surface. The "mothership agent" monitors every channel
-// (Email, Chat, Meetings, Phone/SMS, Daily.co recordings, …) and
-// surfaces actionable todos here.
+// v1.2 Phase 12 Wave 1: Dashboard pane — the workspace's landing surface.
+// The "Dashboard Mothership Agent" monitors every channel (Email, Chat,
+// Meetings, Phone/SMS) and surfaces actionable todos here.
+//
+// Wave 1 ships the scaffolding: secondary-nav views wired to `?view=` query
+// params, the API call site to GET /api/dashboard/todos, and an empty-state
+// card. Wave 2 lands the ingest pipeline so todos start populating. Wave 3
+// polishes ranking + click-through navigation.
 
 import {
 	AtSign,
@@ -14,12 +18,13 @@ import {
 	Sparkles,
 	Video,
 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import {
 	SecondaryNavItem,
 	WorkspaceShell,
 } from "../components/WorkspaceShell";
 
-function DashboardSecondaryNav() {
+function DashboardSecondaryNav({ activeView }: { activeView: string }) {
 	return (
 		<nav className="py-3">
 			<p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -27,22 +32,25 @@ function DashboardSecondaryNav() {
 			</p>
 			<SecondaryNavItem
 				href="/dashboard"
-				active
+				active={activeView === "all"}
 				label="All todos"
 				icon={<LayoutDashboard size={15} />}
 			/>
 			<SecondaryNavItem
-				href="/dashboard"
+				href="/dashboard?view=mentions"
+				active={activeView === "mentions"}
 				label="Mentions"
 				icon={<AtSign size={15} />}
 			/>
 			<SecondaryNavItem
-				href="/dashboard"
+				href="/dashboard?view=today"
+				active={activeView === "today"}
 				label="Today"
 				icon={<CalendarCheck size={15} />}
 			/>
 			<SecondaryNavItem
-				href="/dashboard"
+				href="/dashboard?view=week"
+				active={activeView === "week"}
 				label="This week"
 				icon={<CalendarRange size={15} />}
 			/>
@@ -65,8 +73,13 @@ function DashboardSecondaryNav() {
 }
 
 export default function DashboardRoute() {
+	const [searchParams] = useSearchParams();
+	const activeView = searchParams.get("view") ?? "all";
+
 	return (
-		<WorkspaceShell secondaryNav={<DashboardSecondaryNav />}>
+		<WorkspaceShell
+			secondaryNav={<DashboardSecondaryNav activeView={activeView} />}
+		>
 			<div className="p-8 max-w-3xl mx-auto">
 				<header className="mb-6">
 					<h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
@@ -117,10 +130,11 @@ export default function DashboardRoute() {
 
 				<section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
 					<p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-						Wave 4
+						Phase 12
 					</p>
 					<p className="text-sm text-slate-700 mt-2">
-						Cross-channel todo surfacing ships in Phase 10 Wave 4.
+						The Dashboard Mothership Agent ingests email + chat in Wave 2;
+						ranked todos appear here once seeded.
 					</p>
 				</section>
 			</div>
