@@ -127,7 +127,14 @@ export async function callAiGateway(
 					type: "json_schema",
 					json_schema: TODO_EXTRACTION_SCHEMA,
 				},
-				max_tokens: 512,
+				// kimi-k2.6 is a reasoning model — its CoT lives in
+			// choices[0].message.reasoning_content and burns through tokens
+			// before message.content is written. 512 is too tight (live-tested
+			// 2026-05-19: reasoning ate the budget, content came back null).
+			// 2000 leaves ~1500 for reasoning + ~500 for the final JSON body.
+			// Non-reasoning fallback models (e.g., llama-3.3-70b-instruct-fp8-fast)
+			// would be fine with 512, but the budget is harmless for them.
+			max_tokens: 2000,
 			}),
 		},
 	);
@@ -150,7 +157,15 @@ export async function callAiGateway(
 	}
 
 	return (await resp.json()) as {
-		result?: { response?: string };
+		// Workers AI native (older / non-reasoning models)
+		result?: {
+			response?: string;
+			// OpenAI-compat shape (kimi-k2.6 + other reasoning models)
+			choices?: Array<{
+				message?: { content?: string | null; reasoning_content?: string };
+				finish_reason?: string;
+			}>;
+		};
 		success?: boolean;
 	};
 }
@@ -205,9 +220,30 @@ export async function extractTodosFromText(
 			return [];
 		}
 
-		if (!data?.result?.response) return [];
+		// kimi-k2.6 + other reasoning models return OpenAI-style
+		// choices[0].message.content. Non-reasoning Workers AI models return
+		// result.response. Accept either; live-verified 2026-05-19 that
+		// kimi was hitting the OpenAI branch and the old code silently
+		// returned [].
+		const responseText =
+			data?.result?.response ??
+			data?.result?.choices?.[0]?.message?.content ??
+			null;
 
-		const parsed = JSON.parse(data.result.response) as {
+		if (!responseText) {
+			// Defensive: if the model hit max_tokens with content=null while
+			// reasoning_content is non-empty, log so we can spot budget issues
+			// fast. Don't crash.
+			const finish = data?.result?.choices?.[0]?.finish_reason;
+			if (finish === "length") {
+				console.warn(
+					`extractTodosFromText: reasoning model hit max_tokens before emitting JSON (employee ${clerkUserId}); bump max_tokens or switch model`,
+				);
+			}
+			return [];
+		}
+
+		const parsed = JSON.parse(responseText) as {
 			todos?: ExtractedTodo[];
 		};
 		return Array.isArray(parsed?.todos) ? parsed.todos : [];
