@@ -166,11 +166,17 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify({ post_id: postId, post_body: postBody }),
 		}),
+	// Phase 11 Wave 3: start-meeting now returns the Daily.co room URL on
+	// success. When DAILY_API_KEY is absent the server still returns 200 OK
+	// with reason:'meetings_coming_soon' (Phase 13 toast fallback path).
 	crosspaneStartMeeting: () =>
-		request<{ ok: boolean; reason: string; message?: string }>(
-			"/api/crosspane/start-meeting",
-			{ method: "POST" },
-		),
+		request<{
+			ok: boolean;
+			url?: string; // present when a Daily.co room was created
+			name?: string;
+			reason?: string; // 'meetings_coming_soon' in fallback path
+			message?: string;
+		}>("/api/crosspane/start-meeting", { method: "POST" }),
 	// — Phase 13 Wave 1: notifications + push.
 	getNotifications: (limit = 20) =>
 		request<NotificationsResponse>(`/api/notifications?limit=${limit}`),

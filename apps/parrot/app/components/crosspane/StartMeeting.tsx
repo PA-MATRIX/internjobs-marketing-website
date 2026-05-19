@@ -1,31 +1,45 @@
-// v1.2 Phase 13 Wave 2: StartMeeting — UI seam for Phase 11 (Daily.co).
+// v1.2 Phase 11 Wave 3: StartMeeting — Daily.co ephemeral room.
 //
-// Daily.co integration is DEFERRED to Phase 11. This button:
-//   1. POSTs /api/crosspane/start-meeting (which records audit demand
-//      via the notifications table — see workers/index.ts).
-//   2. Shows a toast "Meetings coming soon — Daily.co integration is
-//      on the roadmap." for ~3.5 seconds.
+// Replaces the Phase 13 UI seam. When DAILY_API_KEY is set on the Worker,
+// this button creates a real ephemeral Daily.co room (1-hour exp), opens
+// it in a new tab, and navigates to /meetings.
 //
-// When Phase 11 ships, the backend handler gains a real Daily.co
-// /rooms POST and this component will navigate to /meetings on
-// success. No @daily-co/* package is installed here or anywhere in
-// this phase.
+// Fallback: when the server returns reason:'meetings_coming_soon' (i.e.
+// DAILY_API_KEY is absent or Daily.co is down), the Phase 13 toast is
+// shown instead — zero regression.
 //
 // Skills referenced:
-//   cloudflare/skills: agents-sdk
+//   cloudflare/skills: durable-objects — ephemeral room via EmployeeMailboxDO
+//   cloudflare/skills: cloudflare — Workers fetch() against Daily.co REST
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { api } from "~/lib/api";
 
 export function StartMeeting() {
 	const [toast, setToast] = useState(false);
+	const navigate = useNavigate();
 
 	const action = useMutation({
 		mutationFn: () => api.crosspaneStartMeeting(),
-		onSuccess: () => {
-			setToast(true);
-			setTimeout(() => setToast(false), 3500);
+		onSuccess: (data) => {
+			if (data.url) {
+				// Real-room path: open the Daily.co room in a new tab so the
+				// employee starts the call immediately, AND navigate to
+				// /meetings so the Parrot Meetings pane shows the room and
+				// other employees can join from there.
+				window.open(data.url, "_blank", "noopener,noreferrer");
+				navigate("/meetings");
+				return;
+			}
+			if (data.reason === "meetings_coming_soon") {
+				// Fallback path (DAILY_API_KEY absent or Daily.co outage):
+				// preserve the Phase 13 toast — zero regression for pilots
+				// running without the Daily.co key.
+				setToast(true);
+				setTimeout(() => setToast(false), 3500);
+			}
 		},
 	});
 
@@ -35,10 +49,10 @@ export function StartMeeting() {
 				type="button"
 				onClick={() => action.mutate()}
 				disabled={action.isPending}
-				title="Start a meeting — Daily.co integration coming in Phase 11"
+				title="Start a meeting — creates an ephemeral Daily.co room"
 				className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
 			>
-				{action.isPending ? "Requesting…" : "Start Meeting"}
+				{action.isPending ? "Starting…" : "Start Meeting"}
 			</button>
 
 			{toast && (
