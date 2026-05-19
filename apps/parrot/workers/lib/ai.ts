@@ -150,8 +150,13 @@ export async function callAiGateway(
 	}
 
 	if (!resp.ok) {
+		// Capture the response body so we can diagnose model-specific
+		// validation failures (schema rejection, content filter, etc.)
+		// without needing the AI Gateway dashboard's log-content feature
+		// (which adds latency on every call when enabled globally).
+		const errBody = await resp.text().catch(() => "<unreadable>");
 		console.error(
-			`callAiGateway: AI Gateway ${resp.status} for employee ${clerkUserId}`,
+			`callAiGateway: AI Gateway ${resp.status} for employee ${clerkUserId}: ${errBody.slice(0, 500)}`,
 		);
 		return null;
 	}
