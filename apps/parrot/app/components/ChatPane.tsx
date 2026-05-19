@@ -41,8 +41,9 @@ export function ChatPane({ mattermostUrl }: ChatPaneProps) {
 		<div className="flex h-full flex-col">
 			<div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between">
 				<p className="text-sm text-slate-600">
-					Chat is backed by self-hosted Mattermost. Sign in with the
-					credentials your admin provided if the panel below prompts you.
+					Chat is backed by self-hosted Mattermost. Click the{" "}
+					<span className="font-medium">"GitLab"</span> button in the panel below to
+					single-sign-on with your Parrot session — no separate password needed.
 				</p>
 				<div className="flex gap-2">
 					<ChatToEmail />
@@ -68,9 +69,9 @@ export function ChatPane({ mattermostUrl }: ChatPaneProps) {
 									Sign in to Chat
 								</p>
 								<p className="text-xs text-slate-500 mt-0.5">
-									Sign in to the Mattermost panel below once.
-									Single sign-on (auto-bridge from your Parrot
-									session) is on the v1.3 polish list.
+									Click the <span className="font-medium">"GitLab"</span>{" "}
+									button below — it bridges to your Parrot session via OIDC
+									so you sign in once and Mattermost picks up the same identity.
 								</p>
 							</div>
 							<button
