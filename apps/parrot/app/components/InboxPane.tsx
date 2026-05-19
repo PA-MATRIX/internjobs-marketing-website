@@ -138,7 +138,7 @@ export function InboxPane() {
 								From {selected.sender} → {selected.recipient}
 							</p>
 							<div className="mt-3 flex gap-2">
-								<EmailToChat />
+								<EmailToChat emailId={selectedId ?? ""} />
 								<StartMeeting />
 							</div>
 						</div>
