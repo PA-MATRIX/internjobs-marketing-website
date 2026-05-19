@@ -48,7 +48,54 @@
 //   cloudflare/skills: agents-sdk — graph context injected into kimi-k2.6 system prompt
 
 import { createHash } from "node:crypto";
-import { FalkorDB } from "falkordb";
+// IMPORTANT (2026-05-19 runtime discovery): the `falkordb` npm package uses
+// `BigInt` + Node TCP-socket patterns that crash at module init on the
+// Cloudflare Workers runtime ("Uncaught TypeError: e.BigInt is not a function").
+// We use a DYNAMIC import inside getGraphClient so importing this module
+// never crashes the Worker. The connect attempt fails soft when the runtime
+// doesn't support the package — `getGraphClient()` returns null and every
+// downstream export degrades to its no-op path (graph_ready stays false in
+// /healthz, Phase 12 extraction skips the context block).
+//
+// Production activation requires either:
+//   (a) a thin Fly REST proxy in front of FalkorDB ("internjobs-graph-api")
+//       that the Worker calls via fetch() — replace the dynamic import below
+//       with the REST helper, OR
+//   (b) a Workers-native RESP3 client written against cloudflare:sockets +
+//       a publicly-exposed FalkorDB port (or via CF Tunnel).
+// Both are tracked as v1.3 hardening; the graph_ready=false signal in
+// /healthz is the deferral marker.
+type FalkorDBClient = {
+	selectGraph: (name: string) => { query: (cypher: string, params?: Record<string, unknown>) => Promise<unknown> };
+	on?: (evt: string, handler: (err: unknown) => void) => void;
+	close?: () => Promise<void> | void;
+};
+let _FalkorDBCtor: { connect: (opts: { url: string }) => Promise<FalkorDBClient> } | null = null;
+let _falkorImportFailed = false;
+
+async function loadFalkorDBCtor(): Promise<{ connect: (opts: { url: string }) => Promise<FalkorDBClient> } | null> {
+	if (_FalkorDBCtor) return _FalkorDBCtor;
+	if (_falkorImportFailed) return null;
+	try {
+		const mod = (await import("falkordb")) as {
+			FalkorDB?: { connect: (opts: { url: string }) => Promise<FalkorDBClient> };
+			default?: { FalkorDB?: { connect: (opts: { url: string }) => Promise<FalkorDBClient> } };
+		};
+		_FalkorDBCtor = (mod.FalkorDB ?? mod.default?.FalkorDB) || null;
+		return _FalkorDBCtor;
+	} catch (err) {
+		_falkorImportFailed = true;
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				message: "parrot_graph_falkordb_import_failed",
+				error: (err as Error)?.message ?? String(err),
+				note: "Workers runtime does not support falkordb npm — graph layer inactive until Fly REST proxy or RESP client lands",
+			}),
+		);
+		return null;
+	}
+}
 import type { Env } from "../types";
 
 // FalkorDB graph name. Same physical graph as the student app — isolation
@@ -75,8 +122,8 @@ type GraphEnv = Pick<Env, "FALKORDB_URL" | "FALKORDB_PASSWORD">;
 // doesn't collide. Map-of-promises pattern de-dupes concurrent first-call
 // connects (request burst at cold start → one connect, all waiters
 // resolve to the same client).
-const _clients = new Map<string, FalkorDB>();
-const _pending = new Map<string, Promise<FalkorDB | null>>();
+const _clients = new Map<string, FalkorDBClient>();
+const _pending = new Map<string, Promise<FalkorDBClient | null>>();
 let _connectFailedLogged = false;
 
 /**
@@ -86,7 +133,7 @@ let _connectFailedLogged = false;
  */
 export async function getGraphClient(
 	env: GraphEnv,
-): Promise<FalkorDB | null> {
+): Promise<FalkorDBClient | null> {
 	const url = env.FALKORDB_URL;
 	if (!url) return null;
 
@@ -100,7 +147,9 @@ export async function getGraphClient(
 	// Our Infisical-stored value is `redis://default:<pw>@internjobs-graph
 	// .internal:6379` which works directly (auth flows through the URL
 	// password component).
-	const p = FalkorDB.connect({ url })
+	const ctor = await loadFalkorDBCtor();
+	if (!ctor) return null;
+	const p = ctor.connect({ url })
 		.then((client) => {
 			_clients.set(url, client);
 			_pending.delete(url);
@@ -167,7 +216,7 @@ export async function closeParrotGraphClient(): Promise<void> {
 	}
 }
 
-function getGraph(client: FalkorDB) {
+function getGraph(client: FalkorDBClient) {
 	return client.selectGraph(GRAPH_NAME);
 }
 
