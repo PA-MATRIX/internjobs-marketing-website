@@ -33,7 +33,35 @@ import {
 	getMeetingToken,
 	getRoom,
 } from "./lib/daily";
+import { pingParrotGraph } from "./lib/graph";
 import type { Env } from "./types";
+
+// — Phase 14 Wave 3: graphReady cache (30s) ────────────────────────
+// pingParrotGraph() opens a TCP connection to the Fly private network
+// (internjobs-graph.internal:6379). Cache the result 30s so a busy
+// /healthz poll doesn't hammer FalkorDB. Pattern mirrors the student
+// app's _graphReadyCache in apps/app/src/server.mjs.
+//
+// Module-level state survives the isolate's lifetime — same posture
+// as workers/lib/graph.ts's `_clients` Map. Cold-start pays one
+// FalkorDB round-trip; warm isolates reuse the cached value.
+let _graphReadyCacheValue: boolean | null = null;
+let _graphReadyCacheAt = 0;
+const GRAPH_READY_TTL_MS = 30_000;
+
+async function getCachedGraphReady(env: Env): Promise<boolean> {
+	const now = Date.now();
+	if (
+		_graphReadyCacheValue !== null &&
+		now - _graphReadyCacheAt < GRAPH_READY_TTL_MS
+	) {
+		return _graphReadyCacheValue;
+	}
+	const result = await pingParrotGraph(env);
+	_graphReadyCacheValue = result;
+	_graphReadyCacheAt = now;
+	return result;
+}
 
 type AppContext = Context<ParrotContext>;
 
@@ -194,10 +222,22 @@ app.get("/healthz", async (c) => {
 	//    WorkspaceDO.countEmployees() lands (tracked for v1.3).
 	const mailbox_count = -1;
 
+	// 4. Graph readiness — Phase 14 Wave 3. Cached 30s in
+	//    getCachedGraphReady so /healthz polls don't open a fresh
+	//    FalkorDB connection every call. Fail-soft: any error → false,
+	//    NEVER a 500 (healthz must not crash on a graph outage).
+	let graph_ready = false;
+	try {
+		graph_ready = await getCachedGraphReady(env);
+	} catch {
+		graph_ready = false;
+	}
+
 	return c.json({
 		ok: mattermost_reachable && ai_gateway_reachable,
 		mattermost_reachable,
 		ai_gateway_reachable,
+		graph_ready, // Phase 14 — FalkorDB ping (30s cached)
 		mailbox_count,
 	});
 });
