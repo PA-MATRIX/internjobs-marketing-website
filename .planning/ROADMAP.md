@@ -196,6 +196,37 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 
 **Status:** Plan written + user decisions locked (Mattermost, Daily.co flat-rate, plain submodule names). Awaiting execution-start signal. Independent of Phase 07b SIP-off — can run in parallel.
 
+### Phase 11: Daily.co Integration
+
+**Goal:** Daily.co REST helper + @daily-co/daily-react JS SDK embed in Parrot's Meetings pane. Per-employee always-on personal rooms provisioned lazily on first pane load. "Start meeting" CTA upgraded from Phase 13 toast-seam to a real Daily.co ephemeral-room creation.
+
+**Depends on:** Phase 13 (EmployeeMailboxDO + crosspane stub infrastructure — swap-in point documented in 13-02-SUMMARY.md)
+
+**Architecture decisions locked:**
+- Daily.co flat-rate plan (decided Phase 10). No per-minute pricing logic.
+- DAILY_API_KEY is a Worker secret (never a public env var). Client-side meeting tokens are minted server-side per-call via getMeetingToken().
+- Personal room name slug = `"parrot-" + clerk_user_id` (deterministic, URL-safe, always-on — no exp on personal rooms).
+- Ephemeral StartMeeting rooms: exp = now + 3600 (1-hour). Distinct from always-on personal rooms.
+- @daily-co/daily-react + @daily-co/daily-js ARE allowed (reversal of the Phase 13 forbidden list, confirmed 2026-05-19).
+- No recording, transcription, or scheduled meetings — defer to v1.3.
+- No new LLM call sites.
+- Fail-soft when DAILY_API_KEY absent: ensurePersonalRoom returns { ok: false }; UI shows placeholder; start-meeting falls back to Phase 13 toast.
+- Migrations 6 (personal_room_url/name columns on profile) + 7 (meeting_started event_type in notifications CHECK constraint).
+
+**Success Criteria** (what must be TRUE):
+1. POST /api/meetings/ensure-room provisions the employee's personal Daily.co room on first call; returns stored URL on subsequent calls.
+2. GET /meetings shows the personal room embedded via @daily-co/daily-react DailyIframe in the "Your room" tab.
+3. "Active rooms" tab lists Daily.co rooms with current participants.
+4. POST /api/crosspane/start-meeting creates an ephemeral 1-hour Daily.co room, opens it in a new tab, navigates to /meetings.
+5. When DAILY_API_KEY is absent: /meetings shows a "Room provisioning in progress" placeholder; start-meeting shows the Phase 13 "Meetings coming soon" toast.
+6. POST /api/dev/smoke/dailyco returns { pass: true } when DAILY_API_KEY is set; { pass: false } when absent.
+7. TypeScript clean throughout.
+
+**Plans:** 3 plans, 3 waves
+- [ ] 11-01-PLAN.md — REST helper + migration 6 + ensure-room endpoint + smoke/dailyco
+- [ ] 11-02-PLAN.md — @daily-co SDK install + Meetings pane rebuild + GET my-room + room-token + OnboardingWizard tour update
+- [ ] 11-03-PLAN.md — startEphemeralMeeting DO method + migration 7 + StartMeeting.tsx upgrade
+
 ### Phase 12: Dashboard Mothership Agent
 
 **Goal:** Per-employee LLM agent monitoring Email + Chat, extracting cross-channel todos, ranking them by urgency × recency × mention boost, and surfacing them on the Parrot Dashboard pane. Also adds Phone + SMS placeholder nav icons + route stubs (seams documenting the future @cloudflare/voice + Telnyx direction — NOT integrations).
@@ -271,6 +302,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 04. Mastra Agent Core | v1.2 | 0/TBD | Not started | — |
 | 05. Operator Audit Log (was: Approval Gate) | v1.2 | 0/TBD | Not started | — |
 | 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
+| 11. Daily.co Integration | v1.2 | 0/3 | Planning complete | — |
 | 12. Dashboard Mothership Agent | v1.2 | 3/3 | Shipped (browser/AI gateway verify pending user) | 2026-05-19 |
 | 13. Cross-pane Actions + Launch Polish | v1.2 | 0/3 | Planning complete | — |
 
@@ -282,4 +314,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 11 planning complete: 3 plans in 3 sequential waves (REST helper + SDK embed + StartMeeting upgrade). Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
