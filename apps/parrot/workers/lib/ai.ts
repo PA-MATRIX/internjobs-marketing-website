@@ -112,7 +112,12 @@ export async function callAiGateway(
 	}
 
 	const resp = await fetch(
-		`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/${encodeURIComponent(model)}`,
+		// NB: do NOT encodeURIComponent the model — its slashes (`@cf/moonshotai/...`)
+		// are routing segments the AI Gateway expects literally. Live-verified
+		// 2026-05-19: encoding turns `@cf/moonshotai/kimi-k2.6` into
+		// `%40cf%2fmoonshotai%2fkimi-k2.6` which the gateway 400s as
+		// "Could not route to /accounts/{id}/ai/@cf/moonshotai/kimi-k2.6".
+		`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/workers-ai/${model}`,
 		{
 			method: "POST",
 			headers: {
