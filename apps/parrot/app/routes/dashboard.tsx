@@ -1,16 +1,23 @@
 // v1.2 Phase 10 Wave 4 (planned): Dashboard pane — the workspace's
-// landing surface and the whole point of Parrot.
-//
-// The "mothership agent" idea: a single per-employee LLM agent
-// monitoring every channel (Email, Chat, Meetings, Phone/SMS, Daily.co
-// recordings, …) and surfacing actionable todos across the entire
-// stack. The Dashboard is where those todos render.
-//
-// This file is a stub — the real implementation lands in Phase 10
-// Wave 4 (cross-pane actions). For now it just frames the shape so
-// the nav item is live.
+// landing surface. The "mothership agent" monitors every channel
+// (Email, Chat, Meetings, Phone/SMS, Daily.co recordings, …) and
+// surfaces actionable todos here.
 
-import { SecondaryNavItem, WorkspaceShell } from "../components/WorkspaceShell";
+import {
+	AtSign,
+	CalendarCheck,
+	CalendarRange,
+	Hash,
+	LayoutDashboard,
+	Mail,
+	MessageSquare,
+	Sparkles,
+	Video,
+} from "lucide-react";
+import {
+	SecondaryNavItem,
+	WorkspaceShell,
+} from "../components/WorkspaceShell";
 
 function DashboardSecondaryNav() {
 	return (
@@ -18,16 +25,41 @@ function DashboardSecondaryNav() {
 			<p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
 				Views
 			</p>
-			<SecondaryNavItem href="/dashboard" active label="All todos" icon="◎" />
-			<SecondaryNavItem href="/dashboard" label="Mentions" icon="@" />
-			<SecondaryNavItem href="/dashboard" label="Today" icon="•" />
-			<SecondaryNavItem href="/dashboard" label="This week" icon="•" />
+			<SecondaryNavItem
+				href="/dashboard"
+				active
+				label="All todos"
+				icon={<LayoutDashboard size={15} />}
+			/>
+			<SecondaryNavItem
+				href="/dashboard"
+				label="Mentions"
+				icon={<AtSign size={15} />}
+			/>
+			<SecondaryNavItem
+				href="/dashboard"
+				label="Today"
+				icon={<CalendarCheck size={15} />}
+			/>
+			<SecondaryNavItem
+				href="/dashboard"
+				label="This week"
+				icon={<CalendarRange size={15} />}
+			/>
 			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-				Channels
+				Quick jump
 			</p>
-			<SecondaryNavItem href="/inbox" label="Email" icon="✉" />
-			<SecondaryNavItem href="/chat" label="Chat" icon="💬" />
-			<SecondaryNavItem href="/meetings" label="Meetings" icon="🎥" />
+			<SecondaryNavItem href="/inbox" label="Email" icon={<Mail size={15} />} />
+			<SecondaryNavItem
+				href="/chat"
+				label="Chat"
+				icon={<MessageSquare size={15} />}
+			/>
+			<SecondaryNavItem
+				href="/meetings"
+				label="Meetings"
+				icon={<Video size={15} />}
+			/>
 		</nav>
 	);
 }
@@ -37,29 +69,49 @@ export default function DashboardRoute() {
 		<WorkspaceShell secondaryNav={<DashboardSecondaryNav />}>
 			<div className="p-8 max-w-3xl mx-auto">
 				<header className="mb-6">
-					<h1 className="text-2xl font-semibold text-slate-900">
-						Dashboard
-					</h1>
+					<h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
 					<p className="text-sm text-slate-600 mt-1">
 						Your todos across email, chat, meetings, phone, and SMS —
 						surfaced by your workspace agent.
 					</p>
 				</header>
 
-				<section className="rounded-xl border border-slate-200 bg-white p-6">
-					<h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-						Pending
-					</h2>
+				<section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+					<div className="flex items-center gap-2 mb-3">
+						<Sparkles
+							size={16}
+							className="text-violet-500"
+							strokeWidth={2.5}
+						/>
+						<h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+							Pending
+						</h2>
+					</div>
 					<p className="text-sm text-slate-600">
 						Your agent is warming up. Once it ingests your channels you'll
 						see ranked todos here:
 					</p>
-					<ul className="mt-3 text-sm text-slate-700 list-disc list-inside space-y-1.5">
-						<li>Emails requiring a reply</li>
-						<li>Chat threads with @mentions you haven't responded to</li>
-						<li>Meeting follow-ups from Daily.co recordings</li>
-						<li>SMS / phone-call action items</li>
-						<li>Recurring tasks the agent has learned for you</li>
+					<ul className="mt-3 space-y-1.5 text-sm text-slate-700">
+						<li className="flex items-start gap-2">
+							<Hash size={14} className="text-slate-400 mt-0.5" />
+							Emails requiring a reply
+						</li>
+						<li className="flex items-start gap-2">
+							<Hash size={14} className="text-slate-400 mt-0.5" />
+							Chat threads with @mentions you haven't responded to
+						</li>
+						<li className="flex items-start gap-2">
+							<Hash size={14} className="text-slate-400 mt-0.5" />
+							Meeting follow-ups from Daily.co recordings
+						</li>
+						<li className="flex items-start gap-2">
+							<Hash size={14} className="text-slate-400 mt-0.5" />
+							SMS / phone-call action items
+						</li>
+						<li className="flex items-start gap-2">
+							<Hash size={14} className="text-slate-400 mt-0.5" />
+							Recurring tasks the agent has learned for you
+						</li>
 					</ul>
 				</section>
 

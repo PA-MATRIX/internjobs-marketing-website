@@ -1,37 +1,40 @@
 // v1.2 Phase 10 Wave 2b: WorkspaceShell — Slack-style dual-rail layout.
 //
 // Three columns:
-//   1. Icon rail (~72px): compact pane switcher with icons + labels.
-//      Active pane is highlighted, others greyed out.
+//   1. Icon rail (~72px): compact pane switcher with lucide SVG icons.
+//      Active pane highlighted, others greyed.
 //   2. Secondary nav (~240px): per-pane sidebar — provided by each pane
-//      via the `secondaryNav` prop. Email gets folders, Chat gets
-//      Mattermost's channel list, etc. "Unfolds" when the pane is
-//      active (just a layout consequence of the active pane mounting
-//      its own secondaryNav).
+//      via the `secondaryNav` prop.
 //   3. Main content: the active pane's primary surface.
-//
-// Per user-locked decisions: pane names are plain "Dashboard / Email /
-// Chat / Meetings".
 
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
+import {
+	type LucideIcon,
+	LayoutDashboard,
+	Mail,
+	MessageSquare,
+	Video,
+	UserPlus,
+} from "lucide-react";
+import { UserMenu } from "./UserMenu";
 import { useCurrentEmployee } from "~/lib/auth";
 
 interface NavItem {
 	href: string;
 	label: string;
-	icon: string;
+	Icon: LucideIcon;
 }
 
 const NAV: NavItem[] = [
-	{ href: "/dashboard", label: "Dashboard", icon: "◎" },
-	{ href: "/inbox", label: "Email", icon: "✉" },
-	{ href: "/chat", label: "Chat", icon: "💬" },
-	{ href: "/meetings", label: "Meetings", icon: "🎥" },
+	{ href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+	{ href: "/inbox", label: "Email", Icon: Mail },
+	{ href: "/chat", label: "Chat", Icon: MessageSquare },
+	{ href: "/meetings", label: "Meetings", Icon: Video },
 ];
 
 const ADMIN_NAV: NavItem[] = [
-	{ href: "/admin/invite", label: "Invite", icon: "+" },
+	{ href: "/admin/invite", label: "Invite", Icon: UserPlus },
 ];
 
 export interface WorkspaceShellProps {
@@ -55,39 +58,43 @@ export function WorkspaceShell({
 	);
 	const activeLabel = title || activePane?.label || "Parrot";
 
-	const initial = (me?.display_name || me?.email || "?")
-		.trim()
-		.charAt(0)
-		.toUpperCase();
-
 	return (
-		<div className="flex min-h-screen bg-slate-50 text-slate-900">
+		<div className="flex h-screen bg-slate-50 text-slate-900">
 			{/* ─── Column 1: Icon rail ──────────────────────────────────── */}
-			<aside className="flex w-[72px] flex-col items-center border-r border-slate-200 bg-slate-900">
+			<aside className="flex w-[76px] flex-col items-center border-r border-slate-800 bg-slate-900">
 				<Link
 					to="/"
-					className="mt-3 mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-900 text-base font-black no-underline"
 					title="Parrot"
+					className="mt-3 mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-900 text-lg font-black no-underline hover:scale-105 transition-transform"
 				>
 					∞
 				</Link>
+				<div className="w-10 border-b border-white/10 mb-2" />
+
 				<nav className="flex-1 w-full">
-					<ul className="flex flex-col items-center gap-1 mt-3">
+					<ul className="flex flex-col items-center gap-1 mt-1">
 						{NAV.map((item) => {
 							const active = location.pathname.startsWith(item.href);
 							return (
-								<li key={item.href}>
+								<li key={item.href} className="relative w-full flex justify-center">
+									{/* Thin colored indicator bar on the active item */}
+									{active && (
+										<span
+											aria-hidden="true"
+											className="absolute left-0 top-1/2 -translate-y-1/2 h-7 w-1 rounded-r bg-white"
+										/>
+									)}
 									<Link
 										to={item.href}
 										title={item.label}
-										className={`flex flex-col items-center justify-center gap-0.5 w-14 h-14 rounded-lg no-underline transition-colors ${
+										className={`group flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all duration-150 ${
 											active
-												? "bg-white/15 text-white"
-												: "text-slate-400 hover:bg-white/10 hover:text-slate-200"
+												? "bg-white text-slate-900 shadow-lg shadow-black/20"
+												: "text-slate-400 hover:bg-white/10 hover:text-white"
 										}`}
 									>
-										<span className="text-xl leading-none">{item.icon}</span>
-										<span className="text-[10px] font-semibold leading-none">
+										<item.Icon size={20} strokeWidth={active ? 2.5 : 2} />
+										<span className="text-[10px] font-semibold leading-none mt-1">
 											{item.label}
 										</span>
 									</Link>
@@ -98,7 +105,7 @@ export function WorkspaceShell({
 
 					{me?.role === "operator" && (
 						<>
-							<div className="mt-4 mx-3 border-t border-white/10" />
+							<div className="mt-4 mx-4 border-t border-white/10" />
 							<ul className="flex flex-col items-center gap-1 mt-3">
 								{ADMIN_NAV.map((item) => {
 									const active = location.pathname.startsWith(item.href);
@@ -107,14 +114,14 @@ export function WorkspaceShell({
 											<Link
 												to={item.href}
 												title={item.label}
-												className={`flex flex-col items-center justify-center gap-0.5 w-14 h-14 rounded-lg no-underline transition-colors ${
+												className={`flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all ${
 													active
-														? "bg-white/15 text-white"
-														: "text-slate-400 hover:bg-white/10 hover:text-slate-200"
+														? "bg-white text-slate-900 shadow-lg shadow-black/20"
+														: "text-slate-400 hover:bg-white/10 hover:text-white"
 												}`}
 											>
-												<span className="text-xl leading-none">{item.icon}</span>
-												<span className="text-[10px] font-semibold leading-none">
+												<item.Icon size={20} strokeWidth={active ? 2.5 : 2} />
+												<span className="text-[10px] font-semibold leading-none mt-1">
 													{item.label}
 												</span>
 											</Link>
@@ -125,11 +132,9 @@ export function WorkspaceShell({
 						</>
 					)}
 				</nav>
-				<div
-					title={me?.email}
-					className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-900"
-				>
-					{initial}
+
+				<div className="mb-3">
+					<UserMenu />
 				</div>
 			</aside>
 
@@ -163,9 +168,7 @@ export function WorkspaceShell({
 }
 
 /**
- * Reusable sidebar list-item used by per-pane secondary navs. Keeps
- * "Inbox / Sent / Drafts" in the Email pane visually consistent with
- * the channel list in Chat, etc.
+ * Reusable sidebar list-item used by per-pane secondary navs.
  */
 export function SecondaryNavItem({
 	href,
@@ -176,7 +179,7 @@ export function SecondaryNavItem({
 }: {
 	href: string;
 	active?: boolean;
-	icon?: string;
+	icon?: ReactNode;
 	label: string;
 	count?: number;
 }) {
@@ -190,7 +193,7 @@ export function SecondaryNavItem({
 			}`}
 		>
 			<span className="flex items-center gap-2 min-w-0">
-				{icon && <span className="text-slate-400">{icon}</span>}
+				{icon && <span className="text-slate-400 flex-shrink-0">{icon}</span>}
 				<span className="truncate">{label}</span>
 			</span>
 			{typeof count === "number" && count > 0 && (
