@@ -150,7 +150,10 @@ export const employeeMailboxMigrations: Migration[] = [
 		//   - idx_todos_urgency: dashboard list query
 		//     (WHERE resolved_at IS NULL ORDER BY urgency_score DESC).
 		//   - idx_todos_source: dedup on (source_channel, source_id) so
-		//     the alarm's INSERT OR IGNORE on Mattermost re-polls is cheap.
+		//     the alarm's INSERT OR IGNORE on Mattermost re-polls actually
+			//     deduplicates at the DB level — plain index alone wouldn't,
+			//     since the primary key is a UUID per-insert. (Verifier fix
+			//     2026-05-19.)
 		name: "3_todos_table",
 		sql: `
 			CREATE TABLE todos (
@@ -168,7 +171,7 @@ export const employeeMailboxMigrations: Migration[] = [
 				resolved_at TEXT
 			);
 			CREATE INDEX idx_todos_urgency ON todos(resolved_at, urgency_score DESC);
-			CREATE INDEX idx_todos_source ON todos(source_channel, source_id);
+			CREATE UNIQUE INDEX idx_todos_source ON todos(source_channel, source_id);
 		`,
 	},
 ];
