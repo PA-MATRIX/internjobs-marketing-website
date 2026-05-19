@@ -161,6 +161,13 @@ Marketing site + LinkedIn Clerk auth + Neon schema + Photon/Spectrum SMS + welco
 
 ---
 
+## v1.3.1 Candidates (deferred polish, not yet planned)
+
+- **DAILY-THEME-01** — Campus Aurora theme on Daily.co Prebuilt. Attempted 2026-05-19 via `DailyIframe.createFrame({ theme })` (commits `c933fc1` + `2475829`), broke the `/meetings` route with "Something went wrong" client-side error → reverted in `4b17483`. Safer retries: (a) set theme in `console.daily.co` dashboard (no code path), (b) dynamic-import `@daily-co/daily-js` inside `useEffect` to dodge SSR/hydrate timing, (c) use `@daily-co/daily-react`'s `useCallFrame` hook. Palette spec preserved in commit message `c933fc1` (`#7C3AED` accent, `#FAFAFA` bg, slate text/border).
+- **PARROT-AUTO-CLEAR closer (closeTodoFact)** — Phase 19 cron infra is wired but inert until something writes `:Todo.valid_to`. Add a ~50 LOC `closeTodoFact(thread_id, resolution_text)` helper invoked from the Mastra workflow when the agent's reply acknowledges resolution. Ship when Ridhi reports stale todos during pilot.
+
+---
+
 **Next Steps:**
 1. `/rrr:plan-phase 18` — Build the execution plan for Phase 18 (Graph Bridge Runtime)
 2. Optionally `/rrr:discuss-phase 18` first to surface implementation context
