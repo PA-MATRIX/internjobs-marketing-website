@@ -133,13 +133,16 @@ export async function callAiGateway(
 					json_schema: TODO_EXTRACTION_SCHEMA,
 				},
 				// kimi-k2.6 is a reasoning model — its CoT lives in
-			// choices[0].message.reasoning_content and burns through tokens
-			// before message.content is written. 512 is too tight (live-tested
-			// 2026-05-19: reasoning ate the budget, content came back null).
-			// 2000 leaves ~1500 for reasoning + ~500 for the final JSON body.
-			// Non-reasoning fallback models (e.g., llama-3.3-70b-instruct-fp8-fast)
-			// would be fine with 512, but the budget is harmless for them.
-			max_tokens: 2000,
+			// choices[0].message.reasoning_content. Live-tested 2026-05-19:
+			// - 512: starved (content=null)
+			// - 2000: worked for 1-2-todo emails; hit length cap on a
+			//         3-action email (CoT ate ~1700 tokens then JSON cut off)
+			// - 4000: comfortable headroom even with the larger few-shot
+			//         system prompt and multi-todo emails
+			// Cost impact is per-output-token so we still get cheap empty
+			// responses for non-actionable mail; the budget is a ceiling
+			// not a target.
+			max_tokens: 4000,
 			}),
 		},
 	);
