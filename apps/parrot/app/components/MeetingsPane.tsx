@@ -29,7 +29,6 @@
 //   cloudflare/skills: durable-objects — personal room scoped to the
 //     signed-in employee's EmployeeMailboxDO.
 
-import { DailyProvider } from "@daily-co/daily-react";
 import DailyIframe from "@daily-co/daily-js";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Loader2, Users, Video } from "lucide-react";
@@ -162,9 +161,15 @@ function YourRoomTab() {
 					{roomQuery.data.name}
 				</span>
 			</div>
-			<DailyProvider url={roomUrl} token={token}>
-				<DailyEmbed />
-			</DailyProvider>
+			{/*
+			 * No <DailyProvider> wrapper — DailyPrebuiltFrame uses
+			 * DailyIframe.createFrame() which OWNS the call object lifecycle.
+			 * Wrapping with DailyProvider creates a SECOND callObject for the
+			 * same URL and Daily.co throws "Duplicate DailyIframe instances
+			 * are not allowed". The inner frame reads url + token from the
+			 * existing react-query cache (no Provider needed).
+			 */}
+			<DailyEmbed roomUrl={roomUrl} token={token} />
 		</div>
 	);
 }
@@ -179,14 +184,19 @@ function YourRoomTab() {
  * placeholder card in Phase 10. The iframe itself comes from daily.co
  * and is opaque to us beyond url/token; we only own the parent box.
  */
-function DailyEmbed() {
+interface DailyEmbedProps {
+	roomUrl: string;
+	token?: string;
+}
+
+function DailyEmbed({ roomUrl, token }: DailyEmbedProps) {
 	return (
 		<div
 			className="rounded-lg overflow-hidden border border-slate-200"
 			style={{ width: "100%", height: "600px", background: "#FAFAFA" }}
 			data-daily-embed-parent
 		>
-			<DailyPrebuiltFrame />
+			<DailyPrebuiltFrame roomUrl={roomUrl} token={token} />
 		</div>
 	);
 }
@@ -207,26 +217,16 @@ function DailyEmbed() {
  *   - URL/token changes: tear down + recreate (uncommon — a single
  *     personal room URL is stable for the employee's session).
  */
-function DailyPrebuiltFrame() {
+interface DailyPrebuiltFrameProps {
+	roomUrl: string;
+	token?: string;
+}
+
+function DailyPrebuiltFrame({ roomUrl, token }: DailyPrebuiltFrameProps) {
 	const parentRef = useRef<HTMLDivElement | null>(null);
 	const frameRef = useRef<ReturnType<typeof DailyIframe.createFrame> | null>(
 		null,
 	);
-
-	const roomQuery = useQuery({
-		queryKey: ["meetings", "my-room"],
-		queryFn: () => api.getMyRoom(),
-		enabled: false,
-	});
-	const tokenQuery = useQuery({
-		queryKey: ["meetings", "room-token", roomQuery.data?.url ?? null],
-		queryFn: () => api.getRoomToken(),
-		enabled: false,
-	});
-
-	const roomUrl = roomQuery.data?.url;
-	const token =
-		tokenQuery.data && tokenQuery.data.ok ? tokenQuery.data.token : undefined;
 
 	useEffect(() => {
 		if (!parentRef.current || !roomUrl) return;
@@ -271,8 +271,6 @@ function DailyPrebuiltFrame() {
 			if (frameRef.current === frame) frameRef.current = null;
 		};
 	}, [roomUrl, token]);
-
-	if (!roomUrl) return null;
 
 	return (
 		<div
