@@ -27,6 +27,8 @@
 import PostalMime from "postal-mime";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
+// v1.3 Phase 20 SAFETY-01: Lakera Guard pre-LLM screen for inbound email.
+import { screenMessage } from "./safety";
 
 // Stream → ArrayBuffer. The size hint lets us preallocate without a
 // growing chain of Uint8Array concatenations.
@@ -78,6 +80,9 @@ export async function receiveEmail(
 	env: Env,
 	_ctx: ExecutionContext,
 ): Promise<void> {
+	// NOTE (SAFETY-SCOPE-01): Mattermost inbound is polled via EmployeeMailboxDO
+	// alarm and is NOT screened by Lakera in v1.3. Internal channel, wrong risk
+	// profile, wastes quota. Explicitly out of scope.
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
 	const parsed = await new PostalMime().parse(rawEmail);
 
@@ -178,6 +183,116 @@ export async function receiveEmail(
 	const mailboxStub = env.EMPLOYEE_MAILBOX.get(
 		env.EMPLOYEE_MAILBOX.idFromName(employee.clerk_user_id),
 	);
+
+	// v1.3 SAFETY-01: Pre-LLM screen before EmployeeMailboxDO.createEmail()
+	// which triggers extractTodosFromEmail() → kimi-k2.6 LLM call.
+	//
+	// Scope discipline:
+	//   - Internal Mattermost messages: NOT screened (polled separately, not in this path)
+	//   - Known startup_members: check PARROT_FEATURE_FLAGS KV allowlist
+	//     (key: "safety_skip_senders", value: comma-separated emails).
+	//     Full Neon lookup deferred to v1.4 (Worker has no Neon binding for
+	//     startup_members table lookup — using KV allowlist as proxy).
+	//   - Cold email (unknown sender): ALWAYS screened.
+	//
+	// Email hard-block policy (SAFETY-RESPONSE-02):
+	//   No auto-reply on hard-block — out-of-office loop risk.
+	//   Log to structured console + safety_events (best-effort).
+	const emailBody = parsed.html || parsed.text || "";
+	const senderEmail = (parsed.from?.address || "").toLowerCase();
+
+	// Check KV allowlist for known startup senders (skip screening for them).
+	// User-provisioned: `wrangler kv:key put --binding=PARROT_FEATURE_FLAGS
+	// safety_skip_senders "a@x.com,b@y.com"`. Enumerate startup_members
+	// emails manually pending v1.4 Neon-binding work.
+	let skipScreen = false;
+	if (env.PARROT_FEATURE_FLAGS && senderEmail) {
+		const skipList = await env.PARROT_FEATURE_FLAGS.get("safety_skip_senders").catch(
+			() => null,
+		);
+		if (skipList) {
+			const allowedSenders = skipList.split(",").map((s: string) => s.trim().toLowerCase());
+			skipScreen = allowedSenders.includes(senderEmail);
+		}
+	}
+
+	if (!skipScreen && emailBody.length > 0) {
+		const _screenStart = Date.now();
+		const screenResult = await screenMessage(emailBody, env);
+		const _screenMs = Date.now() - _screenStart;
+
+		const injectionScore = screenResult.score ?? 0;
+		const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+
+		if (screenResult.action !== "passed") {
+			console.log(
+				JSON.stringify({
+					level: "info",
+					event: "lakera_screen",
+					action: screenResult.action,
+					reason: screenResult.reason,
+					score: screenResult.score,
+					channel: "email",
+					hard_block: isHardBlock,
+					sender: senderEmail.slice(-20), // partial — avoid PII in logs
+					employee_id: employee.id,
+					preview: emailBody.slice(0, 80),
+				}),
+			);
+
+			// Plan 20-03: Write to Neon safety_events (fire-and-forget — must not block email ingest)
+			if (env.NEON_DATABASE_URL) {
+				(async () => {
+					try {
+						const { neon } = await import("@neondatabase/serverless");
+						const sql = neon(env.NEON_DATABASE_URL!);
+						await sql`
+							insert into safety_events
+								(channel, action, reason, score, sender_last4, preview, employee_id, reviewed)
+							values (
+								'email',
+								${isHardBlock ? "blocked" : screenResult.action},
+								${screenResult.reason},
+								${screenResult.score},
+								${senderEmail.slice(-4)},
+								${emailBody.slice(0, 80)},
+								${employee.id},
+								false
+							)
+						`;
+					} catch (err: unknown) {
+						console.error(
+							JSON.stringify({
+								level: "error",
+								event: "safety_events_write_failed",
+								error: (err as Error)?.message ?? String(err),
+							}),
+						);
+					}
+				})();
+			}
+		}
+
+		console.log(JSON.stringify({ level: "debug", event: "lakera_latency_ms", ms: _screenMs, channel: "email" }));
+
+		if (isHardBlock) {
+			// SAFETY-RESPONSE-02: NO auto-reply on hard-block. Out-of-office
+			// loop risk: if blocked email is from an automated sender, an
+			// auto-reply triggers their auto-responder → infinite loop.
+			// Operator reviews /ops/safety and replies manually.
+			console.warn(
+				JSON.stringify({
+					level: "warn",
+					event: "lakera_hard_block_email",
+					employee_id: employee.id,
+					reason: screenResult.reason,
+					preview: emailBody.slice(0, 80),
+				}),
+			);
+			return; // Drop silently — no createEmail(), no todo extraction, no auto-reply
+		}
+		// Soft-flag or fail-open: proceed to createEmail() normally.
+	}
 
 	// This call triggers EmployeeMailboxDO.createEmail() → which fires
 	// the Phase 12 fire-and-forget extractTodosFromEmail() hook when

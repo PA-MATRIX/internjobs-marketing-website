@@ -10,6 +10,8 @@ import { createMacBridgeSmsProvider } from "./sms/mac-bridge.mjs";
 import { startSpectrumWaitlistListener } from "./spectrum-listener.mjs";
 import { initMastra, isMastraReady } from "./mastra.mjs";
 import { runStudentInboundWorkflow } from "./workflows/student-inbound.mjs";
+// v1.3 Phase 20 SAFETY-01: Lakera Guard pre-LLM screen.
+import { screenMessage } from "./safety/screen.mjs";
 import { writeRoleEmbedding, logEmbedErr } from "./embeddings.mjs";
 import { ensureGraphSchema, pingGraph } from "./memory/graph.mjs";
 import {
@@ -600,30 +602,96 @@ const server = createServer(async (req, res) => {
             metadata: inbound.metadata || {},
           });
           if (messageId && store?.pool) {
-            // Fire-and-forget: don't await, don't block the 200 response.
-            // Errors are logged but never surface to the SMS provider —
-            // audit_events is the primary recovery surface, not a 5xx
-            // that would trigger SMS retries.
-            //
-            // Autonomy pivot (2026-05-17): pass smsProvider + config so
-            // the workflow can autonomously route the draft to the
-            // outbound provider. Without these the workflow still drafts
-            // but marks the row 'failed' with reason='no_sms_provider'.
-            runStudentInboundWorkflow({
-              pool: store.pool,
-              messageId,
-              smsProvider,
-              config,
-            }).catch((err) => {
-              console.error(
-                JSON.stringify({
+            // v1.3 SAFETY-01: Pre-LLM screen BEFORE agent sees the text.
+            // Hard-block on prompt_injection >= 0.8. Fail-open — Lakera downtime
+            // must never block student SMS. Canned reply matches AGENT_VOICE.
+            // The inbound_messages row is already written (audit trail preserved).
+            const _screenStart = Date.now();
+            const screenResult = await screenMessage(
+              inbound.text || "",
+              process.env.LAKERA_GUARD_API_KEY || "",
+            );
+            const _screenMs = Date.now() - _screenStart;
+            console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "photon" }));
+            const injectionScore = screenResult.score ?? 0;
+            const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+
+            if (screenResult.action !== "passed") {
+              console.log(JSON.stringify({
+                level: "info",
+                event: "lakera_screen",
+                action: screenResult.action,
+                reason: screenResult.reason,
+                score: screenResult.score,
+                channel: "sms",
+                hard_block: isHardBlock,
+                sender_last4: (inbound.channelAddress || "").slice(-4),
+                message_id: messageId,
+                preview: (inbound.text || "").slice(0, 80),
+              }));
+
+              // Plan 20-03: Write to Neon safety_events (fire-and-forget — must not block webhook 200)
+              const senderAddr = inbound.channelAddress || "";
+              store.pool.query(
+                `insert into safety_events
+                   (channel, action, reason, score, sender_last4, preview, reviewed)
+                 values ($1, $2, $3, $4, $5, $6, false)`,
+                [
+                  "sms",
+                  isHardBlock ? "blocked" : screenResult.action,
+                  screenResult.reason,
+                  screenResult.score,
+                  senderAddr.slice(-4),
+                  (inbound.text || "").slice(0, 80),
+                ],
+              ).catch((err) => {
+                console.error(JSON.stringify({ level: "error", event: "safety_events_write_failed", error: err?.message ?? String(err) }));
+              });
+            }
+
+            if (isHardBlock) {
+              // SAFETY-RESPONSE-01: canned reply matches AGENT_VOICE exactly.
+              // No throw on send failure — log and continue so the 200 still goes
+              // back to Photon (no retry storm).
+              try {
+                await smsProvider.sendSms(
+                  inbound.channelAddress,
+                  "hey — couldn't process that one. try rephrasing?",
+                );
+              } catch (sendErr) {
+                console.error(JSON.stringify({
                   level: "error",
-                  message: "student_inbound_workflow_failed",
-                  messageId,
-                  error: err?.message ?? String(err),
-                }),
-              );
-            });
+                  event: "safety_block_reply_failed",
+                  error: sendErr?.message ?? String(sendErr),
+                }));
+              }
+              // Do NOT call runStudentInboundWorkflow — agent must not see this text.
+            } else {
+              // Fire-and-forget: don't await, don't block the 200 response.
+              // Errors are logged but never surface to the SMS provider —
+              // audit_events is the primary recovery surface, not a 5xx
+              // that would trigger SMS retries.
+              //
+              // Autonomy pivot (2026-05-17): pass smsProvider + config so
+              // the workflow can autonomously route the draft to the
+              // outbound provider. Without these the workflow still drafts
+              // but marks the row 'failed' with reason='no_sms_provider'.
+              runStudentInboundWorkflow({
+                pool: store.pool,
+                messageId,
+                smsProvider,
+                config,
+              }).catch((err) => {
+                console.error(
+                  JSON.stringify({
+                    level: "error",
+                    message: "student_inbound_workflow_failed",
+                    messageId,
+                    error: err?.message ?? String(err),
+                  }),
+                );
+              });
+            }
           }
         } catch (err) {
           // writeInboundMessage failures are non-fatal for the webhook:
@@ -715,22 +783,83 @@ const server = createServer(async (req, res) => {
                 metadata: { ...inbound.metadata, firstContact: true, pairingCode: startCode },
               });
               if (messageId && store?.pool) {
-                runStudentInboundWorkflow({
-                  pool: store.pool,
-                  messageId,
-                  smsProvider: macBridgeProvider,
-                  config,
-                }).catch((err) => {
-                  console.error(
-                    JSON.stringify({
+                // v1.3 SAFETY-01: Pre-LLM screen on mac-bridge pairing first-contact path.
+                // Same hard-block rule (>=0.8) and fail-open semantics as photon.
+                const _screenStart = Date.now();
+                const screenResult = await screenMessage(
+                  inbound.text || "",
+                  process.env.LAKERA_GUARD_API_KEY || "",
+                );
+                const _screenMs = Date.now() - _screenStart;
+                console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "mac-bridge-pairing" }));
+                const injectionScore = screenResult.score ?? 0;
+                const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+
+                if (screenResult.action !== "passed") {
+                  console.log(JSON.stringify({
+                    level: "info",
+                    event: "lakera_screen",
+                    action: screenResult.action,
+                    reason: screenResult.reason,
+                    score: screenResult.score,
+                    channel: "sms",
+                    hard_block: isHardBlock,
+                    sender_last4: (inbound.channelAddress || "").slice(-4),
+                    message_id: messageId,
+                    source: "mac-bridge-pairing",
+                    preview: (inbound.text || "").slice(0, 80),
+                  }));
+
+                  store.pool.query(
+                    `insert into safety_events
+                       (channel, action, reason, score, sender_last4, preview, reviewed)
+                     values ($1, $2, $3, $4, $5, $6, false)`,
+                    [
+                      "sms",
+                      isHardBlock ? "blocked" : screenResult.action,
+                      screenResult.reason,
+                      screenResult.score,
+                      (inbound.channelAddress || "").slice(-4),
+                      (inbound.text || "").slice(0, 80),
+                    ],
+                  ).catch((err) => {
+                    console.error(JSON.stringify({ level: "error", event: "safety_events_write_failed", error: err?.message ?? String(err) }));
+                  });
+                }
+
+                if (isHardBlock) {
+                  try {
+                    await macBridgeProvider.sendSms(
+                      inbound.channelAddress,
+                      "hey — couldn't process that one. try rephrasing?",
+                    );
+                  } catch (sendErr) {
+                    console.error(JSON.stringify({
                       level: "error",
-                      message: "student_inbound_workflow_failed",
+                      event: "safety_block_reply_failed",
                       source: "mac-bridge-pairing",
-                      messageId,
-                      error: err?.message ?? String(err),
-                    }),
-                  );
-                });
+                      error: sendErr?.message ?? String(sendErr),
+                    }));
+                  }
+                  // Agent never sees the text. Pairing audit row preserved.
+                } else {
+                  runStudentInboundWorkflow({
+                    pool: store.pool,
+                    messageId,
+                    smsProvider: macBridgeProvider,
+                    config,
+                  }).catch((err) => {
+                    console.error(
+                      JSON.stringify({
+                        level: "error",
+                        message: "student_inbound_workflow_failed",
+                        source: "mac-bridge-pairing",
+                        messageId,
+                        error: err?.message ?? String(err),
+                      }),
+                    );
+                  });
+                }
               }
             } catch (err) {
               console.error(
@@ -795,22 +924,83 @@ const server = createServer(async (req, res) => {
             metadata: inbound.metadata || {},
           });
           if (messageId && store?.pool) {
-            runStudentInboundWorkflow({
-              pool: store.pool,
-              messageId,
-              smsProvider: macBridgeProvider,
-              config,
-            }).catch((err) => {
-              console.error(
-                JSON.stringify({
+            // v1.3 SAFETY-01: Pre-LLM screen on mac-bridge student_reply path.
+            // Same hard-block rule (>=0.8) and fail-open semantics as photon.
+            const _screenStart = Date.now();
+            const screenResult = await screenMessage(
+              inbound.text || "",
+              process.env.LAKERA_GUARD_API_KEY || "",
+            );
+            const _screenMs = Date.now() - _screenStart;
+            console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "mac-bridge" }));
+            const injectionScore = screenResult.score ?? 0;
+            const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+
+            if (screenResult.action !== "passed") {
+              console.log(JSON.stringify({
+                level: "info",
+                event: "lakera_screen",
+                action: screenResult.action,
+                reason: screenResult.reason,
+                score: screenResult.score,
+                channel: "sms",
+                hard_block: isHardBlock,
+                sender_last4: (inbound.channelAddress || "").slice(-4),
+                message_id: messageId,
+                source: "mac-bridge",
+                preview: (inbound.text || "").slice(0, 80),
+              }));
+
+              store.pool.query(
+                `insert into safety_events
+                   (channel, action, reason, score, sender_last4, preview, reviewed)
+                 values ($1, $2, $3, $4, $5, $6, false)`,
+                [
+                  "sms",
+                  isHardBlock ? "blocked" : screenResult.action,
+                  screenResult.reason,
+                  screenResult.score,
+                  (inbound.channelAddress || "").slice(-4),
+                  (inbound.text || "").slice(0, 80),
+                ],
+              ).catch((err) => {
+                console.error(JSON.stringify({ level: "error", event: "safety_events_write_failed", error: err?.message ?? String(err) }));
+              });
+            }
+
+            if (isHardBlock) {
+              try {
+                await macBridgeProvider.sendSms(
+                  inbound.channelAddress,
+                  "hey — couldn't process that one. try rephrasing?",
+                );
+              } catch (sendErr) {
+                console.error(JSON.stringify({
                   level: "error",
-                  message: "student_inbound_workflow_failed",
+                  event: "safety_block_reply_failed",
                   source: "mac-bridge",
-                  messageId,
-                  error: err?.message ?? String(err),
-                }),
-              );
-            });
+                  error: sendErr?.message ?? String(sendErr),
+                }));
+              }
+              // Agent never sees the text. Audit row preserved.
+            } else {
+              runStudentInboundWorkflow({
+                pool: store.pool,
+                messageId,
+                smsProvider: macBridgeProvider,
+                config,
+              }).catch((err) => {
+                console.error(
+                  JSON.stringify({
+                    level: "error",
+                    message: "student_inbound_workflow_failed",
+                    source: "mac-bridge",
+                    messageId,
+                    error: err?.message ?? String(err),
+                  }),
+                );
+              });
+            }
           }
         } catch (err) {
           console.error(
