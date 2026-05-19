@@ -1,0 +1,15 @@
+# Parrot (v1.2 Phase 10) — second Clerk instance for InternJobs internal
+# employees. Distinct from the student/startup Clerk that powers
+# app.internjobs.ai. Production values live in Infisical at
+# /internjobs-ai/parrot/* and are loaded via `wrangler secret put`.
+PARROT_CLERK_PUBLISHABLE_KEY=pk_test_replace_me
+PARROT_CLERK_SECRET_KEY=sk_test_replace_me
+# JWKS URL for the Parrot Clerk instance (e.g.
+# https://clerk.workspace.internjobs.ai/.well-known/jwks.json).
+PARROT_CLERK_JWKS_URL=https://example.clerk.accounts.dev/.well-known/jwks.json
+# Optional explicit issuer override; if unset we derive it from the JWKS URL.
+PARROT_CLERK_ISSUER=
+
+# Phase 10 Wave 2: public URL of the self-hosted Mattermost (apps/parrot-mattermost)
+# rendered inside the ChatPane iframe. Production default is set in wrangler.jsonc.
+MATTERMOST_URL=https://internjobs-mattermost.fly.dev

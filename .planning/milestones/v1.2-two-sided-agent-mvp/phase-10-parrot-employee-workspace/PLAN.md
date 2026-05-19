@@ -26,7 +26,8 @@ verification:
     - mattermost_or_alternative_deployed
 must_haves:
   truths:
-    - "workspace.internjobs.ai resolves to the Parrot Worker, gated by a SEPARATE Clerk instance (employee identities, not student/startup)"
+    - "workspace.internjobs.ai resolves to the Parrot Worker, gated by a SEPARATE production Clerk instance (clerk.workspace.internjobs.ai) — phone-OTP only sign-in (no email, no LinkedIn, no password)"
+    - "Student Clerk instance lives at clerk.app.internjobs.ai (renamed 2026-05-19 from clerk.internjobs.ai to free the apex); the two Clerk apps share zero state"
     - "Each employee gets a name@internjobs.ai mailbox, auto-provisioned on first login, stored in a per-mailbox Durable Object (same shape as agentic-inbox MailboxDO)"
     - "Parrot UI unifies email inbox + chat (Mattermost-class) + video conferencing (Daily.co) in a single signed-in surface"
     - "Chat: self-hosted Mattermost (or chosen alternative) reachable inside Parrot via embedded panel OR rebuilt-from-scratch chat surface; same Clerk session as the workspace"
@@ -179,6 +180,32 @@ vs three separate apps with iframes — rejected because the cross-pane interact
 - SSO bridge: Parrot Worker injects `X-Clerk-User-Id` header into Mattermost requests via a Hono middleware
 - Mattermost trusts the header because access is gated by Cloudflare Access in front of the iframe (only authenticated Parrot users see it)
 
+## Wave 2b — Employee provisioning + auth pivot (2026-05-18 → 2026-05-19)
+
+**Original Wave 2b assumption was wrong** — we initially planned to share one Clerk app between students and employees using Clerk Organizations. That broke the core product invariant: students MUST authenticate via LinkedIn so we can extract their LinkedIn ID for Standout-style profile enrichment. With a shared app + email OTP enabled, students could bypass LinkedIn → lose the LinkedIn ID → break the matching pipeline.
+
+**Resolution (current architecture):**
+
+- **Two separate production Clerk apps** in the same Projecta Clerk org:
+  - **Student**: `clerk.app.internjobs.ai` (renamed 2026-05-19 from `clerk.internjobs.ai` to free the apex). LinkedIn-only social provider. Powers `app.internjobs.ai`.
+  - **Employee**: `clerk.workspace.internjobs.ai`. Phone-OTP only (no email, no password, no social). Powers `workspace.internjobs.ai`.
+- **No Organizations**: every signed-in user on the employee Clerk app IS an employee. The InternJobs Team org was created, then deleted (2026-05-19).
+- **Operator gate**: `workers/lib/operator.ts` uses `publicMetadata.role ∈ {"operator", "admin", "ceo"}` OR `PARROT_OPERATOR_EMAILS` allowlist. No org:admin role check.
+- **Cookie scoping** works because each Clerk app's frontend API is on its own subdomain (`clerk.app.*` vs `clerk.workspace.*`) — no propagation needed.
+- **Embedded SignIn**: `apps/parrot/app/routes/login.tsx` uses `@clerk/clerk-react`'s `<SignIn>` mounted directly on `workspace.internjobs.ai/sign-in`. Skip `@clerk/react-router`'s `rootAuthLoader` + `clerkMiddleware` chain — too tangled on Cloudflare Workers; our worker middleware verifies session JWTs independently via `jose`.
+- **LinkedIn OAuth callback** updated to `https://clerk.app.internjobs.ai/v1/oauth_callback` in LinkedIn Developer Portal (2026-05-19, USER action).
+- **First employee (Ridhi, CEO)** created via API: `user_3DvOELvczcR9tk0rAC5b4FjgUbQ`, `phone_number=+17132812454`, `publicMetadata.role="ceo"`.
+
+**Workspace UX layer (in this wave):**
+
+- Slack-style dual-rail shell in `WorkspaceShell.tsx`: icon rail (Dashboard / Email / Chat / Meetings) + per-pane secondary nav (folders for Email, channels for Chat, etc.)
+- Dashboard pane scaffolded at `/dashboard` — the "mothership agent surfaces cross-channel todos" landing surface (Wave 4 fills in the agent logic)
+- Vanta Birds background on workspace `/sign-in`; Vanta Clouds on student `app.internjobs.ai/waitlist`
+- Embedded Clerk SignIn on the student `/waitlist` page (LinkedIn-only button, branded with LinkedIn-blue `#0A66C2` hover-preserved)
+- Removed "Secured by Clerk" branding via post-mount DOM strip
+- CF Rate Limiting on `workspace.internjobs.ai/sign-in*`: 50 req/10s/IP (anti brute-force)
+- Memory written: `~/.claude/projects/-Users-rajren-internjobs-cms/memory/project-auth-architecture.md` documenting the two-app decision so future sessions don't relitigate
+
 ## Wave 3 — Daily.co integration (Claude executes, ~half day)
 
 ### Step 8: Daily.co account + REST API (USER ACTION + Claude)
@@ -191,14 +218,23 @@ vs three separate apps with iframes — rejected because the cross-pane interact
 - React component `<DailyEmbed />` mounts the Daily Prebuilt UI
 - "Start Meeting" CTAs in Inbox (attach to email reply) + Chat (start in channel) + Meetings tab (scheduled rooms)
 
-## Wave 4 — Cross-channel actions (Claude executes, ~half day)
+## Wave 4 — Dashboard agent + cross-channel actions (Claude executes, ~1 day)
 
-### Step 10: Email ↔ Chat ↔ Meeting interactions
+### Step 10: Dashboard "mothership agent" — cross-channel todo surfacing
+- The Dashboard pane (already scaffolded at `/dashboard` in Wave 2b) becomes the workspace's primary value: a per-employee LLM agent monitors every channel and surfaces ranked todos.
+- Inputs the agent ingests:
+  - Email (apps/parrot's EmployeeMailboxDO) — threads requiring a reply
+  - Chat (Mattermost via REST API) — @mentions you haven't answered
+  - Meetings (Daily.co recordings + transcripts) — action items from your last calls
+  - SMS/phone (Photon webhook → Parrot Worker) — texts requiring follow-up
+- Mastra workflow runs every 5 minutes per employee, writes ranked todos to a `DashboardDO` (singleton per employee), Dashboard pane reads from it via /api/dashboard/todos.
+
+### Step 11: Email ↔ Chat ↔ Meeting cross-pane interactions
 - Email thread: button "Move to chat" → creates Mattermost channel with participants + first message = email subject + body
 - Chat message: button "Email this thread" → opens Inbox compose with thread serialized as quote
 - Meeting recap: end-of-meeting prompt → "Post summary to chat?" or "Email summary?"
 
-### Step 11: Notifications
+### Step 12: Notifications
 - Unified Parrot notification pane: new email + new chat mention + scheduled-meeting-starting-now
 - Browser push via Service Worker + Web Push (Cloudflare native)
 

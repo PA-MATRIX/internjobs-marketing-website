@@ -1,0 +1,104 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	// v1.2 Phase 10 Wave 1 (2026-05-17): Parrot — internal employee workspace.
+	// Forked from apps/agentic-inbox/wrangler.jsonc. Changes vs upstream
+	// (so future upstream pulls merge cleanly):
+	//   - name: internjobs-agentic-inbox → internjobs-parrot
+	//   - vars.DOMAINS: "internjobs.ai" (apex, was already apex in upstream;
+	//     Parrot routes *@internjobs.ai for employees vs agentic-inbox which
+	//     handles maya@agent.internjobs.ai for the v1.2 omnichannel agent)
+	//   - vars.EMAIL_ADDRESSES: ["maya@agent.internjobs.ai"] → []
+	//     (no static address list; per-employee mailboxes are provisioned
+	//     at runtime on first Clerk login. Inbound mail is matched against
+	//     the R2 mailbox registry instead of a wrangler-pinned env var.)
+	//   - r2_buckets.bucket_name: "internjobs-agentic-inbox" → "internjobs-parrot-attachments"
+	//   - durable_objects.bindings: MAILBOX (MailboxDO) →
+	//     EMPLOYEE_MAILBOX (EmployeeMailboxDO) + EMPLOYEE_CHAT_BRIDGE
+	//     (ChatBridgeDO — Wave 2 stub, NOT yet defined as a class. The
+	//     binding is omitted from this Wave 1 config; we will add it in
+	//     Wave 2 alongside the Mattermost bridge implementation.)
+	//   - migrations: tag v1 covers EmployeeMailboxDO only (Wave 1).
+	//   - REMOVED upstream bindings:
+	//     - EMAIL_AGENT (Mastra agent — Parrot has no AI agent in Wave 1)
+	//     - EMAIL_MCP (MCP server — Parrot has no MCP surface)
+	//     - ai (Workers AI binding — Wave 5 may add for draft-assist;
+	//       leaving the stub in workers/lib/ai.ts but no binding yet)
+	//   - AUTH: agentic-inbox uses Cloudflare Access JWT (workers/app.ts
+	//     validates cf-access-jwt-assertion). Parrot uses Clerk session
+	//     JWTs via a second Clerk instance (PARROT_CLERK_*). The Access
+	//     env vars (POLICY_AUD, TEAM_DOMAIN) are intentionally omitted.
+	"name": "internjobs-parrot",
+	"compatibility_date": "2025-11-28",
+	"main": "./workers/app.ts",
+	"observability": {
+		"enabled": true
+	},
+	// Wave 2b: bind the worker to workspace.internjobs.ai. We use a
+	// Workers Custom Domain rather than a route — the Custom Domains
+	// API auto-creates the DNS record and provisions a cert, which lets
+	// us deploy with only the OAuth scopes wrangler already has
+	// (workers_scripts:write). A plain Workers Route would require a
+	// separately-created DNS record (zone:edit), which our token lacks.
+	"routes": [
+		{
+			"pattern": "workspace.internjobs.ai",
+			"custom_domain": true
+		}
+	],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		// Apex domain — employees get name@internjobs.ai mailboxes.
+		// PARROT_CLERK_* secrets are set via `wrangler secret put` (loaded
+		// from Infisical at /internjobs-ai/parrot/*) — never pinned here.
+		"DOMAINS": "internjobs.ai",
+		"EMAIL_ADDRESSES": [],
+		// Wave 2: public URL of the self-hosted Mattermost instance
+		// (apps/parrot-mattermost). The Fly-managed default is fine for
+		// v1.2; flip to https://mattermost.internjobs.ai when/if we add
+		// the Cloudflare CNAME + Fly cert.
+		"MATTERMOST_URL": "https://internjobs-mattermost.fly.dev"
+	},
+	"send_email": [
+		{
+			"name": "EMAIL",
+			"remote": true
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "internjobs-parrot-attachments",
+			"preview_bucket_name": "internjobs-parrot-attachments"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "EMPLOYEE_MAILBOX",
+				"class_name": "EmployeeMailboxDO"
+			},
+			{
+				// Wave 2b: singleton DO holding the employee directory +
+				// OIDC bridge state (auth codes, opaque access tokens).
+				"name": "WORKSPACE",
+				"class_name": "WorkspaceDO"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"EmployeeMailboxDO"
+			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"WorkspaceDO"
+			]
+		}
+	]
+}

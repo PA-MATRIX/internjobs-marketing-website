@@ -6,7 +6,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "!apps/agentic-inbox"
+    "!apps/agentic-inbox",
+    "!apps/parrot"
   ],
   "scripts": {
     "dev": "npm run dev:marketing",
