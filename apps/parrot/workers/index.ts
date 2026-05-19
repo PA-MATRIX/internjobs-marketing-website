@@ -323,24 +323,89 @@ app.post("/api/meetings/create", requireEmployeeMailbox, async (c) => {
 	});
 });
 
-// -- Cross-pane action stubs (Wave 4 fills the backend) -------------
-
-app.post(
-	"/api/crosspane/chat-to-email",
-	requireEmployeeMailbox,
-	(c) => c.json({ ok: false, reason: "not_implemented_wave_4" }, 501),
-);
+// -- Cross-pane actions (Phase 13 Wave 2) ---------------------------
+//
+// Skills referenced:
+//   cloudflare/skills: agents-sdk
+//
+// email-to-chat: moves an email thread into a Mattermost channel +
+// posts the body as the seed message.
+// chat-to-email: returns a draft {to, subject, body} for the compose
+// modal — full composer is deferred to v1.3.
+// start-meeting: UI seam for Phase 11 (Daily.co). Records demand via
+// the notifications table; does NOT call Daily.co. When Phase 11
+// ships, this handler gains a real /rooms POST and the audit write
+// stays as-is.
 
 app.post(
 	"/api/crosspane/email-to-chat",
 	requireEmployeeMailbox,
-	(c) => c.json({ ok: false, reason: "not_implemented_wave_4" }, 501),
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			email_id?: string;
+		} | null;
+		if (!body?.email_id) {
+			return c.json({ error: "Missing email_id" }, 400);
+		}
+		const result = await c.var.mailboxStub.emailToChat(body.email_id);
+		if (!result.ok) {
+			return c.json({ ok: false, reason: result.error ?? "unknown" }, 502);
+		}
+		return c.json({
+			ok: true,
+			channel_url: result.channel_url,
+			channel_id: result.channel_id,
+		});
+	},
+);
+
+app.post(
+	"/api/crosspane/chat-to-email",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			post_id?: string;
+			post_body?: string;
+		} | null;
+		if (!body?.post_body) {
+			return c.json({ error: "Missing post_body" }, 400);
+		}
+		const result = await c.var.mailboxStub.chatToEmail(
+			body.post_id ?? "",
+			body.post_body,
+		);
+		if (!result.ok) {
+			return c.json({ ok: false, reason: result.error ?? "unknown" }, 502);
+		}
+		return c.json({ ok: true, draft: result.draft });
+	},
 );
 
 app.post(
 	"/api/crosspane/start-meeting",
 	requireEmployeeMailbox,
-	(c) => c.json({ ok: false, reason: "not_implemented_wave_4" }, 501),
+	async (c: AppContext) => {
+		// Phase 13: Start Meeting is a UI seam for Phase 11 (Daily.co).
+		// We record the request via the notifications table so we can
+		// measure pilot demand. When Phase 11 ships, this handler gets a
+		// real Daily.co POST /rooms call; the audit write stays as-is.
+		const stub = c.var.mailboxStub;
+		// event_type 'urgent_todo' is the nearest available type; a
+		// dedicated 'start_meeting_requested' type will be added when
+		// Phase 11 expands the CHECK constraint.
+		void stub.addNotification({
+			event_type: "urgent_todo",
+			title: "Meeting requested (Phase 11 pending)",
+			body: "Employee clicked Start Meeting — Daily.co integration deferred.",
+			url: "/meetings",
+		});
+		return c.json({
+			ok: true,
+			reason: "meetings_coming_soon",
+			message:
+				"Meetings coming soon — Daily.co integration is on the roadmap.",
+		});
+	},
 );
 
 // -- Mattermost (Wave 2 stub) ---------------------------------------
@@ -576,6 +641,52 @@ app.post(
 				!!c.env.PUSH_VAPID_PRIVATE_KEY && !!c.env.PUSH_VAPID_PUBLIC_KEY,
 			pass: !!smokeNotif && allRead,
 			note: "Push fan-out via VAPID is exercised separately in live integration tests; this smoke is store/read/mark-read only.",
+		});
+	},
+);
+
+// ── Phase 13 Wave 2 smoke test (dev-only) ──────────────────────
+// Hit with: curl -X POST http://localhost:8787/api/dev/smoke/crosspane \
+//   -H "X-Parrot-Dev-Employee: dev@internjobs.ai"
+//
+// Asserts:
+//   - chatToEmail returns a draft with non-empty subject + body.
+//   - emailToChat fails GRACEFULLY (ok:false + error string, no throw)
+//     when MATTERMOST_BOT_TOKEN is unset OR email_id doesn't exist.
+
+app.post(
+	"/api/dev/smoke/crosspane",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.PARROT_DEV_MODE) {
+			return c.json({ error: "dev-only endpoint" }, 403);
+		}
+		const stub = c.var.mailboxStub;
+
+		// 1. chatToEmail — deterministic, no external dep.
+		const chatResult = await stub.chatToEmail(
+			"smoke-post-id",
+			"Please review the Q2 report before Friday.",
+		);
+		const chatOk =
+			chatResult.ok &&
+			!!chatResult.draft?.subject &&
+			!!chatResult.draft?.body;
+
+		// 2. emailToChat — must fail gracefully (no throw) when the
+		// email is missing or Mattermost is unavailable.
+		let emailToChatGraceful = false;
+		try {
+			const emailResult = await stub.emailToChat("nonexistent-email-id");
+			emailToChatGraceful = !emailResult.ok && !!emailResult.error;
+		} catch {
+			emailToChatGraceful = false;
+		}
+
+		return c.json({
+			chat_to_email_draft_assembled: chatOk,
+			email_to_chat_graceful_failure: emailToChatGraceful,
+			pass: chatOk && emailToChatGraceful,
 		});
 	},
 );

@@ -943,6 +943,178 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		}
 	}
 
+	// — Phase 13 Wave 2: cross-pane actions ——————————————————————
+	//
+	// Skills referenced:
+	//   cloudflare/skills: agents-sdk
+
+	/**
+	 * Move an email thread into a Mattermost channel:
+	 * 1. Look up the email row in this DO's `emails` table.
+	 * 2. Create a Mattermost private channel via bot REST API on the first
+	 *    team the bot can see.
+	 * 3. Seed the channel with the email body as the first post.
+	 *
+	 * Gracefully degrades when MATTERMOST_BOT_TOKEN / MATTERMOST_URL are
+	 * unset or any HTTP call fails — returns { ok: false, error } rather
+	 * than throwing, so callers (and the dev smoke endpoint) can assert
+	 * graceful-failure semantics without needing live Mattermost.
+	 */
+	async emailToChat(emailId: string): Promise<{
+		ok: boolean;
+		channel_url?: string;
+		channel_id?: string;
+		error?: string;
+	}> {
+		// 1. Fetch the email row.
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT id, subject, sender, recipient, body
+				 FROM emails WHERE id = ?`,
+				emailId,
+			),
+		] as Array<{
+			id: string;
+			subject: string | null;
+			sender: string | null;
+			recipient: string | null;
+			body: string | null;
+		}>;
+		if (rows.length === 0) {
+			return { ok: false, error: "email_not_found" };
+		}
+		const email = rows[0];
+
+		const mattermostUrl = this.env.MATTERMOST_URL;
+		const botToken = this.env.MATTERMOST_BOT_TOKEN;
+		if (!mattermostUrl || !botToken) {
+			return { ok: false, error: "mattermost_unavailable" };
+		}
+
+		// 4. Slugify channel name.
+		const rawSubject = (email.subject ?? "").trim();
+		const slug = (
+			rawSubject
+				? rawSubject
+						.toLowerCase()
+						.replace(/[^a-z0-9]+/g, "-")
+						.replace(/^-+|-+$/g, "")
+				: `email-${emailId.slice(0, 8)}`
+		).slice(0, 60) || `email-${emailId.slice(0, 8)}`;
+		const displayName = rawSubject || `Email ${emailId.slice(0, 8)}`;
+
+		try {
+			// 5a. Resolve a team for the bot.
+			const teamsResp = await fetch(`${mattermostUrl}/api/v4/teams`, {
+				headers: { Authorization: `Bearer ${botToken}` },
+			});
+			if (!teamsResp.ok) return { ok: false, error: "mattermost_unavailable" };
+			const teams = (await teamsResp.json()) as Array<{
+				id: string;
+				name: string;
+			}>;
+			if (!Array.isArray(teams) || teams.length === 0) {
+				return { ok: false, error: "mattermost_no_team" };
+			}
+			const teamId = teams[0].id;
+			const teamName = teams[0].name;
+
+			// 5b. Create channel (private = type 'P').
+			const channelResp = await fetch(
+				`${mattermostUrl}/api/v4/channels`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${botToken}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						team_id: teamId,
+						type: "P",
+						display_name: displayName,
+						name: slug,
+					}),
+				},
+			);
+			if (!channelResp.ok) {
+				return { ok: false, error: "mattermost_channel_create_failed" };
+			}
+			const channel = (await channelResp.json()) as {
+				id: string;
+				name: string;
+			};
+
+			// 6. Post seed message with email body.
+			const seedBody = (email.body ?? "").slice(0, 2000);
+			const seedMessage = `**Email from ${email.sender ?? "(unknown sender)"}**\n\n${seedBody}`;
+			await fetch(`${mattermostUrl}/api/v4/posts`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${botToken}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					channel_id: channel.id,
+					message: seedMessage,
+				}),
+			});
+
+			// 7. Return success with channel URL.
+			return {
+				ok: true,
+				channel_id: channel.id,
+				channel_url: `${mattermostUrl}/${teamName}/channels/${channel.name}`,
+			};
+		} catch {
+			return { ok: false, error: "mattermost_error" };
+		}
+	}
+
+	/**
+	 * Build an email draft from a Mattermost chat post. The full
+	 * composer modal lives on the client — this method only returns a
+	 * draft shape (to/subject/body) the UI can pre-fill.
+	 *
+	 * Subject heuristic: first 60 chars of the post body, newlines
+	 * collapsed to spaces, ellipsis if truncated. Body: every line
+	 * prefixed with `> ` (markdown quote) + trailing blank line for
+	 * the reply.
+	 *
+	 * No LLM call here — this is intentionally deterministic. If we
+	 * want AI summarization later, route through callAiGateway() from
+	 * Phase 12.
+	 */
+	async chatToEmail(
+		postId: string,
+		postBody: string,
+	): Promise<{
+		ok: boolean;
+		draft?: { to: string; subject: string; body: string };
+		error?: string;
+	}> {
+		// Touch postId so it's recorded in flow context (not used in draft
+		// assembly itself; reserved for future thread-link references).
+		void postId;
+		const profile = await this.getProfile();
+		if (!profile) {
+			return { ok: false, error: "profile_not_found" };
+		}
+
+		const firstChunk = postBody.slice(0, 60).replace(/\n/g, " ").trim();
+		const truncated = postBody.length > 60;
+		const subject = `From chat: ${firstChunk}${truncated ? "…" : ""}`;
+		const body = `> ${postBody.split("\n").join("\n> ")}\n\n`;
+
+		return {
+			ok: true,
+			draft: {
+				to: "",
+				subject,
+				body,
+			},
+		};
+	}
+
 	/**
 	 * Fan-out push notifications to every subscription for this employee.
 	 * Always stores a notifications row first (drawer-visible regardless of

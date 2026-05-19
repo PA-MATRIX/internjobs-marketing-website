@@ -124,18 +124,30 @@ export const api = {
 			"/api/meetings/create",
 			{ method: "POST" },
 		),
-	crosspaneChatToEmail: () =>
-		request<{ ok: boolean; reason: string }>(
-			"/api/crosspane/chat-to-email",
-			{ method: "POST" },
-		),
-	crosspaneEmailToChat: () =>
-		request<{ ok: boolean; reason: string }>(
-			"/api/crosspane/email-to-chat",
-			{ method: "POST" },
-		),
+	// Updated Phase 13 Wave 2: crosspaneEmailToChat now takes emailId;
+	// crosspaneChatToEmail takes postId + postBody; crosspaneStartMeeting
+	// remains parameterless (UI seam for Phase 11 / Daily.co).
+	crosspaneEmailToChat: (emailId: string) =>
+		request<{
+			ok: boolean;
+			channel_url?: string;
+			channel_id?: string;
+			reason?: string;
+		}>("/api/crosspane/email-to-chat", {
+			method: "POST",
+			body: JSON.stringify({ email_id: emailId }),
+		}),
+	crosspaneChatToEmail: (postId: string, postBody: string) =>
+		request<{
+			ok: boolean;
+			draft?: { to: string; subject: string; body: string };
+			reason?: string;
+		}>("/api/crosspane/chat-to-email", {
+			method: "POST",
+			body: JSON.stringify({ post_id: postId, post_body: postBody }),
+		}),
 	crosspaneStartMeeting: () =>
-		request<{ ok: boolean; reason: string }>(
+		request<{ ok: boolean; reason: string; message?: string }>(
 			"/api/crosspane/start-meeting",
 			{ method: "POST" },
 		),
