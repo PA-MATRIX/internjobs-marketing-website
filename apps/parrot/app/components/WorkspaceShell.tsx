@@ -19,6 +19,7 @@ import {
 	Phone,
 	MessageCircle,
 	UserPlus,
+	Shield,
 	Bell,
 	X,
 } from "lucide-react";
@@ -46,6 +47,8 @@ const NAV: NavItem[] = [
 
 const ADMIN_NAV: NavItem[] = [
 	{ href: "/admin/invite", label: "Invite", Icon: UserPlus },
+	// v1.3 SAFETY-BADGE-01: Safety screening log + red-dot badge for unreviewed flags.
+	{ href: "/ops/safety", label: "Safety", Icon: Shield },
 ];
 
 export interface WorkspaceShellProps {
@@ -86,6 +89,21 @@ export function WorkspaceShell({
 		retry: false,
 	});
 	const unread = notifData?.unread ?? 0;
+
+	// v1.3 SAFETY-BADGE-01: poll unreviewed safety flag count every 60s.
+	// Less frequent than notifications since safety flags are rare. Red dot
+	// shows on the Safety nav item when any unreviewed flag exists within
+	// the last 24h (server-side filter — see /api/ops/safety/unreviewed-count).
+	const { data: safetyData } = useQuery({
+		queryKey: ["safety-unreviewed"],
+		queryFn: () =>
+			fetch("/api/ops/safety/unreviewed-count").then(
+				(r) => r.json() as Promise<{ count: number }>,
+			),
+		refetchInterval: 60_000,
+		retry: false,
+	});
+	const safetyUnreviewed = safetyData?.count ?? 0;
 
 	const activePane = NAV.find((item) =>
 		location.pathname.startsWith(item.href),
@@ -143,12 +161,15 @@ export function WorkspaceShell({
 							<ul className="flex flex-col items-center gap-1 mt-3">
 								{ADMIN_NAV.map((item) => {
 									const active = location.pathname.startsWith(item.href);
+									// SAFETY-BADGE-01: red dot on the Safety item when unreviewed flags exist
+									const showBadge =
+										item.href === "/ops/safety" && safetyUnreviewed > 0;
 									return (
-										<li key={item.href}>
+										<li key={item.href} className="relative">
 											<Link
 												to={item.href}
 												title={item.label}
-												className={`flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all ${
+												className={`relative flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all ${
 													active
 														? "bg-white text-slate-900 shadow-lg shadow-black/20"
 														: "text-slate-400 hover:bg-white/10 hover:text-white"
@@ -158,6 +179,12 @@ export function WorkspaceShell({
 												<span className="text-[10px] font-semibold leading-none mt-1">
 													{item.label}
 												</span>
+												{showBadge && (
+													<span
+														aria-hidden="true"
+														className="absolute top-1 right-1 inline-flex h-2 w-2 rounded-full bg-rose-500 ring-2 ring-slate-900"
+													/>
+												)}
 											</Link>
 										</li>
 									);

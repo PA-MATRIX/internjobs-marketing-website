@@ -26,6 +26,8 @@ import {
 } from "./lib/email-helpers";
 import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
+// v1.3 Phase 20 SAFETY-VIEW-01: /api/ops/safety
+import { opsSafety } from "./routes/ops-safety";
 import {
 	createRoom,
 	deleteRoom,
@@ -733,6 +735,14 @@ app.get(
 
 app.route("/api/admin/employees", adminEmployees);
 app.route("/oidc", oidc);
+
+// v1.3 Phase 20 SAFETY-VIEW-01: /api/ops/safety
+// Every sub-route requires employee auth (requireEmployeeMailbox below).
+// Per-route operator-gating is inside `opsSafety` itself — the
+// /unreviewed-count sub-route is accessible to any employee (badge logic);
+// list + mark-reviewed apply requireOperator at the route level inside ops-safety.ts.
+app.use("/api/ops/safety/*", requireEmployeeMailbox);
+app.route("/api/ops/safety", opsSafety);
 
 // ── Phase 12 smoke test (dev-only) ──────────────────────────────
 // Hit with: curl -X POST http://localhost:8787/api/dev/smoke/seed-email \

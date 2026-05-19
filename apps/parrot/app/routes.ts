@@ -35,4 +35,6 @@ export default [
 	// match the file naming convention already in use.
 	route("admin", "routes/admin.tsx"),
 	route("admin/invite", "routes/admin.invite.tsx"),
+	// v1.3 Phase 20 SAFETY-VIEW-01: Lakera screening operator log.
+	route("ops/safety", "routes/ops.safety.tsx"),
 ] satisfies RouteConfig;
