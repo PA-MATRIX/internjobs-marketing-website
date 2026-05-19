@@ -193,7 +193,14 @@ export async function callAiGateway(
  * @param text         - Email or chat content to extract todos from (trimmed to 8000 chars).
  * @param clerkUserId  - Employee's stable Clerk user_id — plumbed from EmployeeMailboxDO profile.
  * @param cacheTtl     - Seconds for AI Gateway prompt cache. 3600 for email, 1800 for chat.
+ *                       Overridden to 0 when `contextBlock` is non-empty (personalized prompt
+ *                       must not be served from cache — see Phase 14 Wave 2).
  * @param env          - Worker env (needs CLOUDFLARE_AI_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, PARROT_AI_GATEWAY_ID).
+ * @param contextBlock - Optional graph-derived `<employee_context>` prose (built by
+ *                       `getEmployeeContext()` in workers/lib/graph.ts) to prepend to the
+ *                       system prompt. Phase 14 Wave 2 — when present, AI Gateway cache is
+ *                       bypassed for this call (cf-aig-cache-ttl=0). Backward-compatible:
+ *                       existing 4-arg callers continue to work unchanged.
  *
  * Returns [] on any error, 429, or missing env — caller must NOT let extraction
  * failure block email storage or alarm rescheduling.
@@ -207,13 +214,23 @@ export async function extractTodosFromText(
 	clerkUserId: string,
 	cacheTtl: number,
 	env: Env,
+	// When contextBlock is present, cf-aig-cache-ttl is forced to 0 — personalized
+	// prompts must not be served from cache (they contain per-employee open-todo state).
+	contextBlock?: string,
 ): Promise<ExtractedTodo[]> {
 	try {
+		// Phase 14 Wave 2: prepend the graph-derived <employee_context> block
+		// (already wrapped by getEmployeeContext()) before the static <role>
+		// system prompt. When absent or empty, the prompt is unchanged from
+		// Phase 12 Wave 1 and remains cacheable at the original cacheTtl.
+		const hasContext = !!contextBlock && contextBlock.length > 0;
+		const effectiveCacheTtl = hasContext ? 0 : cacheTtl;
+		const systemPrefix = hasContext ? `${contextBlock}\n\n` : "";
 		const data = await callAiGateway(
 			[
 				{
 					role: "system",
-					content: `<role>
+					content: `${systemPrefix}<role>
 You extract action items from a workplace message on behalf of one specific recipient. Your job is to surface ANYTHING they need to follow up on, respond to, decide, or attend to. The downstream ranking layer handles prioritization — your job is recall, not filtering.
 </role>
 
@@ -269,7 +286,7 @@ Return ONLY JSON matching the provided schema. Return {"todos":[]} when nothing 
 				{ role: "user", content: text.slice(0, 8000) },
 			],
 			clerkUserId,
-			cacheTtl,
+			effectiveCacheTtl,
 			env,
 		);
 
