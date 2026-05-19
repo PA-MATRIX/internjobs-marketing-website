@@ -27,6 +27,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "~/lib/api";
+import { fireConfetti } from "~/lib/confetti";
 
 interface Props {
 	initialDisplayName: string;
@@ -79,6 +80,9 @@ export function OnboardingWizard({
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["parrot", "me"] });
 			setOpen(false);
+			// Phase 17: celebrate onboarding completion — fires once per browser
+			// per the localStorage gate inside fireConfetti.
+			void fireConfetti("onboarding_complete");
 			onComplete?.();
 		},
 	});

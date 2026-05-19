@@ -4,6 +4,12 @@
 // this button creates a real ephemeral Daily.co room (1-hour exp), opens
 // it in a new tab, and navigates to /meetings.
 //
+// Phase 17 (2026-05-19): on the first successful real-room start (per
+// browser, gated by localStorage in lib/confetti.ts), fire a tasteful
+// confetti burst — small dose of joy for the HS/college intern audience.
+
+import { fireConfetti } from "~/lib/confetti";
+//
 // Fallback: when the server returns reason:'meetings_coming_soon' (i.e.
 // DAILY_API_KEY is absent or Daily.co is down), the Phase 13 toast is
 // shown instead — zero regression.
@@ -30,6 +36,8 @@ export function StartMeeting() {
 				// /meetings so the Parrot Meetings pane shows the room and
 				// other employees can join from there.
 				window.open(data.url, "_blank", "noopener,noreferrer");
+				// Phase 17: confetti on first real meeting (once per browser).
+				void fireConfetti("first_meeting_started");
 				navigate("/meetings");
 				return;
 			}

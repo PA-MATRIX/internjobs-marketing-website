@@ -30,6 +30,8 @@
 		"@tiptap/extension-underline": "3.20.2",
 		"@tiptap/react": "3.20.2",
 		"@tiptap/starter-kit": "3.20.2",
+		"@types/canvas-confetti": "^1.9.0",
+		"canvas-confetti": "^1.9.4",
 		"dompurify": "^3.3.3",
 		"drizzle-orm": "^0.45.1",
 		"falkordb": "^6.6.2",
