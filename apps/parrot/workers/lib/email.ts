@@ -21,41 +21,101 @@ export interface WelcomeEmailInput {
 	employeeName: string;
 	workspaceEmail: string;
 	signinUrl: string;
+	/**
+	 * Display name of the operator (e.g. "Ridhi") sending the invite. Used
+	 * in the signature line and (alongside `inviterEmail`) personalizes the
+	 * From identity so invitees see the email coming from a real person on
+	 * the team, not a system address.
+	 */
+	inviterName?: string;
+	/**
+	 * From address for the welcome email (e.g. "ridhi@internjobs.ai"). Falls
+	 * back to noreply@internjobs.ai when the route handler can't resolve the
+	 * operator identity (defensive — keeps the path working for legacy
+	 * non-operator-context callers).
+	 */
+	inviterEmail?: string;
+	/**
+	 * E.164 phone number the invitee should use to log in at
+	 * workspace.internjobs.ai (phone-OTP auth). When present, the login
+	 * instructions tell the invitee to enter THIS phone number. When
+	 * absent, we fall back to the legacy email-OTP instructions for
+	 * backward compatibility with callers that haven't migrated.
+	 */
+	phoneNumber?: string;
 }
 
 function renderWelcomeText(input: WelcomeEmailInput): string {
-	const { employeeName, workspaceEmail, signinUrl } = input;
+	const {
+		employeeName,
+		workspaceEmail,
+		signinUrl,
+		phoneNumber,
+		inviterName,
+		inviterEmail,
+	} = input;
+	const ridhi = inviterName || "The InternJobs team";
+	const ridhiEmail = inviterEmail || "noreply@internjobs.ai";
+
+	// When phoneNumber is supplied → phone-OTP narrative. When absent →
+	// fall back to the legacy email-OTP copy so callers that haven't been
+	// updated yet continue to send a coherent email.
+	const loginLine = phoneNumber
+		? `When you open that link, enter your phone number (${phoneNumber}). You'll get a one-time code — paste it in and you're in.`
+		: `When you open that link, enter your work email (${workspaceEmail}). You'll get a one-time code at that mailbox — paste it in and you're in.`;
+
 	return [
 		`Hi ${employeeName},`,
 		"",
-		"Welcome to InternJobs! Your work email is ready:",
+		`I'm so excited you're joining InternJobs! We're on a mission to connect ambitious high school and college students with meaningful internship opportunities — and you're going to be a huge part of making that happen.`,
+		"",
+		"Your work email is ready:",
 		"",
 		`  ${workspaceEmail}`,
 		"",
-		"To sign in to the workspace (email, chat, meetings), open:",
+		"Here's how to log in to your workspace (email, chat, and meetings):",
 		"",
 		`  ${signinUrl}`,
 		"",
-		`When prompted, enter your work email (${workspaceEmail}). We'll send a one-time code to that mailbox; the code will be forwarded to this address so you can paste it back in.`,
+		loginLine,
 		"",
-		"— The InternJobs team",
+		"I'll be right there to help you get set up. Can't wait to work with you!",
+		"",
+		`— ${ridhi}`,
+		`  Founder, InternJobs`,
+		`  ${ridhiEmail}`,
 	].join("\n");
 }
 
 function renderWelcomeHtml(input: WelcomeEmailInput): string {
-	const { employeeName, workspaceEmail, signinUrl } = input;
+	const {
+		employeeName,
+		workspaceEmail,
+		signinUrl,
+		phoneNumber,
+		inviterName,
+		inviterEmail,
+	} = input;
 	const safeName = escapeHtml(employeeName);
 	const safeEmail = escapeHtml(workspaceEmail);
 	const safeUrl = escapeHtml(signinUrl);
+	const safeInviter = escapeHtml(inviterName || "The InternJobs team");
+	const safeInviterEmail = escapeHtml(inviterEmail || "noreply@internjobs.ai");
+	const loginInstruction = phoneNumber
+		? `When you open that link, enter your phone number (<strong>${escapeHtml(phoneNumber)}</strong>). You'll get a one-time code — paste it in and you're in.`
+		: `When you open that link, enter your work email (<strong>${safeEmail}</strong>). You'll get a one-time code at that mailbox — paste it in and you're in.`;
+
 	return `<!doctype html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
-  <h1 style="font-size:20px;margin:0 0 16px">Welcome to InternJobs, ${safeName}</h1>
+  <p>Hi ${safeName},</p>
+  <p>I'm so excited you're joining InternJobs! We're on a mission to connect ambitious high school and college students with meaningful internship opportunities — and you're going to be a huge part of making that happen.</p>
   <p>Your work email is ready:</p>
   <p style="font-family:monospace;background:#f1f5f9;padding:12px;border-radius:6px"><strong>${safeEmail}</strong></p>
-  <p>Sign in to the workspace (email, chat, meetings):</p>
+  <p>Here's how to log in to your workspace (email, chat, and meetings):</p>
   <p><a href="${safeUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Open workspace</a></p>
-  <p style="font-size:13px;color:#475569;margin-top:24px">When prompted, enter your work email (<strong>${safeEmail}</strong>). We'll send a one-time code to that mailbox; the code will be forwarded to this address so you can paste it back in.</p>
-  <p style="font-size:13px;color:#475569">— The InternJobs team</p>
+  <p style="font-size:13px;color:#475569;margin-top:24px">${loginInstruction}</p>
+  <p>I'll be right there to help you get set up. Can't wait to work with you!</p>
+  <p style="font-size:13px;color:#475569;margin-top:24px">— ${safeInviter}<br>Founder, InternJobs<br>${safeInviterEmail}</p>
 </body></html>`;
 }
 
@@ -80,10 +140,14 @@ export async function sendWelcomeEmail(
 	env: Env,
 	input: WelcomeEmailInput,
 ): Promise<{ messageId: string | null; transport: "binding" | "rest" }> {
-	const subject = "Welcome to InternJobs — your work email is ready";
+	const subject = "You're joining InternJobs — here's how to get in";
 	const text = renderWelcomeText(input);
 	const html = renderWelcomeHtml(input);
-	const from = "noreply@internjobs.ai";
+	// Personalize the From identity to the inviting operator (e.g. Ridhi).
+	// Default to noreply@internjobs.ai when the caller hasn't supplied a
+	// resolved operator identity — keeps the path working for any legacy
+	// callsite that hasn't been updated to pass inviterEmail.
+	const from = input.inviterEmail || "noreply@internjobs.ai";
 
 	// Path A: SendEmail binding (primary).
 	if (env.EMAIL) {
