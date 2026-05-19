@@ -128,4 +128,47 @@ export const employeeMailboxMigrations: Migration[] = [
 			);
 		`,
 	},
+	{
+		// v1.2 Phase 12 Wave 1: cross-channel todo store.
+		//
+		// The Dashboard Mothership Agent extracts action items from email
+		// (synchronously on createEmail()) and from Mattermost chat (via
+		// the DO alarm, every 2 minutes). Both write into this table; the
+		// Dashboard pane reads it via GET /api/dashboard/todos.
+		//
+		// Columns mirror the research spec exactly:
+		//   - source_channel constrained to the five channels we plan to
+		//     observe (email/chat/phone/sms/meeting). Phone/SMS/Meeting
+		//     have placeholder UI in Wave 1 but no ingest yet.
+		//   - urgency_score 0–100 is LLM-assigned; the ranking SQL combines
+		//     it with mention/deadline boosts and recency decay at read time.
+		//   - mentioned_actors is a JSON-encoded array stored as TEXT.
+		//   - is_mention is an INTEGER 0/1 (SQLite has no native bool).
+		//   - resolved_at NULL ⇒ active todo; non-null ⇒ resolved/dismissed.
+		//
+		// Indexes match the two read patterns:
+		//   - idx_todos_urgency: dashboard list query
+		//     (WHERE resolved_at IS NULL ORDER BY urgency_score DESC).
+		//   - idx_todos_source: dedup on (source_channel, source_id) so
+		//     the alarm's INSERT OR IGNORE on Mattermost re-polls is cheap.
+		name: "3_todos_table",
+		sql: `
+			CREATE TABLE todos (
+				id TEXT PRIMARY KEY,
+				employee_id TEXT NOT NULL,
+				source_channel TEXT NOT NULL CHECK (source_channel IN ('email','chat','phone','sms','meeting')),
+				source_id TEXT NOT NULL,
+				title TEXT NOT NULL,
+				preview TEXT,
+				urgency_score INTEGER NOT NULL DEFAULT 50,
+				deadline_at TEXT,
+				mentioned_actors TEXT,
+				is_mention INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				resolved_at TEXT
+			);
+			CREATE INDEX idx_todos_urgency ON todos(resolved_at, urgency_score DESC);
+			CREATE INDEX idx_todos_source ON todos(source_channel, source_id);
+		`,
+	},
 ];

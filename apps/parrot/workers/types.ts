@@ -37,6 +37,12 @@ type CfEnvBase = Omit<
 	| "WORKSPACE"
 	| "EMAIL"
 	| "BUCKET"
+	| "CLOUDFLARE_AI_API_TOKEN"
+	| "CLOUDFLARE_ACCOUNT_ID"
+	| "PARROT_AI_GATEWAY_ID"
+	| "KIMI_MODEL"
+	| "MATTERMOST_BOT_TOKEN"
+	| "PARROT_DEV_MODE"
 >;
 
 export interface Env extends CfEnvBase {
@@ -86,6 +92,20 @@ export interface Env extends CfEnvBase {
 	MATTERMOST_OIDC_CLIENT_SECRET?: string;
 	/** Expected Mattermost redirect URI (e.g. https://internjobs-mattermost.fly.dev/signup/gitlab/complete). */
 	MATTERMOST_OIDC_REDIRECT_URI?: string;
+
+	// — Phase 12 Wave 1: Dashboard Mothership Agent (Workers AI via AI Gateway)
+	/** Workers AI API token (scoped to Workers AI). Set via `wrangler secret put`. */
+	CLOUDFLARE_AI_API_TOKEN: string;
+	/** Cloudflare account ID for AI Gateway routing. */
+	CLOUDFLARE_ACCOUNT_ID: string;
+	/** Cloudflare AI Gateway ID for the internjobs-parrot gateway. Set via `wrangler secret put`. */
+	PARROT_AI_GATEWAY_ID: string;
+	/** Workers AI model ID for todo extraction. Default: @cf/moonshotai/kimi-k2.6 */
+	KIMI_MODEL: string;
+	/** Mattermost bot personal access token for REST API polling. */
+	MATTERMOST_BOT_TOKEN?: string;
+	/** Set to "1" in wrangler dev to enable dev-only smoke endpoints. Never set in production. */
+	PARROT_DEV_MODE?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).

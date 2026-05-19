@@ -42,3 +42,23 @@ export const attachments = sqliteTable("attachments", {
 	content_id: text("content_id"),
 	disposition: text("disposition"),
 });
+
+// v1.2 Phase 12 Wave 1: cross-channel todo store.
+// Drizzle mirror of migration 3_todos_table. Column names/types match
+// the SQL exactly so the agent can write via Drizzle and read via the
+// ranking SQL query (which uses raw SQL for the integer-arithmetic
+// ORDER BY expression).
+export const todos = sqliteTable("todos", {
+	id: text("id").primaryKey(),
+	employee_id: text("employee_id").notNull(),
+	source_channel: text("source_channel").notNull(),
+	source_id: text("source_id").notNull(),
+	title: text("title").notNull(),
+	preview: text("preview"),
+	urgency_score: integer("urgency_score").notNull().default(50),
+	deadline_at: text("deadline_at"),
+	mentioned_actors: text("mentioned_actors"),
+	is_mention: integer("is_mention").notNull().default(0),
+	created_at: text("created_at"),
+	resolved_at: text("resolved_at"),
+});
