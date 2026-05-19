@@ -92,12 +92,12 @@ Plans:
 
 **Research flags**: ✓ DONE — FEATURES.md (policy), ARCHITECTURE.md (insertion points), PITFALLS.md (Cisco rebrand, latency, false positives)
 
-**Plans**: 3 plans (TBD)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 20-01: Lakera account provisioning + API verification + `LAKERA_GUARD_API_KEY` to Infisical + Node/Worker fetch helpers
-- [ ] 20-02: Insertion in `photon.mjs` (student SMS) + `inbound-email.ts` (Worker email) + hard-block / soft-flag / fail-open policy + agent-voice canned reply
-- [ ] 20-03: `safety_events` Neon table + `/ops/safety` route + red-dot badge + injection / benign / fail-open verification
+- [ ] 20-01-PLAN.md — Lakera account gate (checkpoint:human-action), `apps/app/src/safety/screen.mjs` (Node, 1s timeout, fail-open), `apps/parrot/workers/lib/safety.ts` (Worker TypeScript, same contract), `LAKERA_GUARD_API_KEY` to Infisical + both surfaces
+- [ ] 20-02-PLAN.md — Screen gate in `server.mjs` (photon + mac-bridge, BEFORE `runStudentInboundWorkflow`) + `inbound-email.ts` (BEFORE `createEmail()`); hard-block/soft-flag/fail-open policy; canned reply `"hey — couldn't process that one. try rephrasing?"`; email hard-block silent; p99 latency instrumentation
+- [ ] 20-03-PLAN.md — Neon migration `0009_v1_3_safety_events.sql`; `/api/ops/safety` Worker route + `/ops/safety` React route; red-dot badge on Safety nav item; `screen.test.mjs` with injection/benign/fail-open scenarios
 
 ---
 
@@ -135,7 +135,7 @@ Phase 18 → Phase 19 (blocked on 18) → Phase 20 (independent — can start wh
 |-------|-----------|----------------|--------|-----------|
 | 18. Graph Bridge Runtime | v1.3 | 0/3 | Planned | — |
 | 19. Todo Auto-Resolution | v1.3 | 0/3 | Not started | — |
-| 20. Pre-LLM Safety Screening | v1.3 | 0/3 | Not started | — |
+| 20. Pre-LLM Safety Screening | v1.3 | 0/3 | Planned | — |
 | 21. Credential Rotation | v1.3 | 0/3 | Not started | — |
 
 <details>
@@ -162,5 +162,5 @@ Marketing site + LinkedIn Clerk auth + Neon schema + Photon/Spectrum SMS + welco
 ---
 
 **Next Steps:**
-1. `/rrr:execute-phase 19` — Execute Phase 19 (Todo Auto-Resolution) after Phase 18 is complete
-2. `/rrr:plan-phase 18` — Build the execution plan for Phase 18 (Graph Bridge Runtime) if not yet done
+1. `/rrr:plan-phase 18` — Build the execution plan for Phase 18 (Graph Bridge Runtime)
+2. Optionally `/rrr:discuss-phase 18` first to surface implementation context
