@@ -1,6 +1,6 @@
 # Roadmap: InternJobs.ai
 
-**Status:** 🚧 v1.2 — Two-Sided Agent MVP (code-complete 2026-05-19; awaiting user-action gates + INTEG-01 prod smoke)
+**Status:** 🚧 v1.2 — Two-Sided Agent MVP (FULLY code-complete 2026-05-19 incl. Phase 11 Daily.co; awaiting user-action gates: DAILY_API_KEY + INTEG-01 prod smoke + browser visual verification)
 
 ## Milestones
 
@@ -32,7 +32,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [x] **Phase 07b: BlueBubbles + SIP-off Mac Bridge** — Native iMessage UX on HostMyApple Mac mini with BlueBubbles + Private API helper. Tapback + read receipt + held typing bubble across LLM round-trip. Full round-trip 4.1s. Shipped 2026-05-18.
 - [x] **Phase 09: LinkedIn Enrichment + QR Onboarding** — Standout-style flow: LinkedIn OAuth → Proxycurl/Cognee enrichment → QR-code phone pairing. Shipped 2026-05-18.
 - [x] **Phase 10: Parrot — Internal Employee Workspace (Wave 1+2+2b)** — `workspace.internjobs.ai` live with phone-OTP auth, Slack-style dual-rail UI (Dashboard / Email / Chat / Meetings), Mattermost-embedded Chat, embedded Clerk SignIn, UserMenu with sign-out, CF Email Routing per employee. Two separate production Clerk apps (student + employee) instead of the originally-planned shared instance. Shipped 2026-05-19. (Waves 3, 4, 5 split into Phase 11, 12, 13 below.)
-- [ ] **Phase 11: Daily.co Integration (was Parrot Wave 3)** — Daily.co account + REST + JS SDK embed in Parrot's Meetings pane. Per-employee always-on personal rooms. "Start meeting" CTAs from Inbox + Chat. (Split from Phase 10 on 2026-05-19.)
+- [x] **Phase 11: Daily.co Integration (was Parrot Wave 3)** — Daily.co REST helper + `@daily-co/daily-react` SDK embed in Parrot Meetings pane (3-tab nav: Your room / Active rooms / History). Per-employee always-on personal rooms (`parrot-{clerk_user_id}`) via migration 6. Ephemeral 1h rooms via `startEphemeralMeeting()` upgrade Phase 13 StartMeeting CTA from toast → real Daily.co room (migration 7 adds `meeting_started` event_type). Fails soft when DAILY_API_KEY unset. Shipped 2026-05-19 (scope-reversal — was originally deferred 2026-05-19 morning, reinstated same day).
 - [x] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent (kimi-k2.6 via Cloudflare AI Gateway with per-employee daily caps) monitoring Email + Chat, extracting cross-channel todos via DO alarm-driven Mattermost polling + fire-and-forget email hook, ranking them with a hybrid urgency formula, and surfacing them on the Parrot Dashboard pane. Phone + SMS placeholder nav icons + route stubs (seams, not integrations) also ship here. Storage is `EmployeeMailboxDO` extended with a `todos` table — no new DO class, no Mastra in Parrot. Shipped 2026-05-19 (10 commits 5fe02a9..f7d4be6; 3 waves: 12-01 foundation + 12-02 ingest/extraction + 12-03 UI/ranking; verifier `human_needed` for live AI Gateway + browser checks; 1 advisory fixed inline as `f7d4be6`).
 - [x] **Phase 13: Cross-pane Actions + Launch Polish (was Parrot Wave 5)** — Email↔Chat↔Meeting cross-pane actions, unified notification pane (drawer + service worker + VAPID push), first-login wizard, feature-flag KV, /healthz, Sentry hook, PILOT-RUNBOOK.md. Daily.co STILL deferred — `StartMeeting` is a UI seam writing a notification row to measure pilot demand. Shipped 2026-05-19. (Split from Phase 10.)
 
