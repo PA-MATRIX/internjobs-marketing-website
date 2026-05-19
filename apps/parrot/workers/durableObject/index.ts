@@ -35,6 +35,12 @@ import {
 } from "../lib/mattermost";
 import { buildVapidAuthHeader } from "../lib/vapid";
 import { createRoom } from "../lib/daily";
+// Phase 14 Wave 2: graph wiring (fail-soft when FALKORDB_URL absent).
+import {
+	getEmployeeContext,
+	recordTodoFact,
+	ensureParrotGraphSchema,
+} from "../lib/graph";
 
 const ALLOWED_SORT_COLUMNS = [
 	"id",
@@ -628,6 +634,14 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				week: "AND created_at >= datetime('now', '-7 days')",
 			}[view] ?? "";
 
+		// Phase 14 Wave 2 (ROADMAP SC-7): resolved_at IS NULL = active in SQLite.
+		// The FalkorDB layer mirrors this via valid_to IS NULL on :Todo nodes
+		// (see graph.ts getActiveTodos). Auto-clear happens when recordTodoFact()
+		// is called for a thread reply that resolves the item — it sets valid_to
+		// on the :Todo node so it drops from getEmployeeContext() prose on the
+		// next extraction cycle. The SQLite row is closed via cleanupTodosForEmail()
+		// when the source email is deleted; cross-pane resolution is the graph's
+		// job, not SQLite's.
 		const rows = [
 			...this.ctx.storage.sql.exec(
 				`SELECT
@@ -702,11 +716,22 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	private async extractTodosFromEmail(email: EmailData, employeeId: string) {
 		try {
 			const text = [email.subject, email.body].filter(Boolean).join("\n\n");
+
+			// Phase 14 Wave 2: pre-extraction context from graph (fail-soft).
+			// ensureParrotGraphSchema is idempotent — first call per isolate
+			// boots the schema; subsequent calls return immediately.
+			// getEmployeeContext returns "" when FalkorDB is unreachable or
+			// when the employee has no open todos / collaborators yet, so the
+			// AI Gateway cache TTL stays at 3600 for that warm-up path.
+			void ensureParrotGraphSchema(this.env);
+			const contextBlock = await getEmployeeContext(this.env, employeeId);
+
 			const extracted = await extractTodosFromText(
 				text,
 				employeeId,
 				3600,
 				this.env,
+				contextBlock || undefined,
 			);
 			if (extracted === null || extracted.length === 0) {
 				// null indicates 429 quota exceeded — log audit event (best-effort).
@@ -732,6 +757,23 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					employee_id: employeeId,
 				})),
 			);
+
+			// Phase 14 Wave 2: persist todos to graph (fire-and-forget, never blocks).
+			// recordTodoFact is idempotent via deterministic hash id — re-runs
+			// over the same (employeeId, email.id) are MERGE-skipped server-side.
+			for (const t of extracted) {
+				void recordTodoFact(this.env, {
+					employeeId,
+					sourceChannel: "email",
+					sourceId: email.id,
+					title: t.title,
+					preview: t.preview,
+					urgencyScore: t.urgency_score,
+					deadlineAt: t.deadline_at ?? null,
+					mentionedActors: t.mentioned_actors ?? [],
+					isMention: t.is_mention,
+				});
+			}
 		} catch (err) {
 			console.error("extractTodosFromEmail failed", err);
 			// Fail-soft: never block email storage
@@ -866,12 +908,18 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		employeeId: string,
 	) {
 		try {
+			// Phase 14 Wave 2: pre-extraction context from graph (fail-soft).
+			// Same idempotent schema-bootstrap pattern as the email path.
+			void ensureParrotGraphSchema(this.env);
+			const contextBlock = await getEmployeeContext(this.env, employeeId);
+
 			// cacheTtl=1800 (30min) — chat posts are idempotent but refresh faster than email.
 			const extracted = await extractTodosFromText(
 				batchText,
 				employeeId,
 				1800,
 				this.env,
+				contextBlock || undefined,
 			);
 			if (extracted === null || extracted.length === 0) {
 				if (extracted === null) {
@@ -890,7 +938,12 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				return;
 			}
 			// Associate extracted todos with the first post in the batch as source_id.
-			const sourceId = posts[0]?.id ?? "batch";
+			// This matches the source_id stored in the todos SQLite table so the
+			// graph :Todo node id (sha256(employeeId|sourceId)) lines up with the
+			// SQLite (source_channel, source_id) unique-index key. Falls back to
+			// "unknown" if posts[] is empty for some reason (shouldn't happen —
+			// the alarm only calls this method when posts.length > 0).
+			const sourceId = posts[0]?.id ?? "unknown";
 			this.insertTodos(
 				extracted.map((t) => ({
 					...t,
@@ -899,6 +952,21 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					employee_id: employeeId,
 				})),
 			);
+
+			// Phase 14 Wave 2: persist todos to graph (fire-and-forget, never blocks).
+			for (const t of extracted) {
+				void recordTodoFact(this.env, {
+					employeeId,
+					sourceChannel: "chat",
+					sourceId,
+					title: t.title,
+					preview: t.preview,
+					urgencyScore: t.urgency_score,
+					deadlineAt: t.deadline_at ?? null,
+					mentionedActors: t.mentioned_actors ?? [],
+					isMention: t.is_mention,
+				});
+			}
 		} catch (err) {
 			console.error("extractTodosFromChat failed", err);
 		}
