@@ -170,3 +170,33 @@ export async function getMeetingToken(
 		body: JSON.stringify({ properties }),
 	});
 }
+
+/**
+ * Phase 11 Wave 2: list active Daily.co rooms (rooms that currently have
+ * participants OR are not yet expired). Used by the Meetings pane's
+ * "Active rooms" tab.
+ *
+ * Returns `[]` (an empty array, not null) on ANY failure:
+ *   - DAILY_API_KEY absent
+ *   - Daily.co non-2xx
+ *   - parse error / unexpected shape
+ *
+ * Rationale: the Active-rooms tab is an at-a-glance widget; we'd rather
+ * it render an empty list than a crash screen. Same fail-soft contract as
+ * the rest of this module, but the empty-array variant matches the
+ * caller's expectation (the UI iterates the result).
+ *
+ * Skills referenced:
+ *   cloudflare/skills: cloudflare — fetch() against Daily.co REST.
+ */
+export async function getActiveRooms(
+	apiKey: string | undefined,
+): Promise<DailyRoom[]> {
+	const result = await dailyFetch<{ data?: DailyRoom[] }>(
+		apiKey,
+		"/rooms?exclude_inactive=true",
+		{ method: "GET" },
+	);
+	if (!result || !Array.isArray(result.data)) return [];
+	return result.data;
+}

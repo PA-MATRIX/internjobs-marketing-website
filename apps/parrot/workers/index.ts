@@ -26,7 +26,13 @@ import {
 } from "./lib/email-helpers";
 import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
-import { createRoom, deleteRoom, getRoom } from "./lib/daily";
+import {
+	createRoom,
+	deleteRoom,
+	getActiveRooms,
+	getMeetingToken,
+	getRoom,
+} from "./lib/daily";
 import type { Env } from "./types";
 
 type AppContext = Context<ParrotContext>;
@@ -468,6 +474,103 @@ app.post(
 		return c.json({ ok: true, url: result.url, name: result.name });
 	},
 );
+
+// — Phase 11 Wave 2: read-only meeting endpoints --------------------
+//
+// GET /api/meetings/my-room — returns the employee's stored personal
+// room URL. Does NOT provision; caller must POST /api/meetings/ensure-room
+// first if the room hasn't been created yet. 404 with
+// `error: 'room_not_provisioned'` signals the UI to call ensure-room.
+//
+// Skills referenced:
+//   cloudflare/skills: durable-objects — read-only DO query.
+app.get(
+	"/api/meetings/my-room",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const room = await c.var.mailboxStub.getPersonalRoom();
+		if (!room) {
+			return c.json({ ok: false, error: "room_not_provisioned" }, 404);
+		}
+		return c.json({ ok: true, url: room.url, name: room.name });
+	},
+);
+
+// GET /api/meetings/room-token — mints a per-call Daily.co meeting token
+// for the employee's personal room. is_owner: true (it's their own room).
+//
+// Fail-soft posture: returns { ok: false, error: 'token_mint_unavailable' }
+// (HTTP 200) when DAILY_API_KEY is absent. The UI falls back to joining
+// without a token — Daily.co still allows entry to private rooms via the
+// shared room URL alone, so we prefer "enter as guest" over blocking the
+// employee out of their own room when the secret isn't provisioned.
+app.get(
+	"/api/meetings/room-token",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const room = await c.var.mailboxStub.getPersonalRoom();
+		if (!room) {
+			return c.json({ ok: false, error: "room_not_provisioned" }, 404);
+		}
+		const token = await getMeetingToken(c.env.DAILY_API_KEY, room.name, {
+			is_owner: true,
+			user_name: c.var.employee.displayName,
+		});
+		if (!token) {
+			return c.json({ ok: false, error: "token_mint_unavailable" });
+		}
+		return c.json({ ok: true, token: token.token });
+	},
+);
+
+// GET /api/meetings/active — list of active rooms (rooms not expired).
+// Returns { rooms: [] } when DAILY_API_KEY is absent (fail-soft empty list).
+app.get(
+	"/api/meetings/active",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const rooms = await getActiveRooms(c.env.DAILY_API_KEY);
+		return c.json({
+			rooms: rooms.map((r) => ({ name: r.name, url: r.url })),
+		});
+	},
+);
+
+// — Phase 11 Wave 2: dev smoke endpoint for token issuance ---------
+//
+// POST /api/dev/smoke/dailyco-token — PARROT_DEV_MODE-gated. Asserts
+// that getMeetingToken() returns a JSON-shaped response (pass:true when
+// DAILY_API_KEY is set AND a token came back; pass:false with a clear
+// reason when the key is absent — NEVER a 5xx).
+//
+// Auth gate: PARROT_DEV_MODE only, NOT requireEmployeeMailbox — exercises
+// only Worker→Daily.co plumbing (mints a token against a throwaway room
+// name), no DO involvement. Matches the design of /api/dev/smoke/dailyco.
+app.post("/api/dev/smoke/dailyco-token", async (c: AppContext) => {
+	if (!c.env.PARROT_DEV_MODE) {
+		return c.json({ error: "dev mode only" }, 403);
+	}
+	if (!c.env.DAILY_API_KEY) {
+		return c.json({
+			pass: false,
+			reason: "daily_api_key_missing",
+			detail: "DAILY_API_KEY not set on Worker; token mint skipped.",
+		});
+	}
+	// Use a deterministic throwaway room name; we do NOT need the room
+	// to exist for getMeetingToken() to return a JSON response (Daily.co
+	// accepts any room_name property on the token).
+	const roomName = `parrot-smoke-${Date.now()}`;
+	const token = await getMeetingToken(c.env.DAILY_API_KEY, roomName, {
+		is_owner: true,
+		user_name: "smoke-test",
+	});
+	return c.json({
+		pass: !!token,
+		token_minted: !!token,
+		room_name: roomName,
+	});
+});
 
 // Backwards-compat alias for the old Wave-3 stub. Callers that still
 // hit /api/meetings/create get redirected to /ensure-room rather than 404.

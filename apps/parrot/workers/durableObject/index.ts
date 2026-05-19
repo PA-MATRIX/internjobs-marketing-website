@@ -1362,4 +1362,33 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 
 		return { ok: true, url: room.url, name: roomName };
 	}
+
+	/**
+	 * Phase 11 Wave 2: read-only accessor for the employee's personal
+	 * Daily.co room. Unlike ensurePersonalRoom(), this NEVER calls
+	 * Daily.co — it only reads what we've already persisted. If the room
+	 * has not been provisioned yet, returns null.
+	 *
+	 * The Meetings pane uses this to render the room embed without
+	 * accidentally provisioning on every page load (callers MUST POST
+	 * /api/meetings/ensure-room first to provision lazily).
+	 *
+	 * Skills referenced:
+	 *   cloudflare/skills: durable-objects — per-employee room read.
+	 */
+	async getPersonalRoom(): Promise<{ url: string; name: string } | null> {
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT personal_room_name, personal_room_url
+				 FROM profile WHERE id = 1`,
+			),
+		] as Array<{
+			personal_room_name: string | null;
+			personal_room_url: string | null;
+		}>;
+		if (rows.length === 0) return null;
+		const row = rows[0];
+		if (!row.personal_room_url || !row.personal_room_name) return null;
+		return { url: row.personal_room_url, name: row.personal_room_name };
+	}
 }
