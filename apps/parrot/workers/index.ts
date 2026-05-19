@@ -462,15 +462,86 @@ app.get(
 // Wave 1: returns `{ todos: [] }` (the DO stub returns an empty array
 // until Wave 2 lands the ingest pipeline). The `view` query param is
 // already plumbed through so the React UI can ship final-state code:
-//   ?view=all | mentions | today | week
+//   ?view=all | mentions | today | week | resolved
+//
+// v1.3 Phase 19 Plan 02: `?view=resolved` returns last-48h resolved todos
+// (agent-cleared by the cron + manually-resolved via cleanupTodosForEmail).
+// Active views are unchanged — resolved_at IS NULL gate stays in getTodos.
 app.get(
 	"/api/dashboard/todos",
 	requireEmployeeMailbox,
 	async (c: AppContext) => {
 		const stub = c.var.mailboxStub;
 		const view = c.req.query("view") ?? "all";
+
+		// AUTO-CLEAR-08: resolved view returns agent-cleared + manually-resolved todos.
+		// Separate DO method (getResolvedTodos) so the active-list ranking query stays
+		// untouched and the resolved query can apply its own ORDER BY resolved_at DESC.
+		if (view === "resolved") {
+			const todos = await stub.getResolvedTodos();
+			return c.json({ todos });
+		}
+
+		// Existing active-todos views: all | mentions | today | week
 		const todos = await stub.getTodos(view);
 		return c.json({ todos });
+	},
+);
+
+// v1.3 Phase 19 Plan 02: POST /api/dashboard/todos/:id/unresolve
+//
+// Undoes an agent auto-resolution. Sets resolved_at = NULL on the DO
+// and attempts to clear valid_to in the graph (fail-soft).
+//
+// Idempotent: calling on an already-active todo is a no-op (the DO method
+// guards on resolution_source = 'agent'). User-resolved todos (NULL source)
+// are also refused — only agent-cleared rows can be undone.
+//
+// Graph-side fail-soft posture (AUTO-CLEAR-07): if the graph proxy is
+// unavailable, we still return success. The DO row is the source of truth
+// for the dashboard; the graph will stay stale (valid_to still set) until
+// the next recordTodoFact write for that todo. UX trumps consistency.
+//
+// AUTO-CLEAR-06, AUTO-CLEAR-07
+app.post(
+	"/api/dashboard/todos/:id/unresolve",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const todoId = c.req.param("id");
+		if (!todoId) return c.json({ error: "Missing todo id" }, 400);
+
+		const stub = c.var.mailboxStub;
+
+		// Step 1: clear the SQLite row — primary action.
+		const result = await stub.unresolveTodo(todoId);
+
+		// Step 2: fail-soft graph clear — sets valid_to = null on :Todo node.
+		// Wrapped in a wide try/catch so any graph-proxy hiccup (DNS, 5xx,
+		// auth, timeout, parse error) does not 500 the Undo button.
+		try {
+			const graphApiUrl = c.env.GRAPH_API_URL;
+			const graphApiSecret = c.env.GRAPH_API_SECRET;
+			if (graphApiUrl && graphApiSecret) {
+				await fetch(`${graphApiUrl}/query`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${graphApiSecret}`,
+					},
+					body: JSON.stringify({
+						cypher: `MATCH (t:Todo {id: $tid}) SET t.valid_to = null`,
+						params: { tid: todoId },
+					}),
+				});
+				// Intentionally ignoring the response — fail-soft means we don't
+				// error even if the graph query fails. The DO row is authoritative.
+			}
+		} catch {
+			// Swallow graph errors — UX trumps consistency here (REQUIREMENTS.md
+			// PARROT-AUTO-CLEAR).
+		}
+
+		return c.json({ ok: true, unresolved: result.unresolved });
 	},
 );
 

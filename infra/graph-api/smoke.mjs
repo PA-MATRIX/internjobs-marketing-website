@@ -258,17 +258,106 @@ try {
   fail("getEmployeeContext", err);
 }
 
+// ─── Test 5 (v1.3 Phase 19 Plan 02): auto_clear_valid_to_resolves_todo ──────
+//
+// Cross-namespace invariant: seed a :Todo node with valid_to set 10 minutes
+// in the past, then confirm the grace-period Cypher used by
+// workers/lib/auto-clear.ts (`WHERE valid_to < datetime() - duration({minutes: 5})`)
+// returns that node as a closed-todo candidate.
+//
+// This is the one untested code path from research SUMMARY.md §8 open
+// question 3: Cypher :Todo nodes (Parrot label namespace) queried against
+// valid_to. The earlier tests prove the namespace exists with HAS_TODO
+// edges; this test proves the auto-clear reconciliation loop actually
+// finds closed todos via the grace-period predicate.
+//
+// Cleanup: deletes its test :Todo node at the end (MATCH ... DELETE).
+//
+// AUTO-CLEAR-VERIFY-01, AUTO-CLEAR-VERIFY-02
+console.log(
+  "\n[5/5] auto_clear_valid_to_resolves_todo — :Todo with valid_to 10m ago appears in closed-todos query",
+);
+const AUTO_CLEAR_TEST_ID = `smoke-auto-clear-${Date.now()}`;
+const AUTO_CLEAR_TEST_SOURCE = `smoke-auto-clear-source-${Date.now()}`;
+try {
+  // Seed a :Todo node whose valid_to is 10 minutes in the past (well past
+  // the 5-minute grace window). Use a UNIQUE id so concurrent smoke runs
+  // don't collide.
+  const tenMinAgoIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await query(
+    `MERGE (t:Todo {id: $tid})
+       ON CREATE SET
+         t.employee_id = $eid,
+         t.source_id = $sid,
+         t.source_channel = 'email',
+         t.title = 'Smoke: auto-clear invariant',
+         t.urgency_score = 50,
+         t.is_mention = false,
+         t.valid_from = $tenMinAgo,
+         t.valid_to = $tenMinAgo
+     RETURN t.id`,
+    {
+      tid: AUTO_CLEAR_TEST_ID,
+      eid: SMOKE_EMPLOYEE_ID,
+      sid: AUTO_CLEAR_TEST_SOURCE,
+      tenMinAgo: tenMinAgoIso,
+    },
+  );
+
+  // Now run the EXACT Cypher that workers/lib/auto-clear.ts uses
+  // (FIND_CLOSED_TODOS_CYPHER). The seeded todo must appear in the result
+  // set — if it doesn't, the grace-period predicate is broken and the
+  // production cron would never auto-clear anything.
+  const res = await query(
+    `MATCH (t:Todo)
+     WHERE t.valid_to IS NOT NULL
+       AND t.valid_to < datetime() - duration({minutes: 5})
+     RETURN t.source_id AS source_id,
+            t.employee_id AS employee_id,
+            t.valid_to AS valid_to
+     LIMIT 100`,
+  );
+  const rows = res?.data ?? [];
+  // Find OUR seeded row by source_id (some prior smoke runs may have left
+  // other expired :Todo nodes; we only care that ours shows up).
+  const found = rows.find((r) => {
+    const arr = Array.isArray(r) ? r : Object.values(r);
+    return String(arr[0] ?? "") === AUTO_CLEAR_TEST_SOURCE;
+  });
+  if (!found) {
+    throw new Error(
+      `expected 1 closed todo with source_id=${AUTO_CLEAR_TEST_SOURCE}, got ${rows.length} total rows (none matching). Grace-period Cypher may be broken.`,
+    );
+  }
+
+  pass("auto_clear_valid_to_resolves_todo");
+} catch (err) {
+  fail("auto_clear_valid_to_resolves_todo", err);
+} finally {
+  // Cleanup: best-effort DELETE the test node so the graph stays tidy.
+  // Wrapped in try/catch — if DELETE fails (e.g., proxy down), surface a
+  // warning but don't flip the test result.
+  try {
+    await query(`MATCH (t:Todo {id: $tid}) DELETE t`, { tid: AUTO_CLEAR_TEST_ID });
+  } catch (cleanupErr) {
+    console.warn(
+      `  WARN  auto_clear cleanup failed (graph node ${AUTO_CLEAR_TEST_ID} may persist): ${cleanupErr?.message ?? cleanupErr}`,
+    );
+  }
+}
+
 // ─── Results ─────────────────────────────────────────────────────────────────
+const total = passed + failed;
 console.log(`\n${"─".repeat(50)}`);
-console.log(`Smoke test results: ${passed}/4 PASS, ${failed}/4 FAIL`);
+console.log(`Smoke test results: ${passed}/${total} PASS, ${failed}/${total} FAIL`);
 if (failed > 0) {
   console.error(
-    "SMOKE TEST FAILED — do not enable graph writes in production until all 4 pass.",
+    "SMOKE TEST FAILED — do not enable graph writes in production until all invariants pass.",
   );
   process.exit(1);
 } else {
   console.log(
-    "SMOKE TEST PASSED — graph proxy + FalkorDB Cypher verified against production.",
+    "SMOKE TEST PASSED — graph proxy + FalkorDB Cypher + auto-clear invariant verified against production.",
   );
   process.exit(0);
 }
