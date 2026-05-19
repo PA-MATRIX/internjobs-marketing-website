@@ -99,6 +99,8 @@ export interface EmployeeProfile {
 	email: string;
 	displayName: string;
 	createdAt: string;
+	/** Phase 13 Wave 3: NULL until the onboarding wizard is completed. */
+	onboardedAt: string | null;
 }
 
 export class EmployeeMailboxDO extends DurableObject<Env> {
@@ -152,7 +154,8 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	async getProfile(): Promise<EmployeeProfile | null> {
 		const row = [
 			...this.ctx.storage.sql.exec(
-				`SELECT employee_id, email, display_name, created_at FROM profile WHERE id = 1`,
+				`SELECT employee_id, email, display_name, created_at, onboarded_at
+				 FROM profile WHERE id = 1`,
 			),
 		][0] as
 			| {
@@ -160,6 +163,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					email: string;
 					display_name: string;
 					created_at: string;
+					onboarded_at: string | null;
 			  }
 			| undefined;
 		if (!row) return null;
@@ -168,7 +172,93 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			email: row.email,
 			displayName: row.display_name,
 			createdAt: row.created_at,
+			onboardedAt: row.onboarded_at ?? null,
 		};
+	}
+
+	// ── Phase 13 Wave 3: onboarding + feature flags ─────────────────
+
+	/**
+	 * Mark this employee as onboarded. Called from POST /api/onboarding/complete
+	 * when the wizard's final step succeeds. The Hono route owns input
+	 * validation; this method is intentionally side-effect-only.
+	 */
+	async setOnboardedAt(): Promise<void> {
+		const now = new Date().toISOString();
+		this.ctx.storage.sql.exec(
+			`UPDATE profile SET onboarded_at = ?1, updated_at = ?1 WHERE id = 1`,
+			now,
+		);
+	}
+
+	/**
+	 * Return merged feature flags: global defaults from PARROT_FEATURE_FLAGS
+	 * KV (key `global_defaults`) overlaid with per-employee overrides from
+	 * the profile.feature_flags JSON column. Employee overrides win.
+	 *
+	 * Degrades gracefully when the KV namespace is unbound (dev without KV):
+	 * returns the canonical default-all-on map so the workspace stays usable.
+	 * Any unexpected error (KV throw, malformed JSON) also returns the
+	 * default-all-on map — we'd rather over-grant than lock the user out.
+	 *
+	 * Skills referenced:
+	 *   cloudflare/skills: durable-objects, cloudflare — KV read with safe
+	 *   defaults; per-employee override merge.
+	 */
+	async getFeatureFlags(): Promise<Record<string, boolean>> {
+		const defaults: Record<string, boolean> = {
+			cross_pane: true,
+			push: true,
+			onboarding_wizard: true,
+		};
+		try {
+			// 1. Per-employee overrides from the profile row (JSON).
+			const row = [
+				...this.ctx.storage.sql.exec(
+					`SELECT feature_flags FROM profile WHERE id = 1`,
+				),
+			][0] as { feature_flags: string | null } | undefined;
+			let employeeOverrides: Record<string, boolean> = {};
+			if (row?.feature_flags) {
+				try {
+					const parsed = JSON.parse(row.feature_flags);
+					if (parsed && typeof parsed === "object") {
+						employeeOverrides = parsed as Record<string, boolean>;
+					}
+				} catch {
+					/* malformed JSON in the column — ignore and use defaults */
+				}
+			}
+
+			// 2. Global defaults from KV (if bound).
+			let kvDefaults: Record<string, boolean> = {};
+			const kv = this.env.PARROT_FEATURE_FLAGS;
+			if (kv && typeof kv.get === "function") {
+				try {
+					const fromKv = await kv.get("global_defaults", { type: "json" });
+					if (fromKv && typeof fromKv === "object") {
+						kvDefaults = fromKv as Record<string, boolean>;
+					}
+				} catch {
+					/* KV miss / network blip — fall through to defaults */
+				}
+			}
+
+			return { ...defaults, ...kvDefaults, ...employeeOverrides };
+		} catch (err) {
+			console.error("getFeatureFlags failed; returning defaults", err);
+			return defaults;
+		}
+	}
+
+	/**
+	 * Convenience wrapper: returns `true` unless the named flag is
+	 * explicitly set to `false`. Missing keys default to enabled — we
+	 * roll out new features on by default and only override to disable.
+	 */
+	async isFeatureEnabled(flag: string): Promise<boolean> {
+		const flags = await this.getFeatureFlags();
+		return flags[flag] !== false;
 	}
 
 	// ── Email list / get (Drizzle) ─────────────────────────────────

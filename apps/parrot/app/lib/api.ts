@@ -58,6 +58,8 @@ export interface MeResponse {
 	display_name: string;
 	created_at: string;
 	role?: "operator" | "employee";
+	/** Phase 13 Wave 3: NULL until the onboarding wizard is completed. */
+	onboarded_at: string | null;
 }
 
 export interface InboxMessage {
@@ -170,5 +172,16 @@ export const api = {
 		request<{ ok: boolean }>("/api/push/subscribe", {
 			method: "DELETE",
 			body: JSON.stringify({ endpoint }),
+		}),
+	// — Phase 13 Wave 3: feature flags + onboarding wizard.
+	getFeatureFlags: () =>
+		request<{ flags: Record<string, boolean> }>("/api/feature-flags"),
+	completeOnboarding: (input: {
+		display_name?: string;
+		push_enabled?: boolean;
+	}) =>
+		request<{ ok: boolean }>("/api/onboarding/complete", {
+			method: "POST",
+			body: JSON.stringify(input),
 		}),
 };

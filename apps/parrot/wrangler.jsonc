@@ -94,6 +94,30 @@
 	//                              `npx web-push generate-vapid-keys --json` and
 	//                              store the private half here + in Infisical
 	//                              /internjobs-ai/PUSH_VAPID_PRIVATE_KEY. Never commit.
+	//   SENTRY_DSN               — Sentry ingestion DSN for unhandled Worker errors.
+	//                              sentry.io → New Project → Cloudflare Workers → copy DSN.
+	//                              Set via `wrangler secret put SENTRY_DSN` and also store
+	//                              in Infisical /internjobs-ai/SENTRY_DSN. Optional — the
+	//                              Worker boots and runs without it; errors fall back to
+	//                              console.error.
+	//
+	// Phase 13 Wave 3 — KV namespace for feature flags. Holds the
+	// `global_defaults` key (JSON object) used by getFeatureFlags() in
+	// EmployeeMailboxDO. Per-employee overrides live in the DO's
+	// profile.feature_flags JSON column instead (cheaper writes, scoped
+	// to the per-employee DO). The namespace id below is intentionally
+	// empty — fill in after running:
+	//   wrangler kv namespace create PARROT_FEATURE_FLAGS --name internjobs-parrot
+	// The id is NOT a secret (KV namespace IDs are safe to commit).
+	// The Worker degrades gracefully when the binding is unbound at
+	// runtime (getFeatureFlags() falls back to default-all-on).
+	"kv_namespaces": [
+		{
+			"binding": "PARROT_FEATURE_FLAGS",
+			"id": "",
+			"preview_id": ""
+		}
+	],
 	"send_email": [
 		{
 			"name": "EMAIL",

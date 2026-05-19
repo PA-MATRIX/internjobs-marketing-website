@@ -45,6 +45,8 @@ type CfEnvBase = Omit<
 	| "PARROT_DEV_MODE"
 	| "PUSH_VAPID_PRIVATE_KEY"
 	| "PUSH_VAPID_PUBLIC_KEY"
+	| "PARROT_FEATURE_FLAGS"
+	| "SENTRY_DSN"
 >;
 
 export interface Env extends CfEnvBase {
@@ -118,6 +120,16 @@ export interface Env extends CfEnvBase {
 	 *  (safe to commit). Forwarded to the client so PushManager.subscribe() can
 	 *  use it as `applicationServerKey`. */
 	PUSH_VAPID_PUBLIC_KEY?: string;
+
+	// — Phase 13 Wave 3: feature flags + error tracking.
+	/** KV namespace for per-employee + global feature flag overrides.
+	 *  Binding declared in wrangler.jsonc. Optional so the Worker boots without
+	 *  the binding (getFeatureFlags() falls back to default-all-on). */
+	PARROT_FEATURE_FLAGS?: KVNamespace;
+	/** Sentry DSN for error tracking in the Parrot Worker. Set via
+	 *  `wrangler secret put SENTRY_DSN`. Optional — reportToSentry() no-ops
+	 *  when the env var is absent. */
+	SENTRY_DSN?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).

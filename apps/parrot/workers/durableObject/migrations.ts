@@ -214,4 +214,24 @@ export const employeeMailboxMigrations: Migration[] = [
 			CREATE INDEX idx_push_subs_employee ON push_subscriptions(employee_id);
 		`,
 	},
+	{
+		// v1.2 Phase 13 Wave 3: first-login onboarding wizard + feature flags.
+		//
+		// Adds two columns to the `profile` table:
+		//   - onboarded_at: NULL until the employee completes the wizard.
+		//     Reading the wizard dismiss → completion gate uses this.
+		//   - feature_flags: per-employee JSON-encoded overrides (TEXT).
+		//     NULL means "use the global defaults from PARROT_FEATURE_FLAGS KV
+		//     only". When populated it's a JSON object that overrides per-flag.
+		//
+		// Both columns are NULL-safe ALTERs — no DEFAULT, no UPDATE pass —
+		// because every existing profile row was created BEFORE this migration
+		// and therefore IS NOT onboarded under the new schema. That maps to
+		// "show the wizard on next login" which is exactly what we want.
+		name: "5_onboarding_flags",
+		sql: `
+			ALTER TABLE profile ADD COLUMN onboarded_at TEXT;
+			ALTER TABLE profile ADD COLUMN feature_flags TEXT;
+		`,
+	},
 ];

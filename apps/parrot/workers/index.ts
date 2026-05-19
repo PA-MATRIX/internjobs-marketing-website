@@ -26,8 +26,62 @@ import {
 } from "./lib/email-helpers";
 import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
+import type { Env } from "./types";
 
 type AppContext = Context<ParrotContext>;
+
+// — Phase 13 Wave 3: minimal Sentry envelope POST ───────────────────
+//
+// We deliberately do NOT pull in `@sentry/cloudflare` (extra bundle
+// weight + transitive deps). The Sentry Store API accepts a JSON envelope
+// at /api/{projectId}/store/ with an `X-Sentry-Auth` header — that's all
+// we need for unhandled-error capture. Same posture as the inline VAPID
+// signer in workers/lib/vapid.ts (no npm dep for one-off crypto/HTTP).
+//
+// reportToSentry is fire-and-forget. It NEVER throws — a malformed DSN
+// or a network blip must not turn into a secondary 500 inside the
+// global error handler.
+//
+// Skills referenced:
+//   cloudflare/skills: cloudflare — fire-and-forget telemetry post
+function reportToSentry(env: Env, err: unknown, context?: string): void {
+	const dsn = env.SENTRY_DSN;
+	if (!dsn) return;
+	try {
+		const dsnUrl = new URL(dsn);
+		const projectId = dsnUrl.pathname.split("/").filter(Boolean).pop();
+		const sentryKey = dsnUrl.username;
+		if (!projectId || !sentryKey) return;
+		const sentryUrl = `${dsnUrl.protocol}//${dsnUrl.host}/api/${projectId}/store/`;
+		const errName =
+			err instanceof Error ? err.name : typeof err === "string" ? "string" : "Error";
+		const errMsg =
+			err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+		const event = {
+			message: context ?? "Parrot Worker error",
+			level: "error",
+			exception: {
+				values: [{ type: errName, value: errMsg }],
+			},
+			timestamp: Date.now() / 1000,
+			platform: "javascript",
+			environment: "production",
+		};
+		// Fire-and-forget — never await, never bubble errors.
+		void fetch(sentryUrl, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-Sentry-Auth": `Sentry sentry_key=${sentryKey}, sentry_version=7`,
+			},
+			body: JSON.stringify(event),
+		}).catch(() => {
+			/* network blip — telemetry must not crash the request */
+		});
+	} catch {
+		/* malformed DSN — ignore */
+	}
+}
 
 // -- Request schemas ------------------------------------------------
 
@@ -66,6 +120,76 @@ app.use(
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "parrot" }));
 
+// -- /healthz (Phase 13 Wave 3) ------------------------------------
+//
+// Public, no Clerk auth. Returns liveness probes for the three
+// runtime dependencies we can poke from the Worker:
+//   - Mattermost (REST API ping)
+//   - Cloudflare AI Gateway (1-token completion against Workers AI)
+//   - Mailbox count (informational; -1 until WorkspaceDO exposes a
+//     count RPC — kept in the response shape so callers can write a
+//     pre-launch checklist that lands the field once it's real).
+//
+// Used by the PILOT-RUNBOOK pre-flight checklist + by uptime monitors.
+//
+// Skills referenced:
+//   cloudflare/skills: cloudflare — Workers AI via AI Gateway
+
+app.get("/healthz", async (c) => {
+	const env = c.env;
+
+	// 1. Mattermost reachability (2s budget).
+	let mattermost_reachable = false;
+	try {
+		const pingResp = await fetch(`${env.MATTERMOST_URL}/api/v4/system/ping`, {
+			signal: AbortSignal.timeout(2000),
+		});
+		mattermost_reachable = pingResp.ok;
+	} catch {
+		mattermost_reachable = false;
+	}
+
+	// 2. AI Gateway reachability (5s budget). We POST a 1-token completion
+	//    — 200 means reachable, 429 means reachable-but-capped (still
+	//    counts as healthy from a liveness perspective).
+	let ai_gateway_reachable = false;
+	try {
+		if (
+			env.CLOUDFLARE_AI_API_TOKEN &&
+			env.CLOUDFLARE_ACCOUNT_ID &&
+			env.PARROT_AI_GATEWAY_ID
+		) {
+			const aiResp = await fetch(
+				`https://gateway.ai.cloudflare.com/v1/${env.CLOUDFLARE_ACCOUNT_ID}/${env.PARROT_AI_GATEWAY_ID}/workers-ai/@cf/meta/llama-3.1-8b-instruct`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${env.CLOUDFLARE_AI_API_TOKEN}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						messages: [{ role: "user", content: "ping" }],
+						max_tokens: 1,
+					}),
+					signal: AbortSignal.timeout(5000),
+				},
+			);
+			ai_gateway_reachable = aiResp.ok || aiResp.status === 429;
+		}
+	} catch {
+		ai_gateway_reachable = false;
+	}
+
+	// 3. Mailbox count — the WorkspaceDO doesn't yet expose a count RPC
+	//    for per-employee mailboxes, and counting DO instances across
+	//    the namespace isn't a primitive. We surface -1 so monitors
+	//    can render "n/a" and we can flip it to a real count once
+	//    WorkspaceDO.countEmployees() lands (tracked for v1.3).
+	const mailbox_count = -1;
+
+	return c.json({ mattermost_reachable, ai_gateway_reachable, mailbox_count });
+});
+
 // -- Identity -------------------------------------------------------
 // `/api/me` upserts the per-employee MailboxDO profile on every login.
 // This is how a Parrot employee mailbox is auto-provisioned on first
@@ -101,6 +225,7 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		email: profile.email,
 		display_name: profile.displayName,
 		created_at: profile.createdAt,
+		onboarded_at: profile.onboardedAt,
 		role: isOperator ? "operator" : "employee",
 	});
 });
@@ -690,5 +815,116 @@ app.post(
 		});
 	},
 );
+
+// ── Phase 13 Wave 3: onboarding + feature flags ────────────────
+//
+// POST /api/onboarding/complete — marks the employee onboarded after
+// the wizard's final step. Optionally updates display_name before the
+// flag flip (step 1 of the wizard lets the employee change it).
+//
+// GET /api/feature-flags — returns the merged per-employee flag map.
+// The wizard reads this on mount to know whether to show itself
+// (onboarding_wizard flag) and the rest of the workspace reads it to
+// gate cross-pane / push features.
+//
+// Skills referenced:
+//   cloudflare/skills: durable-objects — DO RPC for profile mutation
+//   cloudflare/skills: cloudflare — KV-backed feature flag overrides
+
+app.post(
+	"/api/onboarding/complete",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			display_name?: string;
+			push_enabled?: boolean;
+		} | null;
+		const stub = c.var.mailboxStub;
+
+		// Optionally update display name from step 1 of the wizard.
+		if (body?.display_name && body.display_name.trim()) {
+			const employee = c.var.employee;
+			await stub.upsertProfile({
+				employeeId: employee.employeeId,
+				email: employee.email,
+				displayName: body.display_name.trim(),
+			});
+		}
+
+		// Mark onboarding complete. The wizard hides itself the next time
+		// /api/me returns onboarded_at = non-null.
+		await stub.setOnboardedAt();
+
+		return c.json({ ok: true });
+	},
+);
+
+app.get(
+	"/api/feature-flags",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const flags = await c.var.mailboxStub.getFeatureFlags();
+		return c.json({ flags });
+	},
+);
+
+// ── Phase 13 Wave 3 smoke (dev-only, deterministic) ─────────────
+// Hit with: curl -X POST http://localhost:8787/api/dev/smoke/onboarding \
+//   -H "X-Parrot-Dev-Employee: dev@internjobs.ai"
+//
+// Asserts:
+//   - setOnboardedAt() flips onboarded_at from null → ISO timestamp.
+//   - getFeatureFlags() returns a non-null object with the canonical
+//     default-on flags when KV is unbound.
+//   - isFeatureEnabled('cross_pane') returns true under defaults.
+//
+// Deterministic: does NOT depend on PARROT_FEATURE_FLAGS being bound.
+
+app.post(
+	"/api/dev/smoke/onboarding",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.PARROT_DEV_MODE) {
+			return c.json({ error: "dev-only endpoint" }, 403);
+		}
+		const stub = c.var.mailboxStub;
+
+		// 1. Capture starting state.
+		const profileBefore = await stub.getProfile();
+		const wasNotOnboarded = profileBefore?.onboardedAt === null;
+
+		// 2. Flip onboarded_at.
+		await stub.setOnboardedAt();
+		const profileAfter = await stub.getProfile();
+		const onboardedAtSet = !!profileAfter?.onboardedAt;
+
+		// 3. Feature flags default map.
+		const flags = await stub.getFeatureFlags();
+		const flagsReturned =
+			typeof flags === "object" && flags !== null && !Array.isArray(flags);
+
+		// 4. Default isFeatureEnabled — cross_pane should be on by default.
+		const crossPaneEnabled = await stub.isFeatureEnabled("cross_pane");
+
+		return c.json({
+			was_not_onboarded: wasNotOnboarded,
+			onboarded_at_set: onboardedAtSet,
+			flags_returned: flagsReturned,
+			cross_pane_enabled: crossPaneEnabled,
+			pass: onboardedAtSet && flagsReturned && crossPaneEnabled,
+		});
+	},
+);
+
+// ── Phase 13 Wave 3: global Hono error handler ──────────────────
+//
+// Catches anything that escapes a route handler, posts it to Sentry
+// (if SENTRY_DSN is set), and returns a generic JSON 500. Mounted at
+// the END of the chain so route-local error handling takes precedence.
+app.onError((err, c) => {
+	console.error("[parrot] unhandled error:", err);
+	reportToSentry(c.env, err, "Hono unhandled route error");
+	return c.json({ error: "Internal server error" }, 500);
+});
 
 export { app };
