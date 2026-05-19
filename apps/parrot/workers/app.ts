@@ -272,31 +272,31 @@ app.all("*", (c) => {
 	});
 });
 
+import { receiveEmail } from "./lib/inbound-email";
+
 export default {
 	fetch: app.fetch,
 	async email(
 		event: { raw: ReadableStream; rawSize: number },
-		_env: Env,
-		_ctx: ExecutionContext,
+		env: Env,
+		ctx: ExecutionContext,
 	) {
-		// Wave 1 stub: inbound mail handling is deferred until apex CF
-		// Email Routing is reshaped to recognize per-employee addresses.
-		// Drain the stream so the runtime doesn't complain about an
-		// unconsumed body.
+		// v1.2 Phase 12-fix 2026-05-19: real inbound handler replaces the
+		// Wave-1 stub. Parses the MIME, resolves the recipient to an
+		// employee via WorkspaceDO, writes into EmployeeMailboxDO Inbox
+		// folder — which triggers the Phase 12 fire-and-forget
+		// extractTodosFromEmail() hook.
 		try {
-			const reader = event.raw.getReader();
-			while (true) {
-				const { done } = await reader.read();
-				if (done) break;
-			}
+			await receiveEmail(event, env, ctx);
 		} catch (e) {
 			console.error(
-				"Parrot inbound email drain failed:",
+				"Parrot inbound email failed:",
 				(e as Error).message,
+				(e as Error).stack,
 			);
+			// Re-throw so Cloudflare Email Routing retries or bounces.
+			// Swallowing here would silently drop mail.
+			throw e;
 		}
-		console.log(
-			`Parrot inbound email received (${event.rawSize} bytes) — Wave 1 stub, message discarded.`,
-		);
 	},
 };

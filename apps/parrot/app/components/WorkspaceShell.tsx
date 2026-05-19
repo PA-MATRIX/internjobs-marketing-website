@@ -191,7 +191,7 @@ export function WorkspaceShell({
 					<div className="flex items-center gap-3">
 						<input
 							type="search"
-							placeholder="Search (Wave 5)"
+							placeholder="Search"
 							disabled
 							className="hidden md:block w-64 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm placeholder:text-slate-400 disabled:cursor-not-allowed"
 						/>

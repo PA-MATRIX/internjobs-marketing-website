@@ -5,15 +5,20 @@
 // var via the /chat route loader, so we can swap fly.dev → custom
 // domain without a code change.
 //
-// Wave 2 SSO model: the employee signs in to Parrot via Clerk and
-// SEPARATELY signs in to Mattermost via Mattermost's built-in Google
-// OAuth flow (same `@internjobs.ai` Google account, two sessions).
-// We can't tell from the parent frame whether the inner iframe holds
-// a logged-in Mattermost session — cross-origin frames are opaque —
-// so we surface a manual "Sign in to Chat" overlay the user can
-// dismiss once they're authenticated inside the iframe. Wave 3 will
-// replace this with a header-bridge SSO that injects a Mattermost
-// session cookie from the Parrot worker.
+// Auth model (2026-05-19): Parrot uses phone-OTP-only Clerk
+// (clerk.workspace.internjobs.ai); Mattermost has its own session.
+// An employee signs in to Parrot via Clerk, then signs in to the
+// embedded Mattermost iframe separately using the email/password
+// their admin generated (or via the OIDC bridge in workers/routes/oidc.ts
+// once enabled — currently shipped but not active per the
+// session-handoff 2026-05-19 decision to run on two dedicated Clerk
+// apps instead of one shared OIDC issuer).
+//
+// Cross-origin iframes are opaque, so we can't detect whether the
+// inner Mattermost session is live. The overlay below is a one-time
+// hint the user dismisses once they've signed into the iframe. Single
+// sign-on (the OIDC bridge → automatic Mattermost session) is a v1.3
+// polish item.
 
 import { useState } from "react";
 import { ChatToEmail } from "./crosspane/ChatToEmail";
@@ -36,9 +41,8 @@ export function ChatPane({ mattermostUrl }: ChatPaneProps) {
 		<div className="flex h-full flex-col">
 			<div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between">
 				<p className="text-sm text-slate-600">
-					Chat is backed by Mattermost Team Edition. Sign in with your{" "}
-					<span className="font-medium">@internjobs.ai</span> Google
-					account if prompted.
+					Chat is backed by self-hosted Mattermost. Sign in with the
+					credentials your admin provided if the panel below prompts you.
 				</p>
 				<div className="flex gap-2">
 					<ChatToEmail />
@@ -64,9 +68,9 @@ export function ChatPane({ mattermostUrl }: ChatPaneProps) {
 									Sign in to Chat
 								</p>
 								<p className="text-xs text-slate-500 mt-0.5">
-									Use the Mattermost panel below to sign in with
-									your @internjobs.ai Google account. Wave 3
-									will make this automatic.
+									Sign in to the Mattermost panel below once.
+									Single sign-on (auto-bridge from your Parrot
+									session) is on the v1.3 polish list.
 								</p>
 							</div>
 							<button
