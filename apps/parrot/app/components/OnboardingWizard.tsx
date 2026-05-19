@@ -25,8 +25,8 @@
 //     (crypto.subtle) + per-employee onboarded_at on EmployeeMailboxDO.
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "~/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "~/lib/api";
 
 interface Props {
 	initialDisplayName: string;
@@ -82,6 +82,33 @@ export function OnboardingWizard({
 			onComplete?.();
 		},
 	});
+
+	// Phase 11 Wave 2: surface the employee's personal Daily.co room URL
+	// on step 3 if one is already provisioned. 404 (room_not_provisioned)
+	// is the normal first-time case — the "Open my room" link falls back
+	// to /meetings, which provisions on first visit. We deliberately do
+	// NOT block onboarding completion on room provisioning; this is purely
+	// informational.
+	const roomQuery = useQuery({
+		queryKey: ["parrot", "my-room", "onboarding"],
+		retry: false,
+		queryFn: async (): Promise<{
+			ok: boolean;
+			url?: string;
+			name?: string;
+		}> => {
+			try {
+				return await api.getMyRoom();
+			} catch (err) {
+				if (err instanceof ApiError && err.status === 404) {
+					return { ok: false };
+				}
+				throw err;
+			}
+		},
+	});
+	const personalRoomUrl =
+		roomQuery.data?.ok && roomQuery.data.url ? roomQuery.data.url : "/meetings";
 
 	const handlePushToggle = async (enabled: boolean) => {
 		if (!enabled) {
@@ -252,16 +279,26 @@ export function OnboardingWizard({
 					</div>
 				)}
 
-				{/* Step 3: Mattermost registration + finish */}
+				{/* Step 3: Mattermost registration + meeting room link + finish */}
 				{step === 3 && (
 					<div>
 						<p className="mb-4 text-sm text-slate-600">
-							We'll register you in the team chat (Mattermost) so you can
-							receive messages and @mentions right away.
+							Start a meeting from anywhere — click "Start Meeting" in your
+							inbox or chat, or head to your personal room to host a call.
 						</p>
 						<div className="rounded-lg border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
-							Chat registration happens automatically when you click Finish.
-							You'll be able to join channels in the Chat pane.
+							<p>
+								Chat registration happens automatically when you click Finish.
+								You'll be able to join channels in the Chat pane.
+							</p>
+							<a
+								href={personalRoomUrl}
+								target={personalRoomUrl.startsWith("http") ? "_blank" : undefined}
+								rel="noreferrer"
+								className="mt-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 no-underline hover:bg-slate-50"
+							>
+								Open my room →
+							</a>
 						</div>
 						{completeMutation.isError && (
 							<p className="mt-3 text-sm text-rose-600">

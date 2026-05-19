@@ -126,6 +126,24 @@ export const api = {
 			"/api/meetings/create",
 			{ method: "POST" },
 		),
+	// — Phase 11 Wave 2: Daily.co Meetings pane helpers.
+	ensurePersonalRoom: () =>
+		request<{ ok: boolean; url?: string; name?: string; error?: string }>(
+			"/api/meetings/ensure-room",
+			{ method: "POST" },
+		),
+	getMyRoom: () =>
+		request<{ ok: boolean; url?: string; name?: string; error?: string }>(
+			"/api/meetings/my-room",
+		),
+	getRoomToken: () =>
+		request<{ ok: boolean; token?: string; error?: string }>(
+			"/api/meetings/room-token",
+		),
+	getActiveRooms: () =>
+		request<{ rooms: Array<{ name: string; url: string }> }>(
+			"/api/meetings/active",
+		),
 	// Updated Phase 13 Wave 2: crosspaneEmailToChat now takes emailId;
 	// crosspaneChatToEmail takes postId + postBody; crosspaneStartMeeting
 	// remains parameterless (UI seam for Phase 11 / Daily.co).
