@@ -14,6 +14,13 @@ export default [
 	route("inbox", "routes/inbox.tsx"),
 	route("chat", "routes/chat.tsx"),
 	route("meetings", "routes/meetings.tsx"),
+	// v1.2 Phase 12 Wave 1: Phone + SMS placeholder routes — seam, not
+	// integration. The route files render a "Coming soon — Telnyx via
+	// Cloudflare Agents SDK" card and document the future
+	// @cloudflare/voice + withVoice(Agent) architecture inline. Without
+	// these registrations React Router would 404 the icon-rail clicks.
+	route("phone", "routes/phone.tsx"),
+	route("sms", "routes/sms.tsx"),
 	// Clerk's <SignIn> uses sub-paths like /sign-in/factor-one. A
 	// splat ($) catches all of them and routes the whole tree to the
 	// embedded SignIn component.
