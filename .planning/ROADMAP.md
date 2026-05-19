@@ -65,12 +65,12 @@ Plans:
 
 **Research flags**: ✓ DONE — FEATURES.md and PITFALLS.md both cover this phase
 
-**Plans**: 3 plans (TBD)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 19-01: DO migration 8 + `resolveTodo` RPC + cron handler + minimum-open-window Cypher
-- [ ] 19-02: Backend routes (`?view=resolved`, `/:id/unresolve`) + cross-namespace Cypher smoke test
-- [ ] 19-03: Frontend — "Resolved" nav, animate-out, Agent pill, Undo, one-time onboarding toast
+- [ ] 19-01-PLAN.md — DO migration 8 + `resolveTodo`/`unresolveTodo` RPCs + cron trigger + `scheduled` handler + `auto-clear.ts` with minimum-open-window Cypher
+- [ ] 19-02-PLAN.md — Backend routes (`?view=resolved`, `/:id/unresolve`) + `getResolvedTodos` DO method + cross-namespace Cypher smoke test
+- [ ] 19-03-PLAN.md — Frontend: "Resolved" nav, animate-out, `ResolvedTodoCard` with Agent/You pill, Undo flow, first-auto-clear-per-session toast
 
 ---
 
@@ -162,5 +162,5 @@ Marketing site + LinkedIn Clerk auth + Neon schema + Photon/Spectrum SMS + welco
 ---
 
 **Next Steps:**
-1. `/rrr:plan-phase 18` — Build the execution plan for Phase 18 (Graph Bridge Runtime)
-2. Optionally `/rrr:discuss-phase 18` first to surface implementation context
+1. `/rrr:execute-phase 19` — Execute Phase 19 (Todo Auto-Resolution) after Phase 18 is complete
+2. `/rrr:plan-phase 18` — Build the execution plan for Phase 18 (Graph Bridge Runtime) if not yet done
