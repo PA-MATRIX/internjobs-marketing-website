@@ -100,6 +100,12 @@
 	//                              in Infisical /internjobs-ai/SENTRY_DSN. Optional — the
 	//                              Worker boots and runs without it; errors fall back to
 	//                              console.error.
+	//   DAILY_API_KEY            — Daily.co REST API key (flat-rate plan).
+	//                              daily.co → Settings → Developers → API Keys.
+	//                              Set via `wrangler secret put DAILY_API_KEY`.
+	//                              Also store in Infisical /internjobs-ai/DAILY_API_KEY.
+	//                              Optional — room provisioning degrades to null when absent;
+	//                              the UI falls back to the Phase 13 toast.
 	//
 	// Phase 13 Wave 3 — KV namespace for feature flags. Holds the
 	// `global_defaults` key (JSON object) used by getFeatureFlags() in

@@ -234,4 +234,25 @@ export const employeeMailboxMigrations: Migration[] = [
 			ALTER TABLE profile ADD COLUMN feature_flags TEXT;
 		`,
 	},
+	{
+		// v1.2 Phase 11 Wave 1: per-employee personal Daily.co room.
+		//
+		// Adds two nullable columns to the existing `profile` table:
+		//   - personal_room_name: the Daily.co room name slug (e.g.
+		//     "parrot-user_abc123"). Derived from the Clerk user ID so
+		//     it's deterministic and URL-safe.
+		//   - personal_room_url: the fully-qualified Daily.co room URL
+		//     (e.g. "https://internjobs.daily.co/parrot-user_abc123").
+		//
+		// Both are NULL until ensurePersonalRoom() provisions them on first
+		// use. Using nullable ALTERs (no DEFAULT) matches the migration-5
+		// pattern for profile columns added after initial row creation —
+		// existing rows interpret NULL as "no room yet, provision on next
+		// call".
+		name: "6_meetings_rooms",
+		sql: `
+			ALTER TABLE profile ADD COLUMN personal_room_name TEXT;
+			ALTER TABLE profile ADD COLUMN personal_room_url TEXT;
+		`,
+	},
 ];

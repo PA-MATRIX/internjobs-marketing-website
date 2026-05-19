@@ -47,6 +47,7 @@ type CfEnvBase = Omit<
 	| "PUSH_VAPID_PUBLIC_KEY"
 	| "PARROT_FEATURE_FLAGS"
 	| "SENTRY_DSN"
+	| "DAILY_API_KEY"
 >;
 
 export interface Env extends CfEnvBase {
@@ -130,6 +131,14 @@ export interface Env extends CfEnvBase {
 	 *  `wrangler secret put SENTRY_DSN`. Optional — reportToSentry() no-ops
 	 *  when the env var is absent. */
 	SENTRY_DSN?: string;
+
+	// — Phase 11 Wave 1: Daily.co REST API key (per-employee personal rooms).
+	/** Daily.co API key (flat-rate plan). Set via
+	 *  `wrangler secret put DAILY_API_KEY`. When absent, room provisioning
+	 *  degrades gracefully (returns null; no crash) — the UI falls back to
+	 *  the Phase 13 "Daily.co not configured" toast path. Also store in
+	 *  Infisical /internjobs-ai/DAILY_API_KEY. */
+	DAILY_API_KEY?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).
