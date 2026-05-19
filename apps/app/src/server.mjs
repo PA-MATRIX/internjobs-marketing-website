@@ -198,7 +198,7 @@ const server = createServer(async (req, res) => {
         redirect(res, "/pairing");
         return;
       }
-      sendHtml(res, 200, renderLayout({ title: "Join Early Access", config, auth: null, body: renderWaitlist(config) }));
+      sendHtml(res, 200, renderLayout({ title: "Join Early Access", config, auth: null, body: renderWaitlist(config), bgEffect: "clouds", embedClerk: true }));
       return;
     }
 

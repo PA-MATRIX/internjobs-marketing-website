@@ -3,8 +3,15 @@ import { escapeHtml } from "./http.mjs";
 import { getMissingProviderConfig } from "./config.mjs";
 import { getSignInUrl, getStartupSignInUrl } from "./auth.mjs";
 
-export function renderLayout({ title, body, config, auth }) {
+export function renderLayout({ title, body, config, auth, bgEffect, embedClerk }) {
   const missing = getMissingProviderConfig(config);
+  // Vanta.js animated background — opt-in per page via the bgEffect arg.
+  // Uses the canonical CDN pattern from https://www.vantajs.com so we
+  // don't need to bundle three.js into this Node-rendered app.
+  const wantsBg = bgEffect === "clouds" || bgEffect === "birds";
+  // Clerk client-side mount — opt-in per page. The pk_live key encodes
+  // the frontend API host, so the SDK auto-resolves clerk.app.internjobs.ai.
+  const pk = embedClerk ? (config.clerk && config.clerk.publishableKey) || "" : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -12,48 +19,167 @@ export function renderLayout({ title, body, config, auth }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title)} | InternJobs.ai</title>
-    <style>${styles()}</style>
+    <style>${styles()}${wantsBg ? `
+      #vanta-bg { position: fixed; inset: 0; z-index: 0; }
+      body { background: transparent !important; }
+      .topbar, main, footer, .config-banner { position: relative; z-index: 1; }
+    ` : ""}</style>
   </head>
   <body>
+    ${wantsBg ? `<div id="vanta-bg" aria-hidden="true"></div>` : ""}
     <header class="topbar">
       <a class="brand" href="/waitlist"><span class="logo">∞</span><strong>InternJobs.ai</strong></a>
-      <nav>
-        <a href="/waitlist">Join</a>
+      ${auth ? `<nav>
         <a href="/onboarding">Onboarding</a>
         <a href="/pairing">Pairing</a>
         <a href="/profile">Profile</a>
-      </nav>
+      </nav>` : ""}
     </header>
     ${missing.length ? `<div class="config-banner">Configuration pending: ${missing.map(escapeHtml).join(", ")}</div>` : ""}
     <main>${body}</main>
     <footer>
       <span>InternJobs.ai</span>
-      <span>${auth ? `Signed in as ${escapeHtml(auth.name || auth.email || auth.clerkUserId)}` : "LinkedIn-first waitlist"}</span>
+      ${auth ? `<span>Signed in as ${escapeHtml(auth.name || auth.email || auth.clerkUserId)}</span>` : ""}
     </footer>
+    ${wantsBg ? `
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.${bgEffect}.min.js"></script>
+    <script>
+      VANTA.${bgEffect.toUpperCase()}({
+        el: "#vanta-bg",
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00
+      });
+    </script>` : ""}
+    ${pk ? `
+    <script async crossorigin="anonymous" data-clerk-publishable-key="${escapeHtml(pk)}" src="https://clerk.app.internjobs.ai/npm/@clerk/clerk-js@latest/dist/clerk.browser.js" type="text/javascript"></script>
+    <script>
+      window.addEventListener("load", async () => {
+        if (!window.Clerk) return;
+        try {
+          await window.Clerk.load();
+          const el = document.getElementById("clerk-signin");
+          if (el) {
+            window.Clerk.mountSignIn(el, {
+              afterSignInUrl: "/onboarding",
+              afterSignUpUrl: "/onboarding",
+              appearance: {
+                elements: {
+                  rootBox: { width: "auto", display: "flex", justifyContent: "center" },
+                  card: { boxShadow: "none", background: "transparent", border: 0, padding: 0, width: "auto" },
+                  socialButtonsRoot: { width: "auto" },
+                  socialButtons: { width: "auto" },
+                  header: { display: "none" },
+                  headerTitle: { display: "none" },
+                  headerSubtitle: { display: "none" },
+                  logoBox: { display: "none" },
+                  tabsList: { display: "none" },
+                  dividerRow: { display: "none" },
+                  footer: { display: "none" },
+                  footerAction: { display: "none" },
+                  // LinkedIn-brand-blue button (#0A66C2 base, #004182
+                  // on hover — LinkedIn's official hover shade). Clerk
+                  // resets to white on hover by default; we pin the
+                  // blue across all states.
+                  socialButtonsBlockButton: {
+                    fontSize: "0.92rem",
+                    padding: "0.55rem 1.1rem",
+                    minWidth: "auto",
+                    backgroundColor: "#0A66C2",
+                    color: "#FFFFFF",
+                    border: "0",
+                    fontWeight: "700",
+                    transition: "background-color 0.15s ease",
+                    "&:hover": {
+                      backgroundColor: "#004182",
+                      color: "#FFFFFF"
+                    },
+                    "&:focus": {
+                      backgroundColor: "#004182",
+                      color: "#FFFFFF",
+                      boxShadow: "0 0 0 3px rgba(10,102,194,.25)"
+                    },
+                    "&:active": {
+                      backgroundColor: "#00355c",
+                      color: "#FFFFFF"
+                    }
+                  },
+                  socialButtonsBlockButtonText: { color: "#FFFFFF" },
+                  socialButtonsBlockButtonArrow: { color: "#FFFFFF" },
+                  // Invert the LinkedIn "in" mark to white so it's
+                  // visible on the LinkedIn-blue button background.
+                  socialButtonsProviderIcon: {
+                    filter: "brightness(0) invert(1)",
+                    width: "1.1rem",
+                    height: "1.1rem",
+                    marginRight: "0.5rem"
+                  }
+                }
+              }
+            });
+            // Post-mount: strip "Secured by Clerk" branding row. Clerk's
+            // appearance.elements.footer config doesn't reliably hide
+            // it across SDK versions, so we sweep the mounted DOM and
+            // remove any container holding a link to clerk.com.
+            const strip = () => {
+              const root = el;
+              if (!root) return false;
+              const link = root.querySelector('a[href*="clerk.com"]');
+              if (!link) return false;
+              // Walk up until we find the row containing both the
+              // "Secured by" text and the logo link, then hide it.
+              let n = link.parentElement;
+              for (let i = 0; n && i < 4; i++) {
+                if (n.textContent && n.textContent.toLowerCase().includes("secured by")) {
+                  n.style.display = "none";
+                  return true;
+                }
+                n = n.parentElement;
+              }
+              link.style.display = "none";
+              return true;
+            };
+            if (!strip()) {
+              const obs = new MutationObserver(() => { if (strip()) obs.disconnect(); });
+              obs.observe(el, { childList: true, subtree: true });
+              setTimeout(() => obs.disconnect(), 8000);
+            }
+          }
+        } catch (err) {
+          console.warn("Clerk mount failed:", err);
+        }
+      });
+    </script>` : ""}
   </body>
 </html>`;
 }
 
 export function renderWaitlist(config) {
-  const signInUrl = getSignInUrl(config);
-
+  // Standout-style 3-tier card:
+  //   Tier 1: brand mark + welcome title
+  //   Tier 2: LinkedIn CTA + "we'll only see" privacy nudge
+  //   Tier 3: Terms/Privacy/age legal + trust badge
   return `
-    <section class="hero-grid">
-      <div>
-        <p class="eyebrow">LinkedIn-only early access</p>
-        <h1>Start with LinkedIn. Then just text.</h1>
-        <p class="lede">InternJobs.ai uses your LinkedIn basics to start your waitlist profile, then helps you connect the messaging channel where you want internship texts.</p>
-        <div class="actions">
-          <a class="button primary" href="${escapeHtml(signInUrl)}">Continue with LinkedIn</a>
-          ${config.enableDevAuth ? '<a class="button secondary" href="/dev/sign-in">Use dev sign-in</a>' : ""}
+    <section class="waitlist-center">
+      <div class="waitlist-card">
+        <div class="waitlist-tier waitlist-tier-1">
+          <div class="waitlist-logo" aria-hidden="true"><span class="logo">∞</span></div>
+          <h1 class="waitlist-title">Join the Waitlist</h1>
+          <p class="waitlist-eyebrow">Welcome to InternJobs.ai.</p>
         </div>
-        <p class="fine" id="configuration-needed">Student early access starts with LinkedIn only.</p>
-      </div>
-      <div class="phone-card">
-        <div class="thread">
-          <p class="agent">Hey Jordan, found something that actually fits.</p>
-          <p class="student">Okay wait this looks good.</p>
-          <p class="agent">Start with LinkedIn, then connect text. No giant profile.</p>
+        <div class="waitlist-tier waitlist-tier-2">
+          <div id="clerk-signin" class="clerk-mount"></div>
+          <noscript>
+            <a class="button primary waitlist-fallback" href="${escapeHtml(getSignInUrl(config))}">Continue with LinkedIn</a>
+          </noscript>
+          <p class="waitlist-fine">We'll only see your name and headline.</p>
+        </div>
+        <div class="waitlist-tier waitlist-tier-3">
+          <p class="waitlist-fine">By continuing you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy</a>. InternJobs.ai is for users 18 and older.</p>
+          <p class="waitlist-made">Made with <span class="waitlist-heart" aria-hidden="true">♥</span> from Texas 🦄</p>
         </div>
       </div>
     </section>`;
@@ -610,6 +736,34 @@ function styles() {
     .ops-thread-row{display:grid;grid-template-columns:5rem 1fr 9rem;gap:.6rem;padding:.55rem .7rem;border-radius:.5rem;background:rgba(0,0,0,.03);margin-bottom:.4rem;font-size:.85rem}.ops-thread-inbound{border-left:3px solid #1462e3}.ops-thread-outbound{border-left:3px solid #0f5d2c}.ops-thread-tag{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#77736b;font-weight:900}.ops-thread-time{font-size:.7rem;color:#77736b;text-align:right}
     .ops-banner{padding:.85rem 1rem;border-radius:.6rem;font-weight:800;font-size:.88rem;margin:1rem 0}.ops-banner-ok{background:#e0f3df;color:#0f5d2c}.ops-banner-warn{background:#fff2cc;color:#7a5b00}.ops-banner-error{background:#ffd6d6;color:#8a1212}
     @media(max-width:760px){.ops-detail-grid{grid-template-columns:1fr}.ops-table{font-size:.8rem}}
+    /* Waitlist — Standout-style centered minimal card. Responsive
+       across phone/tablet/desktop with clamp()-based sizing. */
+    .waitlist-center{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 4rem - 5rem);padding:clamp(1rem,4vw,2.5rem) 1rem}
+    .waitlist-card{width:min(440px,100%);padding:clamp(1.4rem,5vw,2.2rem) clamp(1.2rem,4vw,2rem);border-radius:1.4rem;background:rgba(255,255,255,.88);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.6);box-shadow:0 24px 80px rgba(15,30,60,.12);text-align:center}
+    /* Three-tier structure with thin dividers between */
+    .waitlist-tier{padding:1.3rem 0}
+    .waitlist-tier-1{padding-top:0}
+    .waitlist-tier-2{border-top:1px solid rgba(0,0,0,.06);border-bottom:1px solid rgba(0,0,0,.06)}
+    .waitlist-tier-3{padding-bottom:0}
+    .waitlist-logo{display:flex;justify-content:center;margin-bottom:.9rem}
+    .waitlist-logo .logo{width:2.6rem;height:2.6rem;border-radius:.85rem;font-size:1.3rem;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+    .waitlist-title{margin:0;font-size:clamp(1.3rem,4.5vw,1.6rem);font-weight:900;line-height:1.2;letter-spacing:-.01em}
+    .waitlist-eyebrow{margin:.45rem 0 0;color:#5f625d;font-size:.93rem;font-weight:600}
+    .clerk-mount{margin:0 auto;display:flex;justify-content:center}
+    .waitlist-fallback{display:inline-flex;margin-top:.6rem}
+    .waitlist-fine{margin:.7rem 0 0;color:#77736b;font-size:clamp(.72rem,2.6vw,.78rem);line-height:1.55}
+    .waitlist-fine:first-child{margin-top:0}
+    .waitlist-fine a{font-weight:700;color:#3a3d3a;text-decoration:underline}
+    .waitlist-made{margin:1rem 0 0;text-align:center;color:#77736b;font-size:.74rem;font-weight:700;letter-spacing:.01em}
+    .waitlist-heart{color:#e0245e;font-size:.85rem;vertical-align:-1px;margin:0 .15rem}
+    @media(max-width:480px){
+      .topbar{padding:.7rem .8rem}
+      .waitlist-center{min-height:calc(100vh - 3.4rem - 4rem);padding:1rem .75rem}
+      .waitlist-card{border-radius:1.1rem}
+      footer{padding:1.2rem .8rem;font-size:.74rem}
+    }
+    /* Kill Clerk's "Secured by Clerk" badge — appearance.elements
+       didn't catch it, so we strip it via JS post-mount (below). */
   `;
 }
 
