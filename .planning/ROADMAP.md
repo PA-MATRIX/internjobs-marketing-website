@@ -40,12 +40,12 @@ v1.3 makes v1.2 production-safe for the first 5-10 startup pilots. Four tight ph
 
 **Research flags**: ✓ DONE — `.planning/milestones/v1.3-pilot-hardening/research/` (STACK, ARCHITECTURE, PITFALLS sections specifically address this phase)
 
-**Plans**: 3 plans (TBD — refined during `/rrr:plan-phase 18`)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 18-01: `internjobs-graph-api` Fly app — Dockerfile, `fly.toml`, `src/index.mjs` (Hono/Node), `GRAPH_API_SECRET` provisioning
-- [ ] 18-02: Parrot Worker rewire — `graph.ts` transport swap, `types.ts` env update, `FALKORDB_*` env removal
-- [ ] 18-03: Healthz dual-readiness + manual smoke test + `npm run smoke:parrot-graph`
+- [ ] 18-01-PLAN.md — `internjobs-graph-api` Fly app (Hono/Node, `infra/graph-api/`), `GRAPH_API_SECRET` provisioning to Infisical, deploy + verify `/health`
+- [ ] 18-02-PLAN.md — Parrot Worker rewire: `graph.ts` transport swap (falkordb import guard → fetch to proxy), `types.ts` env update, `FALKORDB_*` removal
+- [ ] 18-03-PLAN.md — Healthz dual-readiness (`graph_ready` + `graph_proxy_reachable`), `infra/graph-api/smoke.mjs`, `npm run smoke:parrot-graph`, manual 4-op smoke gate
 
 ---
 
@@ -133,7 +133,7 @@ Phase 18 → Phase 19 (blocked on 18) → Phase 20 (independent — can start wh
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 18. Graph Bridge Runtime | v1.3 | 0/3 | Not started | — |
+| 18. Graph Bridge Runtime | v1.3 | 0/3 | Planned | — |
 | 19. Todo Auto-Resolution | v1.3 | 0/3 | Not started | — |
 | 20. Pre-LLM Safety Screening | v1.3 | 0/3 | Not started | — |
 | 21. Credential Rotation | v1.3 | 0/3 | Not started | — |
