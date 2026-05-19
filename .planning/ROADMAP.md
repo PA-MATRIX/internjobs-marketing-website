@@ -227,6 +227,38 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] 12-02-PLAN.md — Ingest + LLM extraction: email hook + DO alarm + Mattermost poller + smoke test
 - [ ] 12-03-PLAN.md — UI + ranking: TodoCard component + dashboard loader + view filters + click-through + ranking regression
 
+### Phase 13: Cross-pane Actions + Launch Polish
+
+**Goal:** Email↔Chat↔Meeting cross-pane actions, unified notification pane, browser push notifications, first-login wizard, and pilot rollout readiness for Parrot.
+
+**Depends on:** Phase 12 (EmployeeMailboxDO with todos table + Mattermost helpers + AI Gateway helper)
+
+**Architecture decisions locked:**
+- No new LLM call sites. Push VAPID signing uses `crypto.subtle` (Workers built-in) — no `web-push` npm package.
+- `StartMeeting` CTA is a UI seam: shows "Meetings coming soon" toast + writes audit notification row. Daily.co NOT called (deferred to Phase 11).
+- Push subscriptions + notifications stored in EmployeeMailboxDO via migration `4_notifications_push`. No new DO class.
+- Feature flags: KV namespace `PARROT_FEATURE_FLAGS` holds global defaults (JSON); per-employee overrides stored in `feature_flags` column added by migration `5_onboarding_flags`. Merged at read time — employee wins.
+- Service worker at `/sw.js` is push-only: handles `push` + `notificationclick` events, DOES NOT intercept fetch (no asset cache conflict with React Router/Vite).
+- Sentry: inline `reportToSentry()` helper (no `@sentry/cloudflare` npm dep in Wave 1) wired into Hono's `app.onError`.
+- NOT installed: `@daily-co/*`, `@cloudflare/voice`, `agents`, `@telnyx/*`, `web-push`.
+
+**Success Criteria** (what must be TRUE):
+1. Bell icon in WorkspaceShell topbar shows unread count badge; notification drawer lists recent events (urgent todos, starred emails, @mentions) with read/unread state.
+2. Browser push fires when urgency_score >= 70, starred inbound email arrives, or @mention detected in Mattermost poll.
+3. Service worker at /sw.js registered by WorkspaceShell, handles push + notificationclick, does NOT cache any static assets.
+4. EmailToChat: creates Mattermost channel from email participants + seeds with email body; navigates to /chat.
+5. ChatToEmail: opens compose draft modal pre-filled with quoted chat post body.
+6. StartMeeting: shows "Meetings coming soon" toast; writes audit notification row; no Daily.co call under any code path.
+7. First-login wizard (3-step modal) shown when onboarded_at IS NULL; re-shown on every visit until complete; skippable per visit.
+8. GET /healthz returns { mattermost_reachable: bool, ai_gateway_reachable: bool, mailbox_count: number }.
+9. All five smoke endpoints return pass: true (push, crosspane, onboarding, seed-email, ranking).
+10. PILOT-RUNBOOK.md exists in the phase directory.
+
+**Plans:** 3 plans, 3 waves (sequential)
+- [ ] 13-01-PLAN.md — Notifications + push: migration 4, push VAPID DO methods, /api/push/subscribe, /api/notifications, sw.js, notification drawer in WorkspaceShell
+- [ ] 13-02-PLAN.md — Cross-pane actions: emailToChat + chatToEmail DO methods, replace three 501 stubs, finish three crosspane UI components
+- [ ] 13-03-PLAN.md — First-login wizard + pilot readiness: migration 5, OnboardingWizard, feature flags KV, /healthz, Sentry, PILOT-RUNBOOK.md
+
 ## Progress
 
 **Execution order:** 01 → 02 → 03 → 04 → 05 → 06 (sequential; each phase depends on the prior)
@@ -240,6 +272,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 05. Operator Audit Log (was: Approval Gate) | v1.2 | 0/TBD | Not started | — |
 | 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
 | 12. Dashboard Mothership Agent | v1.2 | 3/3 | Shipped (browser/AI gateway verify pending user) | 2026-05-19 |
+| 13. Cross-pane Actions + Launch Polish | v1.2 | 0/3 | Planning complete | — |
 
 ## v1.3 Candidates
 
@@ -249,4 +282,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 12 planning complete: 3 plans in 3 sequential waves. Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
