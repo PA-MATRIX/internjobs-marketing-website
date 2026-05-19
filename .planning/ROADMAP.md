@@ -38,7 +38,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] **Phase 14: Parrot Knowledge Graph (FalkorDB extension)** — Extend the existing `internjobs-graph` Fly FalkorDB (Phase 04 MEMORY-01) with a per-employee subgraph for Parrot's Dashboard Mothership Agent. Same Graphiti temporal-fact pattern. Pre-extraction: agent reads recent facts to dedup + score in context. Post-extraction: writes todo + mentioned-actor + source-channel facts with `valid_to` close-out (Graphiti invariant) → solves the auto-clear problem too. Reuses existing infra (no new Fly app, no new vendor); shares `internjobs-graph.internal:6379` instance with namespace isolation via node labels (`:Employee` vs `:Student`). (Added 2026-05-19 — user direction "extend falkor as we already have it"; supersedes ad-hoc Phase 13 todo-cleanup ideas.)
 - [x] **Phase 15: Mattermost OIDC SSO activation** — Verified end-to-end live 2026-05-19: Mattermost's `GitLabSettings.*` (Enable + Id + Secret + AuthEndpoint + TokenEndpoint + UserAPIEndpoint) was ALREADY configured during Phase 10 Wave 2b but the round-trip had never been user-tested. Confirmed `/oauth/gitlab/login` correctly bridges through Parrot's `/oidc/authorize` → Clerk sign-in → auth code → token exchange. Only code change needed was a ChatPane.tsx copy update directing users at the "GitLab" SSO button. Shipped 2026-05-19.
 - [ ] **Phase 16: Ridhi Admin Invite UX (capability toggles)** — Frontend admin panel at `/admin` for operators (Ridhi has `publicMetadata.role='ceo'`). Form: FN / LN / personal email / phone. Backend extends existing `/api/admin/employees` POST: phone-number-as-Clerk-OTP-auth (not personal email), auto-derive workspace_email `fn.ln@internjobs.ai`, auto-create CF Email Routing rule, write WorkspaceDO row. Capability toggles per employee (email / chat / meetings / phone / sms / campaigns) stored in existing `profile.feature_flags` JSON column (already shipped in Phase 13 Wave 3 migration 5). Warm welcome email from Ridhi with mission + login instructions. Editable post-invite. (Absorbed 2026-05-19.)
-- [ ] **Phase 17: GenZ Chat Polish + Confetti Workspace** — Mattermost: enable built-in GIF/sticker picker via `mmctl --local config set` (PluginSettings.Enable + giphy-plugin install). Parrot UI: add `canvas-confetti` lib for celebratory events — first todo cleared, first meeting started, employee birthday (read from profile), 100th email reviewed. Lively micro-animations + emoji reactions surfaced in EmailToChat handoff. Branded loading states with parrot mascot. (Absorbed 2026-05-19 — target audience is HS / college interns per user note.)
+- [x] **Phase 17: GenZ Chat Polish + Confetti Workspace** — Mattermost: enable built-in GIF/sticker picker via `mmctl --local config set` (PluginSettings.Enable + giphy-plugin install). Parrot UI: add `canvas-confetti` lib for celebratory events — first todo cleared, first meeting started, employee birthday (read from profile), 100th email reviewed. Lively micro-animations + emoji reactions surfaced in EmailToChat handoff. Branded loading states with parrot mascot. (Absorbed 2026-05-19 — target audience is HS / college interns per user note.)
 
 ## Phase Details
 
@@ -324,6 +324,33 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] 14-02-PLAN.md — Phase 12 wiring: context block injection, cf-aig-cache-ttl=0, post-extraction fire-and-forget graph writes
 - [ ] 14-03-PLAN.md — Smoke + healthz: 6-invariant smoke script, graph_ready in /healthz (30s cache), smoke:parrot-graph npm script
 
+### Phase 16: Ridhi Admin Invite UX (capability toggles)
+
+**Goal:** Ridhi can invite new employees from the /admin panel with a richer form (FN/LN/personal email/phone + 6 capability toggles), see the current employee directory, and edit capabilities post-invite. Phone-number is used as the Clerk OTP identifier. Capability flags are written to PARROT_FEATURE_FLAGS KV on invite.
+
+**Depends on:** Phase 13 (PARROT_FEATURE_FLAGS KV namespace bound + WorkspaceDO employee table), Phase 10 Wave 2b (/api/admin/employees POST already exists)
+
+**Architecture decisions locked:**
+- Feature flags persistence: KV key `employee:{clerkUserId}:flags` (not WorkspaceDO column — avoids migration; KV is already bound from Phase 13).
+- Clerk user creation: `phone_number: [e164]` identifier (no `email_address`) so the Parrot Clerk app's phone-OTP-only policy is respected.
+- `name` field remains required on InviteSchema for backward compat; `firstName`/`lastName` are additive optional fields.
+- Welcome email `from` address becomes the inviting operator's email (e.g. `ridhi@internjobs.ai`). Falls back to `noreply@internjobs.ai` if unavailable.
+- PATCH /:id/flags does a read-modify-write merge (never full replacement) so partial updates preserve unmentioned flags.
+- No new DOs, no new Fly apps, no new KV namespaces.
+
+**Success Criteria** (what must be TRUE):
+1. POST /api/admin/employees accepts optional `phoneNumber` (E.164) and `featureFlags`; omitting both still returns 201 (backward compat).
+2. PATCH /api/admin/employees/:id/flags updates KV flags and returns merged result.
+3. GET /api/admin/employees/:id/flags returns current flags (all-true defaults when no KV entry).
+4. /admin renders employee list with capability pill badges (green=on, gray=off).
+5. /admin/invite form validates phone E.164 client-side before submit; success panel shows feature_flags.
+6. Welcome email body is signed by Ridhi with mission paragraph and phone-OTP login instructions pointing to workspace.internjobs.ai.
+7. TypeScript clean. Worker deploys.
+
+**Plans:** 2 plans, 2 waves
+- [ ] 16-01-PLAN.md — Backend: extend clerk-admin.ts (phone-OTP), rewrite welcome email (Ridhi's voice), extend POST + add PATCH + GET flags endpoints
+- [ ] 16-02-PLAN.md — Frontend: /admin parent route (employee list + capability editor) + rewrite /admin/invite (FN/LN/phone/toggles) + human-verify checkpoint
+
 ## Progress
 
 **Execution order:** 01 → 02 → 03 → 04 → 05 → 06 (sequential; each phase depends on the prior)
@@ -340,13 +367,10 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 12. Dashboard Mothership Agent | v1.2 | 3/3 | Shipped (browser/AI gateway verify pending user) | 2026-05-19 |
 | 13. Cross-pane Actions + Launch Polish | v1.2 | 0/3 | Planning complete | — |
 | 14. Parrot Knowledge Graph | v1.2 | 0/3 | Planning complete | — |
+| 16. Ridhi Admin Invite UX | v1.2 | 0/2 | Planning complete | — |
 
 ## v1.3 Candidates
 
 Named candidates carried over from v1.2 Out of Scope + milestone research. Not in active scope.
 
 See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01, TELNYX-MIGRATE-01, SUNSET-01, COGNEE-ACTIVATE-01, ENRICH-ACTIVATE-01, VOICE-01, SLACK-01, STARTUP-SMS-01, FEEDBACK-LOOP-01, THREAD-SUMMARY-01, CONSENT-INFER-01, MULTI-MEMBER-01.
-
----
-
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 11 planning complete: 3 plans in 3 sequential waves (REST helper + SDK embed + StartMeeting upgrade). Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 14 planning complete: 3 plans in 3 sequential waves (graph helper + schema / Phase 12 wiring / smoke + healthz). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
