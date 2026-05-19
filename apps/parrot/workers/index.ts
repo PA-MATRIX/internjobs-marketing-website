@@ -90,10 +90,12 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		| { role?: unknown }
 		| null
 		| undefined;
+	const role = String(meta?.role || "").toLowerCase();
 	const isOperator =
-		employee.orgRole === "org:admin" ||
-		meta?.role === "operator" ||
-		allowlist.includes(employee.email.toLowerCase());
+		role === "operator" ||
+		role === "admin" ||
+		role === "ceo" ||
+		allowlist.includes(String(employee.email).toLowerCase());
 	return c.json({
 		employee_id: profile.employeeId,
 		email: profile.email,

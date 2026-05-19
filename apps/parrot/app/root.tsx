@@ -1,13 +1,16 @@
 // v1.2 Phase 10 Wave 2b: Parrot root layout.
 //
-// Wave 2b additions:
-//   - ClerkProvider mounted globally so the in-app <SignIn/> works at
-//     workspace.internjobs.ai/sign-in (employee email-OTP form). The
-//     publishable key is the STUDENT production app's pk_live_…; the
-//     student app powers app.internjobs.ai's LinkedIn-only form.
-//     Subdomains separate the two forms — Clerk is the same instance.
+// Auth UX: we use @clerk/clerk-react (pure client SDK) rather than
+// @clerk/react-router. The React Router SDK requires a clerkMiddleware
+// + rootAuthLoader chain that fights the Cloudflare Workers runtime
+// (it leans on `process.env` and a React Router middleware feature
+// we'd have to opt into). Our Worker middleware in workers/app.ts
+// already verifies Clerk session JWTs server-side via jose — the only
+// reason we mount Clerk on the client at all is to render the embedded
+// <SignIn> form. ClerkProvider from @clerk/clerk-react needs nothing
+// more than the publishable key.
 
-import { ClerkProvider } from "@clerk/react-router";
+import { ClerkProvider } from "@clerk/clerk-react";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -22,11 +25,8 @@ import {
 } from "react-router";
 import "./index.css";
 
-// Plain SSR loader — just hands the publishable key (safe to ship to
-// the browser) down to ClerkProvider. We skip @clerk/react-router's
-// `rootAuthLoader` because it does additional Node-flavoured work
-// that's brittle on the Workers runtime, and our worker middleware
-// (workers/app.ts) already enforces auth server-side independently.
+// Server loader — hand the publishable key to the client. Publishable
+// keys are safe to ship to the browser (that's their entire purpose).
 export async function loader({ context }: LoaderFunctionArgs) {
 	const env =
 		(context as { cloudflare?: { env?: Record<string, string> } }).cloudflare
@@ -71,7 +71,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 					sizes="48x48 32x32 16x16"
 				/>
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-				<title>Parrot — InternJobs Workspace</title>
+				<title>InternJobs.AI Parrot Workspace</title>
 				<Meta />
 				<Links />
 			</head>
@@ -94,10 +94,19 @@ export function HydrateFallback() {
 
 export default function App() {
 	const [queryClient] = useState(getQueryClient);
-	const data = useLoaderData<typeof loader>() as
-		| { clerkPublishableKey?: string }
-		| undefined;
+	const data = useLoaderData<typeof loader>();
 	const publishableKey = data?.clerkPublishableKey || "";
+
+	// If the publishable key is somehow empty, render without ClerkProvider
+	// so we don't blow up the whole shell. The SignIn page will show a
+	// configuration error instead of the form.
+	if (!publishableKey) {
+		return (
+			<QueryClientProvider client={queryClient}>
+				<Outlet />
+			</QueryClientProvider>
+		);
+	}
 
 	return (
 		<ClerkProvider
@@ -107,9 +116,7 @@ export default function App() {
 			afterSignInUrl="/"
 			appearance={{
 				elements: {
-					// Hide the "Secured by Clerk" branding row (Pro plan
-					// lets us turn this off in-dashboard too, but the CSS
-					// rule is belt + suspenders).
+					// Hide the "Secured by Clerk" branding row.
 					footer: { display: "none" },
 				},
 			}}

@@ -14,22 +14,32 @@
 // Routing-by-subdomain happens automatically because each subdomain
 // resolves to a different Worker app.
 
-import { SignIn } from "@clerk/react-router";
+import { SignIn } from "@clerk/clerk-react";
 import { useSearchParams } from "react-router";
+import { VantaBirds } from "../components/VantaBirds";
 
 export default function LoginRoute() {
 	const [params] = useSearchParams();
 	const reason = params.get("reason");
 
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-			<div className="w-full max-w-md">
+		<div className="min-h-screen flex items-center justify-center p-6 relative">
+			<VantaBirds />
+			<div className="w-full max-w-md relative z-10 backdrop-blur-sm bg-white/60 rounded-xl border border-white/40 shadow-xl p-6">
 				<div className="mb-6 text-center">
+					<img
+						src="/logo.svg"
+						alt="InternJobs.ai"
+						className="mx-auto mb-3 h-12 w-12 rounded-xl shadow-sm"
+					/>
 					<h1 className="text-xl font-semibold text-slate-900">
-						Parrot Workspace
+						InternJobs.AI Parrot Workspace
 					</h1>
-					<p className="text-sm text-slate-600 mt-1">
-						Sign in with your @internjobs.ai email
+					<p className="text-sm text-slate-700 mt-1 italic">
+						Birds of the same flock fly together.
+					</p>
+					<p className="text-xs text-slate-500 mt-3">
+						Sign in with your phone number
 					</p>
 				</div>
 

@@ -1,34 +1,33 @@
-// v1.2 Phase 10 Wave 2b (revised 2026-05-18): operator-role gate.
+// v1.2 Phase 10 Wave 2b (revised 2026-05-19): operator-role gate.
 //
-// Primary gate: the session JWT's active-org role is `org:admin`. That's
-// the role Clerk hands to whoever created the InternJobs Team org and
-// to anyone explicitly promoted to admin via the Clerk dashboard.
+// Two paths to operator (any of these is sufficient):
+//   1. Clerk publicMetadata.role is one of: operator, admin, ceo
+//      — assigned via Clerk dashboard or the /api/admin/employees
+//      provisioning route.
+//   2. Email in the PARROT_OPERATOR_EMAILS comma-separated allowlist
+//      (bootstrap path — the very first operator needs to exist before
+//      we have a UI to grant a role).
 //
-// Fallback (kept for bootstrap and emergency access while org membership
-// is still being rolled out): PARROT_OPERATOR_EMAILS comma-separated
-// allowlist. Documented as deprecated in workers/types.ts.
-//
-// Note: by the time this middleware runs, workers/app.ts has already
-// enforced that the session carries the InternJobs Team org as active.
-// So `c.var.employee.orgRole` reflects that org specifically.
+// No Organizations involved. The employee Clerk app is a dedicated
+// instance — every signed-in user is some flavour of employee already.
 
 import { createMiddleware } from "hono/factory";
 import type { ParrotContext } from "./mailbox";
 import type { Env, Employee } from "../types";
 
+const OPERATOR_ROLES = new Set(["operator", "admin", "ceo"]);
+
 export function isOperator(
 	env: Env,
-	employee: Pick<Employee, "email" | "orgRole" | "publicMetadata">,
+	employee: Pick<Employee, "email" | "publicMetadata">,
 ): boolean {
-	if (employee.orgRole === "org:admin") return true;
-	// Legacy compatibility — publicMetadata.role set via the Clerk
-	// dashboard before Organizations existed.
-	if (employee.publicMetadata?.role === "operator") return true;
+	const role = String(employee.publicMetadata?.role || "").toLowerCase();
+	if (OPERATOR_ROLES.has(role)) return true;
 	const allowlist = (env.PARROT_OPERATOR_EMAILS || "")
 		.split(",")
 		.map((e) => e.trim().toLowerCase())
 		.filter(Boolean);
-	if (allowlist.includes(employee.email.toLowerCase())) return true;
+	if (allowlist.includes(String(employee.email).toLowerCase())) return true;
 	return false;
 }
 

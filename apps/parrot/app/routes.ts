@@ -10,6 +10,7 @@ import { index, type RouteConfig, route } from "@react-router/dev/routes";
 
 export default [
 	index("routes/home.tsx"),
+	route("dashboard", "routes/dashboard.tsx"),
 	route("inbox", "routes/inbox.tsx"),
 	route("chat", "routes/chat.tsx"),
 	route("meetings", "routes/meetings.tsx"),

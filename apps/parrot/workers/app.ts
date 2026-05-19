@@ -1,37 +1,27 @@
-// v1.2 Phase 10 Wave 2b (revised 2026-05-18): Parrot Hono root — Clerk
-// session JWT verification + org-membership gate.
+// v1.2 Phase 10 Wave 2b (revised 2026-05-19): Parrot Hono root — Clerk
+// session JWT verification.
 //
-// BIG architectural diff vs apps/agentic-inbox/workers/app.ts:
-//   - agentic-inbox guards every request with a Cloudflare Access JWT
-//     (cf-access-jwt-assertion header).
-//   - Parrot reuses the STUDENT production Clerk instance
-//     (clerk.internjobs.ai) and requires the active session to carry the
-//     "InternJobs Team" org in its `o.id` claim. Students sign in via the
-//     same Clerk app but are not org members, so workspace.internjobs.ai
-//     rejects them. Employees are org members → they're admitted.
+// Auth model: Parrot uses a DEDICATED production Clerk app
+// (clerk.workspace.internjobs.ai) with phone-OTP as the sole sign-in
+// strategy. The student app (clerk.app.internjobs.ai) is a separate
+// Clerk instance with LinkedIn-only auth — there's NO shared user pool
+// and NO Organization-based gating. Any signed-in Clerk session
+// against the employee instance is, by definition, an employee.
 //
 // Token transport:
 //   - Bearer header (Authorization: Bearer <token>) for API requests
 //     from the SPA, or
 //   - `__session` cookie (Clerk's default) for direct navigations.
-//     Because Clerk is configured at clerk.internjobs.ai, the cookie is
-//     scoped to `.internjobs.ai` and reaches workspace.internjobs.ai
-//     without any handshake.
+//     Clerk is configured at clerk.workspace.internjobs.ai → cookie
+//     scoped to .workspace.internjobs.ai → reaches the worker directly.
 //
 // Verification uses `jose.createRemoteJWKSet` against
-// PARROT_CLERK_JWKS_URL (pointing at the student app's JWKS).
+// PARROT_CLERK_JWKS_URL (the employee Clerk app's JWKS).
 //
-// Org-membership gate:
-//   The JWT must carry `o.id` === env.PARROT_INTERNJOBS_TEAM_ORG_ID.
-//   Clerk only includes the `o` claim when an org is active for the
-//   session. For workspace.internjobs.ai, Clerk's
-//   organizationSyncOptions auto-activates the InternJobs Team org for
-//   any user who is a member; non-members get `o` unset → 403.
-//
-// On unauth / wrong-org:
-//   - API requests (/api/*) → 401 / 403 JSON
-//   - All other requests → redirect to the Clerk Account Portal at
-//     accounts.internjobs.ai (with redirect_url back here).
+// On unauth:
+//   - API requests (/api/*) → 401 JSON
+//   - All other requests → redirect to /sign-in (the embedded Clerk
+//     SignIn form in apps/parrot/app/routes/login.tsx).
 
 import { Hono } from "hono";
 import { jwtVerify, createRemoteJWKSet, type JWTPayload } from "jose";
@@ -105,8 +95,16 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		(typeof c.primary_email_address === "string" &&
 			(c.primary_email_address as string)) ||
 		(typeof c.email_address === "string" && (c.email_address as string)) ||
-		null;
-	if (!employeeId || !email) return null;
+		"";
+	const phoneNumber =
+		(typeof c.phone_number === "string" && (c.phone_number as string)) ||
+		(typeof c.primary_phone_number === "string" &&
+			(c.primary_phone_number as string)) ||
+		"";
+	// Either an email OR phone identifier suffices (employee Clerk app is
+	// phone-OTP only — no email is attached to most user records).
+	const identifier = email || phoneNumber;
+	if (!employeeId || !identifier) return null;
 
 	const givenName =
 		typeof c.given_name === "string" ? (c.given_name as string) : undefined;
@@ -115,7 +113,7 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 	const displayName =
 		(typeof c.name === "string" && (c.name as string)) ||
 		[givenName ?? "", familyName ?? ""].filter(Boolean).join(" ") ||
-		email.split("@")[0];
+		(email ? email.split("@")[0] : phoneNumber);
 	const picture =
 		typeof c.picture === "string"
 			? (c.picture as string)
@@ -129,41 +127,25 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 				? (c.publicMetadata as Record<string, unknown>)
 				: null;
 
-	// Clerk v2 session JWTs nest active-org info under `o`:
-	//   "o": { "id": "org_…", "rol": "org:admin", "slg": "internjobs-team" }
-	// Older formats also surface `org_id` / `org_role` / `org_slug` flat.
-	const orgClaim =
-		c.o && typeof c.o === "object" ? (c.o as Record<string, unknown>) : null;
-	const orgId =
-		(orgClaim && typeof orgClaim.id === "string" ? orgClaim.id : null) ||
-		(typeof c.org_id === "string" ? (c.org_id as string) : null);
-	const orgRole =
-		(orgClaim && typeof orgClaim.rol === "string" ? orgClaim.rol : null) ||
-		(typeof c.org_role === "string" ? (c.org_role as string) : null);
-	const orgSlug =
-		(orgClaim && typeof orgClaim.slg === "string" ? orgClaim.slg : null) ||
-		(typeof c.org_slug === "string" ? (c.org_slug as string) : null);
-
 	return {
 		employeeId,
-		email,
+		email: email || phoneNumber, // fall back to phone for callers that key on `email`
 		displayName,
 		givenName,
 		familyName,
 		picture,
 		publicMetadata,
-		orgId,
-		orgRole,
-		orgSlug,
 	};
 }
 
-/** Build the Clerk Account Portal sign-in URL with a redirect_url back
- *  to the path the user was trying to reach. */
+/** Send unauth users to Parrot's own embedded sign-in form (a
+ *  <SignIn> from @clerk/react-router restricted to email OTP).
+ *  app/routes/login.tsx renders the form; we pass `redirect_url` as
+ *  ?after_sign_in_url so Clerk routes back to the original path. */
 function buildSignInRedirect(path: string): string {
-	const target = `https://workspace.internjobs.ai${path === "/" ? "" : path}`;
-	const portal = "https://accounts.internjobs.ai/sign-in";
-	return `${portal}?redirect_url=${encodeURIComponent(target)}`;
+	if (path === "/sign-in" || path.startsWith("/sign-in/")) return "/sign-in";
+	const after = path === "/" ? "/" : path;
+	return `/sign-in?redirect_url=${encodeURIComponent(after)}`;
 }
 
 const app = new Hono<ParrotContext>();
@@ -264,28 +246,12 @@ app.use("*", async (c, next) => {
 		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
-	// Org-membership gate (replaces the @internjobs.ai email-domain check).
-	// The session must have the InternJobs Team org active; non-members of
-	// that org have no `o` claim in their JWT and get bounced.
-	const requiredOrgId = c.env.PARROT_INTERNJOBS_TEAM_ORG_ID;
-	if (!requiredOrgId) {
-		// Misconfiguration — fail closed rather than admit everyone.
-		if (isApi) {
-			return c.json({ error: "parrot_team_org_id_missing" }, 503);
-		}
-		return c.text(
-			"Parrot is not configured. Set PARROT_INTERNJOBS_TEAM_ORG_ID.",
-			503,
-		);
-	}
-	if (employee.orgId !== requiredOrgId) {
-		if (isApi) {
-			return c.json({ error: "forbidden_not_team_member" }, 403);
-		}
-		// Send them through sign-in again — Clerk will surface the org
-		// switcher if they're a member but a different org is active.
-		return c.redirect(buildSignInRedirect(path), 302);
-	}
+	// No org-membership gate. The employee Clerk app
+	// (clerk.workspace.internjobs.ai) is a dedicated instance with its
+	// own user pool — anyone who has a valid session JWT IS an employee
+	// by construction. Org-based separation was leftover from the
+	// abandoned "shared Clerk app" architecture (see
+	// memory/project-auth-architecture.md, 2026-05-18 decision).
 
 	c.set("employee", employee);
 	return next();
