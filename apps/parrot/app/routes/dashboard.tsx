@@ -1,28 +1,39 @@
-// v1.2 Phase 12 Wave 1: Dashboard pane — the workspace's landing surface.
-// The "Dashboard Mothership Agent" monitors every channel (Email, Chat,
-// Meetings, Phone/SMS) and surfaces actionable todos here.
+// v1.2 Phase 12 Wave 3: Dashboard pane — ranked todo list across channels.
 //
-// Wave 1 ships the scaffolding: secondary-nav views wired to `?view=` query
-// params, the API call site to GET /api/dashboard/todos, and an empty-state
-// card. Wave 2 lands the ingest pipeline so todos start populating. Wave 3
-// polishes ranking + click-through navigation.
+// The "Dashboard Mothership Agent" monitors every channel (Email, Chat,
+// Meetings, Phone/SMS) and surfaces actionable todos here. This wave
+// connects the React UI to GET /api/dashboard/todos?view= and renders
+// each row as a <TodoCard>. Clicking an email-source card navigates to
+// /inbox?message={source_id}; clicking a chat-source card navigates to
+// /chat (Mattermost iframe — deep-link is a future enhancement, see
+// 12-RESEARCH.md).
+//
+// Skills referenced:
+//   cloudflare/skills: cloudflare — Workers AI via AI Gateway (per-employee quota + prompt cache)
+//   cloudflare/skills: durable-objects — todos table, ranked query result shape
 
 import {
 	AtSign,
 	CalendarCheck,
 	CalendarRange,
-	Hash,
 	LayoutDashboard,
 	Mail,
 	MessageSquare,
 	Sparkles,
 	Video,
 } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
+import { TodoCard, type TodoItem } from "../components/TodoCard";
 import {
 	SecondaryNavItem,
 	WorkspaceShell,
 } from "../components/WorkspaceShell";
+
+type LoadState =
+	| { status: "loading" }
+	| { status: "ok"; todos: TodoItem[] }
+	| { status: "error"; message: string };
 
 function DashboardSecondaryNav({ activeView }: { activeView: string }) {
 	return (
@@ -72,9 +83,126 @@ function DashboardSecondaryNav({ activeView }: { activeView: string }) {
 	);
 }
 
+function LoadingSkeleton() {
+	return (
+		<div className="space-y-3">
+			{[0, 1, 2].map((i) => (
+				<div
+					key={i}
+					className="animate-pulse bg-slate-200 rounded-xl h-16"
+					aria-hidden="true"
+				/>
+			))}
+		</div>
+	);
+}
+
+function ErrorCard({ message }: { message: string }) {
+	return (
+		<section className="rounded-xl border border-red-200 bg-red-50 p-6">
+			<p className="text-sm font-medium text-red-800">
+				Could not load todos — agent may still be warming up.
+			</p>
+			<p className="text-xs text-red-700 mt-1">{message}</p>
+		</section>
+	);
+}
+
+function emptyStateCopy(activeView: string): { title: string; body: string } {
+	switch (activeView) {
+		case "mentions":
+			return {
+				title: "No mentions yet.",
+				body: "Todos where you are @-tagged will appear here.",
+			};
+		case "today":
+			return {
+				title: "No today's todos.",
+				body: "Items created today will appear here.",
+			};
+		case "week":
+			return {
+				title: "No this week's todos.",
+				body: "Items from the last 7 days will appear here.",
+			};
+		default:
+			return {
+				title: "Your workspace agent is monitoring your channels.",
+				body: "Todos will appear here as emails and chat messages arrive.",
+			};
+	}
+}
+
+function EmptyState({ activeView }: { activeView: string }) {
+	const { title, body } = emptyStateCopy(activeView);
+	return (
+		<section className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+			<div className="flex justify-center mb-2">
+				<Sparkles size={20} className="text-violet-500" strokeWidth={2.5} />
+			</div>
+			<p className="text-sm font-medium text-slate-800">{title}</p>
+			<p className="text-xs text-slate-600 mt-1">{body}</p>
+		</section>
+	);
+}
+
 export default function DashboardRoute() {
 	const [searchParams] = useSearchParams();
 	const activeView = searchParams.get("view") ?? "all";
+	const navigate = useNavigate();
+	const [state, setState] = useState<LoadState>({ status: "loading" });
+
+	useEffect(() => {
+		let cancelled = false;
+		setState({ status: "loading" });
+
+		const url = `/api/dashboard/todos?view=${encodeURIComponent(activeView)}`;
+		fetch(url, {
+			credentials: "include",
+			headers: { Accept: "application/json" },
+		})
+			.then(async (res) => {
+				if (!res.ok) {
+					throw new Error(`Request failed: ${res.status}`);
+				}
+				return res.json() as Promise<{ todos: TodoItem[] }>;
+			})
+			.then((data) => {
+				if (cancelled) return;
+				setState({ status: "ok", todos: data.todos ?? [] });
+			})
+			.catch((err: unknown) => {
+				if (cancelled) return;
+				const message =
+					err instanceof Error ? err.message : "Unknown error";
+				setState({ status: "error", message });
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [activeView]);
+
+	function handleSelect(todo: TodoItem) {
+		if (todo.source_channel === "email") {
+			navigate(`/inbox?message=${encodeURIComponent(todo.source_id)}`);
+			return;
+		}
+		if (todo.source_channel === "chat") {
+			// Mattermost iframe — deep-linking to a specific post is a future
+			// enhancement once the SSO bridge accepts a `?post=` param.
+			navigate("/chat");
+			return;
+		}
+		// phone / sms / meeting — placeholder panes; no-op for now.
+	}
+
+	const heading =
+		{
+			mentions: "Mentions",
+			today: "Today",
+			week: "This week",
+		}[activeView] ?? "All todos";
 
 	return (
 		<WorkspaceShell
@@ -82,61 +210,32 @@ export default function DashboardRoute() {
 		>
 			<div className="p-8 max-w-3xl mx-auto">
 				<header className="mb-6">
-					<h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+					<h1 className="text-2xl font-semibold text-slate-900">
+						{heading}
+					</h1>
 					<p className="text-sm text-slate-600 mt-1">
-						Your todos across email, chat, meetings, phone, and SMS —
+						Ranked todos across email, chat, meetings, phone, and SMS —
 						surfaced by your workspace agent.
 					</p>
 				</header>
 
-				<section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-					<div className="flex items-center gap-2 mb-3">
-						<Sparkles
-							size={16}
-							className="text-violet-500"
-							strokeWidth={2.5}
-						/>
-						<h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-							Pending
-						</h2>
-					</div>
-					<p className="text-sm text-slate-600">
-						Your agent is warming up. Once it ingests your channels you'll
-						see ranked todos here:
-					</p>
-					<ul className="mt-3 space-y-1.5 text-sm text-slate-700">
-						<li className="flex items-start gap-2">
-							<Hash size={14} className="text-slate-400 mt-0.5" />
-							Emails requiring a reply
-						</li>
-						<li className="flex items-start gap-2">
-							<Hash size={14} className="text-slate-400 mt-0.5" />
-							Chat threads with @mentions you haven't responded to
-						</li>
-						<li className="flex items-start gap-2">
-							<Hash size={14} className="text-slate-400 mt-0.5" />
-							Meeting follow-ups from Daily.co recordings
-						</li>
-						<li className="flex items-start gap-2">
-							<Hash size={14} className="text-slate-400 mt-0.5" />
-							SMS / phone-call action items
-						</li>
-						<li className="flex items-start gap-2">
-							<Hash size={14} className="text-slate-400 mt-0.5" />
-							Recurring tasks the agent has learned for you
-						</li>
-					</ul>
-				</section>
+				{state.status === "loading" && <LoadingSkeleton />}
 
-				<section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-					<p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-						Phase 12
-					</p>
-					<p className="text-sm text-slate-700 mt-2">
-						The Dashboard Mothership Agent ingests email + chat in Wave 2;
-						ranked todos appear here once seeded.
-					</p>
-				</section>
+				{state.status === "error" && <ErrorCard message={state.message} />}
+
+				{state.status === "ok" && state.todos.length === 0 && (
+					<EmptyState activeView={activeView} />
+				)}
+
+				{state.status === "ok" && state.todos.length > 0 && (
+					<ul className="space-y-3" data-testid="todo-list">
+						{state.todos.map((todo) => (
+							<li key={todo.id}>
+								<TodoCard todo={todo} onSelect={handleSelect} />
+							</li>
+						))}
+					</ul>
+				)}
 			</div>
 		</WorkspaceShell>
 	);
