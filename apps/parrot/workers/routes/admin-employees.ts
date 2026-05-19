@@ -42,10 +42,41 @@ import { getWorkspaceStub } from "../durableObject/workspace";
 
 const adminEmployees = new Hono<ParrotContext>();
 
+/** Default capability flags: all-on. Used both as POST defaults and as
+ *  the merge base for GET / PATCH /:id/flags so the worker never returns
+ *  a partial flag set even when KV has none of the keys yet. */
+const DEFAULT_FLAGS = {
+	email: true,
+	chat: true,
+	meetings: true,
+	phone: true,
+	sms: true,
+	campaigns: true,
+} as const;
+
+const FeatureFlagsObject = z
+	.object({
+		email: z.boolean(),
+		chat: z.boolean(),
+		meetings: z.boolean(),
+		phone: z.boolean(),
+		sms: z.boolean(),
+		campaigns: z.boolean(),
+	})
+	.partial();
+
 const InviteSchema = z.object({
 	name: z.string().min(1).max(200),
 	personalEmail: z.string().email(),
 	displayName: z.string().min(1).max(200).optional(),
+	// Phase 16 additions — all optional for backward compat.
+	firstName: z.string().min(1).max(100).optional(),
+	lastName: z.string().min(0).max(100).optional(),
+	phoneNumber: z
+		.string()
+		.regex(/^\+[1-9]\d{7,14}$/, "phoneNumber must be E.164")
+		.optional(),
+	featureFlags: FeatureFlagsObject.optional(),
 });
 
 adminEmployees.use("*", requireOperator);
@@ -59,11 +90,22 @@ adminEmployees.post("/", async (c) => {
 		return c.json({ error: "invalid_body", details: parsed.error.flatten() }, 400);
 	}
 	const { name, personalEmail } = parsed.data;
-	const { firstName, lastName, slug } = parseAndSlugify(name);
-	if (!slug) {
+	// Slug is ALWAYS derived from `name` so the workspace email stays
+	// deterministic; firstName/lastName overrides only affect what we send
+	// to Clerk as the user's display identity.
+	const parsedName = parseAndSlugify(name);
+	if (!parsedName.slug) {
 		return c.json({ error: "invalid_name_slug" }, 400);
 	}
-	const workspaceEmail = `${slug}@internjobs.ai`;
+	const firstName = parsed.data.firstName ?? parsedName.firstName;
+	const lastName = parsed.data.lastName ?? parsedName.lastName;
+	const workspaceEmail = `${parsedName.slug}@internjobs.ai`;
+	const phoneNumber = parsed.data.phoneNumber;
+
+	// Merge default-all-on flags with any override the operator sent.
+	// `parsed.data.featureFlags` is a partial — spread last so the
+	// operator's explicit overrides win.
+	const flags = { ...DEFAULT_FLAGS, ...(parsed.data.featureFlags ?? {}) };
 
 	const workspace = getWorkspaceStub(c.env);
 
@@ -80,11 +122,17 @@ adminEmployees.post("/", async (c) => {
 		);
 	}
 
-	// 1) Create Clerk user in the student production Clerk app.
+	// 1) Create Clerk user in the employee Clerk app.
+	// When phoneNumber is supplied, the Clerk app is phone-OTP only —
+	// createClerkUser sends `phone_number` (NOT `email_address`). When
+	// phoneNumber is absent, we fall back to the email-OTP enrollment path
+	// for backward compat with any caller that hasn't migrated.
 	let clerkUserId: string;
 	try {
 		const clerkUser = await createClerkUser(c.env, {
-			emailAddress: workspaceEmail,
+			...(phoneNumber
+				? { phoneNumber }
+				: { emailAddress: workspaceEmail }),
 			firstName: firstName || name,
 			lastName,
 			publicMetadata: { role: "employee" },
@@ -112,6 +160,24 @@ adminEmployees.post("/", async (c) => {
 		displayName: parsed.data.displayName || name,
 	});
 
+	// 2b) Write capability flags to KV. Best-effort: if the KV binding
+	// isn't present (e.g. local dev without PARROT_FEATURE_FLAGS), the
+	// GET /:id/flags endpoint falls back to DEFAULT_FLAGS anyway. We
+	// don't fail the invite over a missing KV binding.
+	if (c.env.PARROT_FEATURE_FLAGS) {
+		try {
+			await c.env.PARROT_FEATURE_FLAGS.put(
+				`employee:${clerkUserId}:flags`,
+				JSON.stringify(flags),
+			);
+		} catch (e) {
+			console.warn(
+				`Feature flag KV write failed for ${clerkUserId}:`,
+				(e as Error).message,
+			);
+		}
+	}
+
 	// 3) Add Email Routing rule. Soft-fail — we report it but don't
 	// undo the Clerk user; operator can retry separately.
 	let routingRuleId: string | null = null;
@@ -128,8 +194,14 @@ adminEmployees.post("/", async (c) => {
 	}
 
 	// 4) Send welcome email. Also soft-fail.
+	// Identity: prefer the signed-in operator's identity so the invite
+	// reads as a personal note from (e.g.) Ridhi. Defaults exist so a
+	// no-operator-context callsite still produces a valid email.
 	const url = new URL(c.req.url);
 	const signinUrl = `${url.protocol}//${url.host}/sign-in`;
+	const inviter = c.var.employee;
+	const inviterName = inviter?.displayName || "Ridhi";
+	const inviterEmail = inviter?.email || "ridhi@internjobs.ai";
 	let welcomeSent = false;
 	let welcomeError: string | null = null;
 	try {
@@ -138,6 +210,9 @@ adminEmployees.post("/", async (c) => {
 			employeeName: firstName || name,
 			workspaceEmail,
 			signinUrl,
+			inviterName,
+			inviterEmail,
+			phoneNumber,
 		});
 		welcomeSent = true;
 	} catch (e) {
@@ -158,6 +233,7 @@ adminEmployees.post("/", async (c) => {
 			status: employeeRow.status,
 			created_at: employeeRow.created_at,
 		},
+		feature_flags: flags,
 		routing_rule_id: routingRuleId,
 		routing_error: routingError,
 		welcome_email_sent: welcomeSent,
@@ -181,6 +257,74 @@ adminEmployees.get("/", async (c) => {
 			created_at: r.created_at,
 		})),
 	});
+});
+
+// — Feature flags ————————————————————————————————————————————
+//
+// Route order matters: Hono dispatches `/:id/flags` AFTER `/:id` if the
+// latter is registered first, because `:id` greedily matches everything
+// up to the next slash. We register both flag routes here, BEFORE the
+// DELETE "/:id" handler below, so "/abc123/flags" → flags handler (not
+// the disable handler with id="abc123/flags").
+
+adminEmployees.get("/:id/flags", async (c) => {
+	const id = c.req.param("id");
+	const workspace = getWorkspaceStub(c.env);
+	const row = await workspace.getEmployeeById(id);
+	if (!row) return c.json({ error: "not_found" }, 404);
+
+	// When the KV binding isn't wired, return defaults so the frontend
+	// can still render the toggle UI in dev / staging without bindings.
+	if (!c.env.PARROT_FEATURE_FLAGS) {
+		return c.json({ feature_flags: { ...DEFAULT_FLAGS } });
+	}
+	const stored = (await c.env.PARROT_FEATURE_FLAGS.get(
+		`employee:${row.clerk_user_id}:flags`,
+		{ type: "json" },
+	)) as Record<string, boolean> | null;
+	return c.json({
+		feature_flags: { ...DEFAULT_FLAGS, ...(stored ?? {}) },
+	});
+});
+
+adminEmployees.patch("/:id/flags", async (c) => {
+	const id = c.req.param("id");
+	const body = await c.req.json().catch(() => null);
+	const FlagsBodySchema = z.object({
+		featureFlags: FeatureFlagsObject,
+	});
+	const parsed = FlagsBodySchema.safeParse(body);
+	if (!parsed.success) {
+		return c.json(
+			{ error: "invalid_body", details: parsed.error.flatten() },
+			400,
+		);
+	}
+
+	const workspace = getWorkspaceStub(c.env);
+	const row = await workspace.getEmployeeById(id);
+	if (!row) return c.json({ error: "not_found" }, 404);
+
+	// Read-modify-write so a partial PATCH (e.g. just `{ chat: false }`)
+	// doesn't clobber the other 5 toggles. Base is the default-all-on
+	// shape; any KV value layers on top; the request body wins last.
+	let existing: Record<string, boolean> = { ...DEFAULT_FLAGS };
+	if (c.env.PARROT_FEATURE_FLAGS) {
+		const stored = (await c.env.PARROT_FEATURE_FLAGS.get(
+			`employee:${row.clerk_user_id}:flags`,
+			{ type: "json" },
+		)) as Record<string, boolean> | null;
+		if (stored) existing = { ...existing, ...stored };
+	}
+	const merged = { ...existing, ...parsed.data.featureFlags };
+
+	if (c.env.PARROT_FEATURE_FLAGS) {
+		await c.env.PARROT_FEATURE_FLAGS.put(
+			`employee:${row.clerk_user_id}:flags`,
+			JSON.stringify(merged),
+		);
+	}
+	return c.json({ ok: true, employee_id: id, feature_flags: merged });
 });
 
 // — Disable ————————————————————————————————————————————————
