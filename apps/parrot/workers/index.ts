@@ -368,4 +368,84 @@ app.post(
 	},
 );
 
+// ── Phase 12 ranking regression (dev-only, deterministic) ───────
+// Hit with: curl -X POST http://localhost:8787/api/dev/smoke/ranking \
+//   -H "X-Parrot-Dev-Employee: dev@internjobs.ai"
+//
+// Uses debugInsertTodo to bypass LLM with EXPLICIT scores.
+// This makes the test 100% deterministic — no live AI calls and
+// no PARROT_AI_GATEWAY_ID required. Useful as a regression gate
+// against accidental changes to the hybrid-rank SQL in
+// EmployeeMailboxDO.getTodos().
+//
+// Expected ranks (recency_decay ≈ 0 since both inserted in same request):
+//   todo-hi: urgency=80, is_mention=false → rank = (80*2) + 0 = 160
+//   todo-lo: urgency=20, is_mention=true  → rank = (20*2) + 30 = 70
+// hi always ranks first: 160 > 70.
+//
+// Skills referenced:
+//   cloudflare/skills: cloudflare — Workers AI via AI Gateway (per-employee quota + prompt cache)
+//   cloudflare/skills: durable-objects — debugInsertTodo RPC, getTodos ranked query
+
+app.post(
+	"/api/dev/smoke/ranking",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.PARROT_DEV_MODE) {
+			return c.json({ error: "dev-only endpoint" }, 403);
+		}
+
+		const stub = c.var.mailboxStub;
+		const employee = c.var.employee;
+
+		const hiSourceId = `rank-hi-${Date.now()}`;
+		const loSourceId = `rank-lo-${Date.now() + 1}`;
+
+		// Insert deterministic todos via debugInsertTodo — no LLM, no variability.
+		const hiResult = await stub.debugInsertTodo(employee.employeeId, {
+			source_channel: "email",
+			source_id: hiSourceId,
+			title: "Deterministic high-urgency todo (score=80)",
+			urgency_score: 80,
+			is_mention: false,
+			preview: "Regression fixture: urgency=80, is_mention=false",
+		});
+
+		const loResult = await stub.debugInsertTodo(employee.employeeId, {
+			source_channel: "email",
+			source_id: loSourceId,
+			title: "Deterministic low-urgency mention (score=20)",
+			urgency_score: 20,
+			is_mention: true,
+			preview: "Regression fixture: urgency=20, is_mention=true",
+		});
+
+		const todos = (await stub.getTodos("all")) as Array<{
+			source_id: string;
+			urgency_score: number;
+			is_mention: boolean;
+			rank: number;
+		}>;
+
+		const hiTodo = todos.find((t) => t.source_id === hiSourceId);
+		const loTodo = todos.find((t) => t.source_id === loSourceId);
+
+		const hiRanksFirst =
+			hiTodo && loTodo ? hiTodo.rank > loTodo.rank : null;
+
+		return c.json({
+			hi_todo: hiTodo ?? null,
+			lo_todo: loTodo ?? null,
+			hi_inserted: hiResult?.inserted ?? false,
+			lo_inserted: loResult?.inserted ?? false,
+			hi_ranks_first: hiRanksFirst,
+			pass:
+				hiRanksFirst === true &&
+				(hiResult?.inserted ?? false) &&
+				(loResult?.inserted ?? false),
+			note: "Deterministic — no LLM involved. Scores are explicit via debugInsertTodo.",
+		});
+	},
+);
+
 export { app };
