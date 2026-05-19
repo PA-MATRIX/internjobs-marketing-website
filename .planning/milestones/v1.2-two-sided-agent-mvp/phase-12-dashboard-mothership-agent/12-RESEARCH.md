@@ -554,3 +554,54 @@ const NAV: NavItem[] = [
 
 **Research date:** 2026-05-18
 **Valid until:** 2026-06-18 (kimi-k2.6 is new; Cloudflare voice SDK is evolving — re-verify if >30 days pass before Phase 12 starts)
+
+---
+
+## Late Inputs (2026-05-19) — folded in after RESEARCH COMPLETE
+
+The user supplied four follow-up inputs immediately after the researcher signed off. Capturing them inline so the planner sees them.
+
+### 1. Email = downstream of cloudflare/agentic-inbox (confirmed)
+
+User asked: "for email you will be forking this right https://github.com/cloudflare/agentic-inbox". **Yes — already done.** Per `apps/parrot/workers/durableObject/index.ts` source comment: "Forked from apps/agentic-inbox/workers/durableObject/index.ts." The Parrot `EmployeeMailboxDO` IS the agentic-inbox MailboxDO with two intentional deltas:
+
+- Keyed by stable `clerk_user_id` (NOT email address, so the @internjobs.ai alias can rename without losing the mailbox).
+- Adds a `profile` table + `getProfile()` / `upsertProfile()` for one-call UI hydration.
+
+`apps/agentic-inbox/` ALSO exists in this repo (a separate Worker at `agent.internjobs.ai`) — that's the agent-side mailbox (e.g., `maya@agent.internjobs.ai`). Parrot is the employee-side mailbox (e.g., `ridhi@internjobs.ai`). Same DO shape, different scoping.
+
+**Verified extension model per upstream README:** "any user who passes the shared Cloudflare Access policy can access all mailboxes" + "external AI tools (Claude Code, Cursor, etc.) connected via MCP can operate on any mailbox." Upstream agentic-inbox exposes a `/mcp` endpoint at the Worker. **Implication for Phase 12:** the Dashboard agent does NOT need to fork agentic-inbox again — it can either (a) call the EmployeeMailboxDO directly in-process (same Worker), or (b) connect as an MCP client to the existing `/mcp` endpoint. **Recommendation: in-process direct DO RPC** — same Worker, zero auth surface, no MCP overhead. Reserve MCP for future external integrations (e.g., Claude Code agent operating on an employee mailbox during dev).
+
+### 2. Workers AI = mothership LLM (confirmed)
+
+User said: "you can enhance workser ai to become mothership agent." **Already the plan** — research recommends `@cf/moonshotai/kimi-k2.6` via direct REST against the existing Workers AI account `0fffd3dc637bdb26d4963df445a69fd3`. No new LLM vendor, no OpenAI, no Anthropic API. The existing student-app pattern in `apps/app/src/workflows/student-inbound.mjs` is the template. **Acknowledged + locked.**
+
+### 3. cloudflare/skills — use as auto-loaded contextual modules
+
+User pointed to https://github.com/cloudflare/skills with "use skills." This repo provides Agent Skills — contextual modules that auto-load when their triggers match the agent's current task. Different from slash commands (explicit invocation). Three skills are directly relevant to Phase 12:
+
+| Skill | What it provides | Phase 12 usage |
+|---|---|---|
+| `agents-sdk` | Patterns for stateful AI agents on Workers: state, scheduling, RPC, MCP servers, email, streaming chat | Primary skill for the Dashboard agent class — gives the planner/executor reference patterns for `Agent` subclassing, `setState`/`getState`, and `onMessage` hooks |
+| `durable-objects` | DO coordination, RPC, alarm patterns | Backs the DashboardDO alarm-driven Mattermost ingest already specced in this research |
+| `cloudflare` | Broad platform coverage: KV, D1, Workers AI direct, R2, queues | Backstop for any sub-decision the planner needs (e.g., where to log audit events) |
+
+**How to use:** install the `cloudflare/skills` repo into the `.claude/skills/` (or equivalent skill-discovery path) on the planning/executor side BEFORE running `/rrr:plan-phase` next time. For THIS Phase 12 plan, the planner agent will not auto-load them (skills are loaded at agent-spawn time per the repo's auto-load model), but the patterns documented in the `agents-sdk` skill README should be cited inline by the planner where relevant — particularly around the `Agent` class, scheduled tasks, and state persistence.
+
+**Action item for the planner:** in PLAN.md, add a "Skills referenced" section listing the three skills above with one-line each, so when the executor agent runs the plan and HAS the skills auto-loaded, it knows which patterns to anchor on.
+
+**Don't conflate with the Mastra agent in the student app.** The student app's `apps/app/src/workflows/student-inbound.mjs` uses **Mastra** (`@mastra/core`) as the workflow framework — a separate npm package with no relationship to `cloudflare/skills`. The Parrot Dashboard agent will use the Cloudflare **Agents SDK** (`agents` npm package) which is what `cloudflare/skills` describes. The two coexist — student app stays on Mastra, Parrot Dashboard agent runs on the native CF Agents SDK. This is intentional: CF Agents SDK is the native fit for a Worker-resident agent, and avoiding Mastra here keeps the Parrot Worker bundle lean.
+
+### 4. User reaction: "this is unbelievable what all the agent can do"
+
+User excited about the capabilities surfaced by the cloudflare/skills agents-sdk patterns + the kimi-k2.6 model. **Translates to a planning bias:** lean INTO the agent's full surface in Phase 12 rather than ship a minimal v1. Concretely:
+
+- **Include the LLM extraction step in Wave 12.1**, don't defer to a later wave.
+- **Include cross-channel ranking in Wave 12.2**, not Wave 12.3.
+- **Phase 12.3 = polish (cross-pane click-through, mention detection, deadline parsing)** rather than "build the agent at all."
+
+But still ship the placeholder Phone/SMS icons (this is the SEAM pattern, not a full implementation — `feedback-seam-not-integration` rule still applies for the telephony backend).
+
+### 5. The blog post image (BLOG-3210_2.png)
+
+User shared https://cf-assets.www.cloudflare.com/zkvhlag99gkb/4aGV0BVpbrj3ql5TubPMXx/b85351f13c5fae93a27d11e20a5fc11e/BLOG-3210_2.png — this appears to be a Cloudflare blog post asset showing what an Agent SDK-built agent can do. I (the orchestrator) did not fetch the image, so the planner should treat this as a "vision affirmation" rather than a load-bearing reference. If the planner needs the image content, fetch it via WebFetch first.
