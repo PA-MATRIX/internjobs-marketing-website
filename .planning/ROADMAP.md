@@ -35,6 +35,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [x] **Phase 11: Daily.co Integration (was Parrot Wave 3)** — Daily.co REST helper + `@daily-co/daily-react` SDK embed in Parrot Meetings pane (3-tab nav: Your room / Active rooms / History). Per-employee always-on personal rooms (`parrot-{clerk_user_id}`) via migration 6. Ephemeral 1h rooms via `startEphemeralMeeting()` upgrade Phase 13 StartMeeting CTA from toast → real Daily.co room (migration 7 adds `meeting_started` event_type). Fails soft when DAILY_API_KEY unset. Shipped 2026-05-19 (scope-reversal — was originally deferred 2026-05-19 morning, reinstated same day).
 - [x] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent (kimi-k2.6 via Cloudflare AI Gateway with per-employee daily caps) monitoring Email + Chat, extracting cross-channel todos via DO alarm-driven Mattermost polling + fire-and-forget email hook, ranking them with a hybrid urgency formula, and surfacing them on the Parrot Dashboard pane. Phone + SMS placeholder nav icons + route stubs (seams, not integrations) also ship here. Storage is `EmployeeMailboxDO` extended with a `todos` table — no new DO class, no Mastra in Parrot. Shipped 2026-05-19 (10 commits 5fe02a9..f7d4be6; 3 waves: 12-01 foundation + 12-02 ingest/extraction + 12-03 UI/ranking; verifier `human_needed` for live AI Gateway + browser checks; 1 advisory fixed inline as `f7d4be6`).
 - [x] **Phase 13: Cross-pane Actions + Launch Polish (was Parrot Wave 5)** — Email↔Chat↔Meeting cross-pane actions, unified notification pane (drawer + service worker + VAPID push), first-login wizard, feature-flag KV, /healthz, Sentry hook, PILOT-RUNBOOK.md. Daily.co STILL deferred — `StartMeeting` is a UI seam writing a notification row to measure pilot demand. Shipped 2026-05-19. (Split from Phase 10.)
+- [ ] **Phase 14: Parrot Knowledge Graph (FalkorDB extension)** — Extend the existing `internjobs-graph` Fly FalkorDB (Phase 04 MEMORY-01) with a per-employee subgraph for Parrot's Dashboard Mothership Agent. Same Graphiti temporal-fact pattern. Pre-extraction: agent reads recent facts to dedup + score in context. Post-extraction: writes todo + mentioned-actor + source-channel facts with `valid_to` close-out (Graphiti invariant) → solves the auto-clear problem too. Reuses existing infra (no new Fly app, no new vendor); shares `internjobs-graph.internal:6379` instance with namespace isolation via node labels (`:Employee` vs `:Student`). (Added 2026-05-19 — user direction "extend falkor as we already have it"; supersedes ad-hoc Phase 13 todo-cleanup ideas.)
 
 ## Phase Details
 
@@ -289,6 +290,33 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [ ] 13-01-PLAN.md — Notifications + push: migration 4, push VAPID DO methods, /api/push/subscribe, /api/notifications, sw.js, notification drawer in WorkspaceShell
 - [ ] 13-02-PLAN.md — Cross-pane actions: emailToChat + chatToEmail DO methods, replace three 501 stubs, finish three crosspane UI components
 - [ ] 13-03-PLAN.md — First-login wizard + pilot readiness: migration 5, OnboardingWizard, feature flags KV, /healthz, Sentry, PILOT-RUNBOOK.md
+
+### Phase 14: Parrot Knowledge Graph (FalkorDB extension)
+
+**Goal:** Make the Mothership Agent multi-turn and stateful. Extend the existing `internjobs-graph` Fly FalkorDB (Phase 04 MEMORY-01) with per-employee subgraphs so the Dashboard agent can: (a) read recent facts BEFORE extraction to dedup + score in context; (b) write todo / mentioned-actor / source-channel facts with `valid_to` close-out so resolved items naturally fall out of the active dashboard (solves auto-clear without an explicit cron).
+
+**Depends on:** Phase 12 (todo extraction pipeline + AI Gateway), Phase 04 MEMORY-01 (FalkorDB infrastructure).
+
+**Architecture decisions locked (2026-05-19):**
+
+- **Reuse the existing `internjobs-graph` Fly app** — same instance, same `FALKORDB_URL` secret, no new infra. Namespace isolation via node labels: `:Employee` / `:Todo` / `:Email` / `:ChatMsg` for Parrot, `:Student` / `:Fact` / `:Role` for the student app's Maya agent. Both live in the same Cypher store but don't query each other's labels.
+- **Graphiti temporal-fact pattern** — same as `apps/app/src/memory/graph.mjs`. Every fact has `valid_from` / `valid_to`. Single-valued predicates close-out conflicting active facts atomically; multi-valued accumulate.
+- **Native Node implementation** — `apps/parrot/workers/lib/graph.ts`. NO Python sidecar. Uses `falkordb@^6.6.2` npm client (same dep as student app).
+- **Fail-soft end-to-end** — if FalkorDB is unreachable, Phase 12 extraction continues without graph augmentation; degraded UX, no crash. New `/healthz` key `graphReady` (cached 30s).
+- **No Mastra in Parrot** — graph integration is a thin Node lib called directly from the AI Gateway helper. Mastra stays in the student app.
+- **Auto-clear without a cron:** when a todo's source thread receives a reply that resolves the ask, the post-reply fact extraction emits a `RESOLVED_BY` edge with `valid_from=reply_time`. The dashboard query filters `valid_to IS NULL` so resolved todos drop off automatically. Manual "dismiss" button can write `valid_to=now()` explicitly.
+
+**Success Criteria** (what must be TRUE):
+1. `apps/parrot/workers/lib/graph.ts` exports `getEmployeeContext(clerk_user_id)` returning a prose summary of recent open todos + frequent collaborators + active projects.
+2. Phase 12's `extractTodosFromText()` injects this summary as a context block in the user prompt BEFORE the email body.
+3. Post-extraction fire-and-forget writes each new todo as a `:Todo` node + edges to `:Person` (mentioned actors) + `:Email` or `:ChatMsg` (source).
+4. Single-valued predicates close-out: re-extracting a duplicate todo (same `(employee_id, source_id)`) UPDATEs the existing node rather than inserting a duplicate.
+5. `/healthz` reports `graphReady: true` in production.
+6. `npm run smoke:parrot-graph` script validates 6 invariants (ping, schema bootstrap, seed facts, conflict close-out, summary non-empty, recall by keyword).
+7. Dashboard query filters `WHERE valid_to IS NULL` so resolved todos auto-disappear.
+8. Existing student-app graph queries continue to work (label-namespace isolation verified).
+
+**Plans:** TBD — refined during `/rrr:plan-phase 14`.
 
 ## Progress
 
