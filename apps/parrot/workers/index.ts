@@ -300,4 +300,72 @@ app.get(
 app.route("/api/admin/employees", adminEmployees);
 app.route("/oidc", oidc);
 
+// ── Phase 12 smoke test (dev-only) ──────────────────────────────
+// Hit with: curl -X POST http://localhost:8787/api/dev/smoke/seed-email \
+//   -H "X-Parrot-Dev-Employee: dev@internjobs.ai" \
+//   -H "Content-Type: application/json"
+//
+// Asserts: at least one todo with source_channel='email' appears in
+// GET /api/dashboard/todos within the same request.
+//
+// Guards:
+//   - Only runs when PARROT_DEV_MODE env var is set (wrangler dev sets it implicitly
+//     via the --env flag; production Worker has no such var).
+//   - Requires X-Parrot-Dev-Employee header (existing dev-auth bypass in lib/mailbox.ts).
+
+app.post(
+	"/api/dev/smoke/seed-email",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		// Guard: dev-only
+		if (!c.env.PARROT_DEV_MODE) {
+			return c.json({ error: "dev-only endpoint" }, 403);
+		}
+
+		const stub = c.var.mailboxStub;
+		const employee = c.var.employee;
+		const emailId = `smoke-${Date.now()}`;
+
+		// Seed a deterministic email likely to produce a todo
+		await stub.createEmail(
+			"Inbox",
+			{
+				id: emailId,
+				subject: "Action required: please review the contract by Friday EOD",
+				sender: "test-sender@example.com",
+				recipient: employee.email,
+				date: new Date().toISOString(),
+				body: [
+					"Hi team,",
+					"",
+					"Please review the attached contract and reply with approval by Friday EOD.",
+					"This is blocking the vendor onboarding and is urgent.",
+					"",
+					"Also, can you set up a call with the legal team this week?",
+					"",
+					"Thanks",
+				].join("\n"),
+			},
+			[],
+		);
+
+		// Give extraction a moment to complete (it's fire-and-forget via void)
+		await new Promise((r) => setTimeout(r, 500));
+
+		const todos = await stub.getTodos("all");
+		const emailTodos = (
+			todos as Array<{ source_channel: string; source_id: string }>
+		).filter(
+			(t) => t.source_channel === "email" && t.source_id === emailId,
+		);
+
+		return c.json({
+			seeded_email_id: emailId,
+			todos_extracted: emailTodos.length,
+			todos: emailTodos,
+			pass: emailTodos.length > 0,
+		});
+	},
+);
+
 export { app };
