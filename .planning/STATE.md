@@ -1,17 +1,19 @@
 ---
 schema_version: 2
 milestone: "v1.3"
-phase: 18
-phase_name: "Graph Bridge Runtime"
+phase: 21
+phase_name: "Credential Rotation"
 phase_total: 4
 plan: 0
 plan_total: 0
-status: "ready_to_plan"
-progress: 0
+status: "ready_to_execute"
+progress: 75
 last_activity: "2026-05-19"
 session_last: "2026-05-19"
-resume_file: ""
-blockers: []
+resume_file: ".planning/milestones/v1.3-pilot-hardening/SHIP-READY.md"
+blockers:
+  - "Phase 19 cron is wired but inert until a closeTodoFact helper writes valid_to (recommend v1.3.1 patch ~50 LOC)"
+  - "Lakera/Cisco AI Defense post-acquisition API drift - verify endpoint at platform.lakera.ai before Phase 20 deploy"
 ---
 
 # Project State
@@ -29,12 +31,12 @@ See: .planning/milestones/v1.3-pilot-hardening/research/SUMMARY.md (research bas
 ## Current Position
 
 Milestone: v1.3 Pilot Hardening
-Phase: 18 of 21 (Graph Bridge Runtime) — first phase of v1.3
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-19 — Roadmap created (Phases 18-21 defined, 58 requirements mapped)
+Phase: 21 of 21 (Credential Rotation) — code-complete on phases 18/19/20; awaiting human-action deploys
+Plan: All 9 plans + 1 runbook complete
+Status: Ready to execute (deploys + Lakera signup + credential rotation pending user)
+Last activity: 2026-05-19 — Phases 18/19/20 code-complete (12 commits), Phase 21 RUNBOOK ready, SHIP-READY.md written
 
-Progress: ░░░░░░░░░░ 0%
+Progress: ███████░░░ 75% (3/4 code-complete; Phase 21 is ops-only)
 
 ## Performance Metrics
 
