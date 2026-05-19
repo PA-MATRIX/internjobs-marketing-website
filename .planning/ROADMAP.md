@@ -316,7 +316,10 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 7. Dashboard query filters `WHERE valid_to IS NULL` so resolved todos auto-disappear.
 8. Existing student-app graph queries continue to work (label-namespace isolation verified).
 
-**Plans:** TBD — refined during `/rrr:plan-phase 14`.
+**Plans:** 3 plans, 3 waves (sequential)
+- [ ] 14-01-PLAN.md — Graph helper + schema: falkordb client, ensureParrotGraphSchema, recordTodoFact, getEmployeeContext, Env types
+- [ ] 14-02-PLAN.md — Phase 12 wiring: context block injection, cf-aig-cache-ttl=0, post-extraction fire-and-forget graph writes
+- [ ] 14-03-PLAN.md — Smoke + healthz: 6-invariant smoke script, graph_ready in /healthz (30s cache), smoke:parrot-graph npm script
 
 ## Progress
 
@@ -333,6 +336,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 11. Daily.co Integration | v1.2 | 0/3 | Planning complete | — |
 | 12. Dashboard Mothership Agent | v1.2 | 3/3 | Shipped (browser/AI gateway verify pending user) | 2026-05-19 |
 | 13. Cross-pane Actions + Launch Polish | v1.2 | 0/3 | Planning complete | — |
+| 14. Parrot Knowledge Graph | v1.2 | 0/3 | Planning complete | — |
 
 ## v1.3 Candidates
 
@@ -342,4 +346,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 11 planning complete: 3 plans in 3 sequential waves (REST helper + SDK embed + StartMeeting upgrade). Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 11 planning complete: 3 plans in 3 sequential waves (REST helper + SDK embed + StartMeeting upgrade). Phase 13 planning complete: 3 plans in 3 sequential waves (notifications+push / cross-pane actions / wizard+pilot). Phase 14 planning complete: 3 plans in 3 sequential waves (graph helper + schema / Phase 12 wiring / smoke + healthz). Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
