@@ -33,7 +33,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [x] **Phase 09: LinkedIn Enrichment + QR Onboarding** — Standout-style flow: LinkedIn OAuth → Proxycurl/Cognee enrichment → QR-code phone pairing. Shipped 2026-05-18.
 - [x] **Phase 10: Parrot — Internal Employee Workspace (Wave 1+2+2b)** — `workspace.internjobs.ai` live with phone-OTP auth, Slack-style dual-rail UI (Dashboard / Email / Chat / Meetings), Mattermost-embedded Chat, embedded Clerk SignIn, UserMenu with sign-out, CF Email Routing per employee. Two separate production Clerk apps (student + employee) instead of the originally-planned shared instance. Shipped 2026-05-19. (Waves 3, 4, 5 split into Phase 11, 12, 13 below.)
 - [ ] **Phase 11: Daily.co Integration (was Parrot Wave 3)** — Daily.co account + REST + JS SDK embed in Parrot's Meetings pane. Per-employee always-on personal rooms. "Start meeting" CTAs from Inbox + Chat. (Split from Phase 10 on 2026-05-19.)
-- [ ] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent monitoring every channel (Email, Chat, Meetings recordings, Phone/SMS), ranks cross-channel todos onto the Dashboard pane. New DashboardDO + Mastra workflow. The "whole goal of the workspace" per the 2026-05-19 product vision. (Split from Phase 10.)
+- [ ] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent (kimi-k2.6 via Workers AI direct REST) monitoring Email + Chat, extracting cross-channel todos via DO alarm-driven Mattermost polling + inline email hook, ranking them with a hybrid urgency formula, and surfacing them on the Parrot Dashboard pane. Phone + SMS placeholder nav icons + route stubs (seams, not integrations) also ship here. Storage is `EmployeeMailboxDO` extended with a `todos` table — no new DO class, no Mastra in Parrot. (Planning: 2026-05-19.)
 - [ ] **Phase 13: Cross-pane Actions + Launch Polish (was Parrot Wave 5)** — Email↔Chat↔Meeting cross-pane actions, unified notification pane, browser push, first-login wizard, pilot rollout. (Split from Phase 10.)
 
 ## Phase Details
@@ -196,6 +196,37 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 
 **Status:** Plan written + user decisions locked (Mattermost, Daily.co flat-rate, plain submodule names). Awaiting execution-start signal. Independent of Phase 07b SIP-off — can run in parallel.
 
+### Phase 12: Dashboard Mothership Agent
+
+**Goal:** Per-employee LLM agent monitoring Email + Chat, extracting cross-channel todos, ranking them by urgency × recency × mention boost, and surfacing them on the Parrot Dashboard pane. Also adds Phone + SMS placeholder nav icons + route stubs (seams documenting the future @cloudflare/voice + Telnyx direction — NOT integrations).
+
+**Depends on:** Phase 10 (Parrot Worker + EmployeeMailboxDO + Mattermost)
+
+**Architecture decisions locked (do not re-litigate):**
+- Storage: `EmployeeMailboxDO` extended with `todos` table (migration `3_todos_table`). No new DashboardDO. No Mastra in the Parrot Worker.
+- Email ingest: synchronous hook inside `createEmail()` when folder = Inbox.
+- Chat ingest: DO alarm self-rescheduling at 2-minute intervals via `ctx.storage.setAlarm()`.
+- LLM: `@cf/moonshotai/kimi-k2.6` via Workers AI direct REST. Same pattern as student app. Account `0fffd3dc637bdb26d4963df445a69fd3`. Fail-soft (returns [] on error).
+- Mattermost: bot account REST polling, `GET /api/v4/channels/{id}/posts?since={ms-5000}`. INSERT OR IGNORE deduplication on `source_id`.
+- Ranking: hybrid SQL `ORDER BY` at read time — `(urgency_score*2) + mention_boost + deadline_boost - recency_decay`.
+- Phone/SMS: lucide `Phone` + `MessageCircle` icons in WorkspaceShell NAV; route stubs at `/phone` + `/sms` with source comments documenting future `@cloudflare/voice` + `withVoice(Agent)` + Twilio/Telnyx direction.
+- NOT installed: `@cloudflare/voice`, `agents`, any telephony npm package.
+
+**Success Criteria** (what must be TRUE):
+1. Inbound Inbox email triggers todo extraction; todos appear in `GET /api/dashboard/todos`.
+2. DO alarm fires every 2 minutes and polls Mattermost for chat todos.
+3. `/dashboard` renders ranked todo cards with source icon, click-through to `/inbox?message=`.
+4. `/phone` and `/sms` routes render placeholder UI with seam comments.
+5. WorkspaceShell icon rail shows Phone + SMS between Meetings and admin section.
+6. Smoke test (`POST /api/dev/smoke/seed-email`) returns `pass: true` with real AI credentials.
+7. Ranking regression (`POST /api/dev/smoke/ranking`) returns `pass: true`.
+8. Existing panes (Inbox/Chat/Meetings) unaffected.
+
+**Plans:** 3 plans, 3 waves
+- [ ] 12-01-PLAN.md — Foundation: todos migration + AI helper + GET /api/dashboard/todos + Phone/SMS nav seams
+- [ ] 12-02-PLAN.md — Ingest + LLM extraction: email hook + DO alarm + Mattermost poller + smoke test
+- [ ] 12-03-PLAN.md — UI + ranking: TodoCard component + dashboard loader + view filters + click-through + ranking regression
+
 ## Progress
 
 **Execution order:** 01 → 02 → 03 → 04 → 05 → 06 (sequential; each phase depends on the prior)
@@ -208,6 +239,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 04. Mastra Agent Core | v1.2 | 0/TBD | Not started | — |
 | 05. Operator Audit Log (was: Approval Gate) | v1.2 | 0/TBD | Not started | — |
 | 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
+| 12. Dashboard Mothership Agent | v1.2 | 0/3 | Planning complete | — |
 
 ## v1.3 Candidates
 
@@ -217,4 +249,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-17 — autonomy pivot: Phase 05 renamed "Operator Audit Log (was: Approval Gate)"; APPROVE-01/02 reframed as OPS-01/02; success criteria rewritten to reflect read-only audit log + flag-for-review.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 12 planning complete: 3 plans in 3 sequential waves. Corrected Phase 12 description: uses EmployeeMailboxDO extension (not DashboardDO), Workers AI direct REST (not Mastra), CF Agents SDK deferred to v1.3.*
