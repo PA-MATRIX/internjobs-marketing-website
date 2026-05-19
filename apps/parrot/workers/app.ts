@@ -159,6 +159,13 @@ app.use("*", async (c, next) => {
 	// Always allow /api/health (used by uptime checks and CI).
 	if (path === "/api/health") return next();
 
+	// Always allow /healthz — detailed readiness probe used by deploy
+	// verification + uptime monitors. Returns counts/booleans for
+	// Mattermost / AI Gateway / graph readiness, NO employee data.
+	// Public on purpose so operator can curl during a Phase 21 rotation
+	// without needing a Clerk session.
+	if (path === "/healthz") return next();
+
 	// 2026-05-19: allow /api/dev/* through ONLY when PARROT_DEV_MODE is
 	// set as a Worker env. Each dev route still has its own PARROT_DEV_MODE
 	// gate (defense in depth), so a stale Worker var here doesn't leak
