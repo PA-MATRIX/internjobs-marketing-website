@@ -11,8 +11,28 @@
 
 import type { Env } from "../types";
 
+/**
+ * E.164 phone number regex.
+ * Matches a leading "+", a non-zero first digit, then 7–14 additional digits
+ * (total length 8–15 digits including the leading non-zero). Used by the
+ * Parrot Worker to gate phone-OTP Clerk enrollment.
+ */
+const E164_REGEX = /^\+[1-9]\d{7,14}$/;
+
 export interface ClerkUserCreateInput {
-	emailAddress: string;
+	/**
+	 * Email address to associate with the Clerk user. Optional because the
+	 * Parrot ("InternJobs Employees") Clerk app is phone-OTP only — when
+	 * `phoneNumber` is provided the worker omits `email_address` from the
+	 * Clerk POST body entirely. See memory/project-auth-architecture.md.
+	 */
+	emailAddress?: string;
+	/**
+	 * E.164 phone number (e.g. "+12125551234"). When provided, the Clerk
+	 * user is created with a phone_number identifier (and NO email_address)
+	 * so the user authenticates via phone-OTP at workspace.internjobs.ai.
+	 */
+	phoneNumber?: string;
 	firstName: string;
 	lastName: string;
 	publicMetadata?: Record<string, unknown>;
@@ -21,6 +41,7 @@ export interface ClerkUserCreateInput {
 export interface ClerkUser {
 	id: string;
 	email_addresses?: { id: string; email_address: string }[];
+	phone_numbers?: { id: string; phone_number: string }[];
 	first_name?: string | null;
 	last_name?: string | null;
 	primary_email_address_id?: string | null;
@@ -35,6 +56,29 @@ export async function createClerkUser(
 		throw new Error("createClerkUser: PARROT_CLERK_SECRET_KEY not configured");
 	}
 
+	// Validate phone-number identifier shape up front (don't trust the
+	// caller's regex). The Parrot Worker uses Clerk phone-OTP enrollment,
+	// which REQUIRES E.164 ("+" + country code + subscriber number, no
+	// spaces / dashes / parens).
+	if (input.phoneNumber !== undefined && !E164_REGEX.test(input.phoneNumber)) {
+		throw new Error(
+			"createClerkUser: phoneNumber must be E.164 (e.g. +12125551234)",
+		);
+	}
+
+	if (!input.phoneNumber && !input.emailAddress) {
+		throw new Error(
+			"createClerkUser: at least one of phoneNumber or emailAddress is required",
+		);
+	}
+
+	// Build the identifier portion of the body. Phone-OTP and email-OTP
+	// Clerk apps are separate instances in our setup; we never send BOTH
+	// identifiers to the same instance — phone wins when present.
+	const identifierBody: Record<string, unknown> = input.phoneNumber
+		? { phone_number: [input.phoneNumber] }
+		: { email_address: [input.emailAddress] };
+
 	const res = await fetch("https://api.clerk.com/v1/users", {
 		method: "POST",
 		headers: {
@@ -42,7 +86,7 @@ export async function createClerkUser(
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
-			email_address: [input.emailAddress],
+			...identifierBody,
 			first_name: input.firstName,
 			last_name: input.lastName,
 			skip_password_requirement: true,
