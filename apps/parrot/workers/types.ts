@@ -43,6 +43,8 @@ type CfEnvBase = Omit<
 	| "KIMI_MODEL"
 	| "MATTERMOST_BOT_TOKEN"
 	| "PARROT_DEV_MODE"
+	| "PUSH_VAPID_PRIVATE_KEY"
+	| "PUSH_VAPID_PUBLIC_KEY"
 >;
 
 export interface Env extends CfEnvBase {
@@ -106,6 +108,16 @@ export interface Env extends CfEnvBase {
 	MATTERMOST_BOT_TOKEN?: string;
 	/** Set to "1" in wrangler dev to enable dev-only smoke endpoints. Never set in production. */
 	PARROT_DEV_MODE?: string;
+
+	// — Phase 13 Wave 1: Web Push VAPID keys.
+	/** ECDSA P-256 private key PEM for VAPID signing. Set via `wrangler secret put PUSH_VAPID_PRIVATE_KEY`.
+	 *  Optional at the type level so the Worker boots without it; sendPushToSubscriptions
+	 *  no-ops with a warning when missing. */
+	PUSH_VAPID_PRIVATE_KEY?: string;
+	/** ECDSA P-256 public key (base64url) for VAPID. Baked into wrangler.jsonc vars
+	 *  (safe to commit). Forwarded to the client so PushManager.subscribe() can
+	 *  use it as `applicationServerKey`. */
+	PUSH_VAPID_PUBLIC_KEY?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).

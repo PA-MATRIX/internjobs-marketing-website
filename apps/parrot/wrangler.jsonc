@@ -64,7 +64,17 @@
 		// AI Gateway in workers/lib/ai.ts so per-employee daily caps +
 		// prompt caching kick in. Override via wrangler vars to A/B a
 		// fallback model (e.g., @cf/meta/llama-3.3-70b-instruct-fp8-fast).
-		"KIMI_MODEL": "@cf/moonshotai/kimi-k2.6"
+		"KIMI_MODEL": "@cf/moonshotai/kimi-k2.6",
+		// v1.2 Phase 13 Wave 1: Web Push VAPID public key (base64url).
+		// Safe to commit — it's literally the public half of the keypair.
+		// Generate via:  npx web-push generate-vapid-keys --json
+		// Then paste the publicKey value here, and run:
+		//   wrangler secret put PUSH_VAPID_PRIVATE_KEY
+		// to store the matching private key (PKCS#8 PEM form).
+		// Leave empty until provisioned — the Worker degrades gracefully
+		// (notification rows still land in the drawer; only the live
+		// browser-push fan-out is skipped).
+		"PUSH_VAPID_PUBLIC_KEY": ""
 	},
 	// v1.2 Phase 12 Wave 1: Secrets — set via `wrangler secret put`.
 	// (wrangler.jsonc has no native `secrets` array, so we declare them as
@@ -78,6 +88,12 @@
 	//                              (create in Dashboard → AI → AI Gateway; per-user 200/day cap)
 	//   MATTERMOST_BOT_TOKEN     — bot account personal access token (Wave 2 ingest)
 	//                              (Infisical /internjobs-ai/MATTERMOST_BOT_TOKEN)
+	//   PUSH_VAPID_PRIVATE_KEY   — ECDSA P-256 private key (PKCS#8 PEM) for Web Push
+	//                              VAPID signing. Pair with PUSH_VAPID_PUBLIC_KEY
+	//                              in vars above. Generate with
+	//                              `npx web-push generate-vapid-keys --json` and
+	//                              store the private half here + in Infisical
+	//                              /internjobs-ai/PUSH_VAPID_PRIVATE_KEY. Never commit.
 	"send_email": [
 		{
 			"name": "EMAIL",

@@ -13,6 +13,10 @@
 //
 // Keeps the same schema shape (emails / attachments / folders) so the
 // agentic-inbox patterns port over cleanly when we need them.
+//
+// Skills referenced:
+//   cloudflare/skills: agents-sdk, durable-objects — per-employee DO,
+//     alarm-driven Mattermost poll, Web Push VAPID signing via crypto.subtle.
 
 import { DurableObject } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/durable-sqlite";
@@ -29,6 +33,7 @@ import {
 	getMmPostsSince,
 	MM_USER_ID_NONE,
 } from "../lib/mattermost";
+import { buildVapidAuthHeader } from "../lib/vapid";
 
 const ALLOWED_SORT_COLUMNS = [
 	"id",
@@ -437,6 +442,16 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				void this.extractTodosFromEmail(email, profile.employeeId);
 			}
 		}
+
+		// Phase 13 Wave 1: starred inbound email → push notification.
+		if (folderId === Folders.INBOX && email.starred === true) {
+			void this.sendPushToSubscriptions({
+				title: `Starred email from ${email.sender}`,
+				body: email.subject ?? undefined,
+				url: "/inbox",
+				event_type: "starred_email",
+			});
+		}
 	}
 
 	// ── Todos ──────────────────────────────────────────────────────
@@ -454,8 +469,24 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			employee_id: string;
 		}>,
 	) {
+		// Phase 13 Wave 1: fire a push for every newly-inserted urgent todo.
+		// We intentionally cannot tell from `INSERT OR IGNORE` whether the
+		// row was a duplicate, so we guard by `source_id` being present in
+		// the table BEFORE insert. (Phase 12 dedup uses the unique index
+		// on (source_channel, source_id) — a re-insert silently no-ops.)
+		const urgentToPush: Array<{ title: string; preview?: string }> = [];
 		for (const todo of todos) {
 			const id = crypto.randomUUID();
+			const wasPresent =
+				todo.urgency_score >= 70
+					? [
+							...this.ctx.storage.sql.exec(
+								`SELECT 1 FROM todos WHERE source_channel = ? AND source_id = ? LIMIT 1`,
+								todo.source_channel,
+								todo.source_id,
+							),
+						].length > 0
+					: false;
 			this.ctx.storage.sql.exec(
 				`INSERT OR IGNORE INTO todos
 					(id, employee_id, source_channel, source_id, title, preview,
@@ -472,6 +503,20 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				todo.mentioned_actors ? JSON.stringify(todo.mentioned_actors) : null,
 				todo.is_mention ? 1 : 0,
 			);
+			if (todo.urgency_score >= 70 && !wasPresent) {
+				urgentToPush.push({ title: todo.title, preview: todo.preview });
+			}
+		}
+		// Phase 13 Wave 1: fire-and-forget push notifications for new urgent todos.
+		if (urgentToPush.length > 0) {
+			for (const t of urgentToPush) {
+				void this.sendPushToSubscriptions({
+					title: t.title,
+					body: t.preview,
+					url: "/dashboard",
+					event_type: "urgent_todo",
+				});
+			}
 		}
 	}
 
@@ -696,6 +741,21 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			);
 			if (posts.length === 0) continue;
 
+			// Phase 13 Wave 1: @mention push notifications. For every post in
+			// this batch that includes the employee's display name preceded
+			// by '@', enqueue a push (and a notification drawer row).
+			const mentionToken = `@${profile.displayName}`;
+			for (const post of posts) {
+				if (post.message && post.message.includes(mentionToken)) {
+					void this.sendPushToSubscriptions({
+						title: "Mention in Chat",
+						body: post.message.slice(0, 100),
+						url: "/chat",
+						event_type: "chat_mention",
+					});
+				}
+			}
+
 			const batchText = posts
 				.map((p) => p.message)
 				.filter(Boolean)
@@ -751,5 +811,218 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		} catch (err) {
 			console.error("extractTodosFromChat failed", err);
 		}
+	}
+
+	// ── Push subscriptions + notifications (Phase 13 Wave 1) ───────
+
+	/**
+	 * Register (or replace) a Web Push subscription for the current
+	 * employee. Called from `POST /api/push/subscribe` after the
+	 * browser hands us a PushSubscription via PushManager.subscribe().
+	 */
+	async addPushSubscription(
+		endpoint: string,
+		p256dh: string,
+		auth: string,
+	): Promise<void> {
+		const profile = await this.getProfile();
+		if (!profile) {
+			throw new Error("addPushSubscription: no profile row — call /api/me first");
+		}
+		this.ctx.storage.sql.exec(
+			`INSERT INTO push_subscriptions (endpoint, employee_id, p256dh, auth, created_at)
+			 VALUES (?, ?, ?, ?, datetime('now'))
+			 ON CONFLICT(endpoint) DO UPDATE SET
+			   employee_id = excluded.employee_id,
+			   p256dh = excluded.p256dh,
+			   auth = excluded.auth,
+			   created_at = excluded.created_at`,
+			endpoint,
+			profile.employeeId,
+			p256dh,
+			auth,
+		);
+	}
+
+	async removePushSubscription(endpoint: string): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`DELETE FROM push_subscriptions WHERE endpoint = ?`,
+			endpoint,
+		);
+	}
+
+	async getPushSubscriptions(): Promise<
+		Array<{ endpoint: string; p256dh: string; auth: string }>
+	> {
+		const profile = await this.getProfile();
+		if (!profile) return [];
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE employee_id = ?`,
+				profile.employeeId,
+			),
+		] as Array<{ endpoint: string; p256dh: string; auth: string }>;
+		return rows;
+	}
+
+	async addNotification(input: {
+		event_type: "urgent_todo" | "starred_email" | "chat_mention";
+		title: string;
+		body?: string;
+		url?: string;
+	}): Promise<void> {
+		const profile = await this.getProfile();
+		if (!profile) return;
+		const id = crypto.randomUUID();
+		this.ctx.storage.sql.exec(
+			`INSERT INTO notifications (id, employee_id, event_type, title, body, url, read, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
+			id,
+			profile.employeeId,
+			input.event_type,
+			input.title,
+			input.body ?? null,
+			input.url ?? null,
+		);
+	}
+
+	async getNotifications(limit?: number): Promise<
+		Array<{
+			id: string;
+			event_type: string;
+			title: string;
+			body: string | null;
+			url: string | null;
+			read: number;
+			created_at: string;
+		}>
+	> {
+		const profile = await this.getProfile();
+		if (!profile) return [];
+		const lim = Math.min(Math.max(limit ?? 20, 1), 200);
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT id, event_type, title, body, url, read, created_at
+				 FROM notifications
+				 WHERE employee_id = ?
+				 ORDER BY created_at DESC
+				 LIMIT ?`,
+				profile.employeeId,
+				lim,
+			),
+		] as Array<{
+			id: string;
+			event_type: string;
+			title: string;
+			body: string | null;
+			url: string | null;
+			read: number;
+			created_at: string;
+		}>;
+		return rows;
+	}
+
+	async markNotificationsRead(ids?: string[]): Promise<void> {
+		const profile = await this.getProfile();
+		if (!profile) return;
+		if (ids && ids.length > 0) {
+			// Build a parameterized IN (?, ?, …) clause.
+			const placeholders = ids.map(() => "?").join(",");
+			this.ctx.storage.sql.exec(
+				`UPDATE notifications SET read = 1
+				 WHERE employee_id = ? AND id IN (${placeholders})`,
+				profile.employeeId,
+				...ids,
+			);
+		} else {
+			this.ctx.storage.sql.exec(
+				`UPDATE notifications SET read = 1
+				 WHERE employee_id = ? AND read = 0`,
+				profile.employeeId,
+			);
+		}
+	}
+
+	/**
+	 * Fan-out push notifications to every subscription for this employee.
+	 * Always stores a notifications row first (drawer-visible regardless of
+	 * push delivery). Each push attempt is wrapped in try/catch — a 410
+	 * Gone response triggers `removePushSubscription()` so dead endpoints
+	 * don't accumulate.
+	 *
+	 * If `PUSH_VAPID_PRIVATE_KEY` / `PUSH_VAPID_PUBLIC_KEY` are not
+	 * configured, we still store the notification row (drawer continues
+	 * to work) and log a single warning — we DO NOT crash.
+	 */
+	async sendPushToSubscriptions(payload: {
+		title: string;
+		body?: string;
+		url?: string;
+		event_type: "urgent_todo" | "starred_email" | "chat_mention";
+	}): Promise<void> {
+		// 1. Always record the notification row (drawer reads this).
+		try {
+			await this.addNotification({
+				event_type: payload.event_type,
+				title: payload.title,
+				body: payload.body,
+				url: payload.url,
+			});
+		} catch (err) {
+			console.error("sendPushToSubscriptions: addNotification failed", err);
+			// Continue — try to push even if drawer-row insert failed.
+		}
+
+		// 2. If VAPID isn't configured, skip the actual push.
+		const privateKeyPem = this.env.PUSH_VAPID_PRIVATE_KEY;
+		const publicKey = this.env.PUSH_VAPID_PUBLIC_KEY;
+		if (!privateKeyPem || !publicKey) {
+			console.warn(
+				"sendPushToSubscriptions: VAPID keys not configured — skipping push fan-out (notification row saved)",
+			);
+			return;
+		}
+
+		const subs = await this.getPushSubscriptions();
+		if (subs.length === 0) return;
+
+		const body = JSON.stringify({
+			title: payload.title,
+			body: payload.body ?? "",
+			url: payload.url ?? "/",
+			event_type: payload.event_type,
+		});
+
+		// 3. Fan out — fire-and-forget per endpoint. Don't await sequentially.
+		await Promise.all(
+			subs.map(async (sub) => {
+				try {
+					const authHeader = await buildVapidAuthHeader({
+						endpoint: sub.endpoint,
+						publicKey,
+						privateKeyPem,
+					});
+					const res = await fetch(sub.endpoint, {
+						method: "POST",
+						headers: {
+							Authorization: authHeader,
+							"Content-Type": "application/json",
+							TTL: "60",
+						},
+						body,
+					});
+					if (res.status === 410 || res.status === 404) {
+						// Subscription is dead — prune it.
+						await this.removePushSubscription(sub.endpoint);
+					} else if (!res.ok) {
+						console.warn(
+							`push send to ${sub.endpoint} returned ${res.status}`,
+						);
+					}
+				} catch (err) {
+					console.error("push send failed", sub.endpoint, err);
+				}
+			}),
+		);
 	}
 }

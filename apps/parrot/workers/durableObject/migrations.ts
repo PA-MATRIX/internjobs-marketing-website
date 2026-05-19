@@ -174,4 +174,44 @@ export const employeeMailboxMigrations: Migration[] = [
 			CREATE UNIQUE INDEX idx_todos_source ON todos(source_channel, source_id);
 		`,
 	},
+	{
+		// v1.2 Phase 13 Wave 1: cross-pane notifications + push subscriptions.
+		//
+		// Both tables live on EmployeeMailboxDO (per-employee scoping). The
+		// notifications table records a row for every push trigger (urgent
+		// todo / starred email / chat mention) regardless of whether a
+		// PushSubscription successfully receives it — the notification
+		// drawer then reads from this table directly. The
+		// push_subscriptions table holds one row per registered browser
+		// endpoint; the DO iterates these on every sendPushToSubscriptions()
+		// call and issues VAPID-signed POSTs.
+		//
+		// Indexes:
+		//   - idx_notifications_employee_read: drawer query
+		//     (WHERE employee_id=? AND read=0 ORDER BY created_at DESC).
+		//   - idx_push_subs_employee: subscription lookup by employee.
+		name: "4_notifications_push",
+		sql: `
+			CREATE TABLE notifications (
+				id TEXT PRIMARY KEY,
+				employee_id TEXT NOT NULL,
+				event_type TEXT NOT NULL CHECK (event_type IN ('urgent_todo','starred_email','chat_mention')),
+				title TEXT NOT NULL,
+				body TEXT,
+				url TEXT,
+				read INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE INDEX idx_notifications_employee_read ON notifications(employee_id, read, created_at DESC);
+
+			CREATE TABLE push_subscriptions (
+				endpoint TEXT PRIMARY KEY,
+				employee_id TEXT NOT NULL,
+				p256dh TEXT NOT NULL,
+				auth TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE INDEX idx_push_subs_employee ON push_subscriptions(employee_id);
+		`,
+	},
 ];
