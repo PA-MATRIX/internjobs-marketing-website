@@ -187,7 +187,12 @@ app.get("/healthz", async (c) => {
 	//    WorkspaceDO.countEmployees() lands (tracked for v1.3).
 	const mailbox_count = -1;
 
-	return c.json({ mattermost_reachable, ai_gateway_reachable, mailbox_count });
+	return c.json({
+		ok: mattermost_reachable && ai_gateway_reachable,
+		mattermost_reachable,
+		ai_gateway_reachable,
+		mailbox_count,
+	});
 });
 
 // -- Identity -------------------------------------------------------
