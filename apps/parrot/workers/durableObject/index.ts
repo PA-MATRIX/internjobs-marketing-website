@@ -22,6 +22,13 @@ import * as schema from "../db/schema";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import { applyMigrations, employeeMailboxMigrations } from "./migrations";
+import { extractTodosFromText } from "../lib/ai";
+import {
+	resolveMmUserId,
+	getMmChannelsForUser,
+	getMmPostsSince,
+	MM_USER_ID_NONE,
+} from "../lib/mattermost";
 
 const ALLOWED_SORT_COLUMNS = [
 	"id",
@@ -132,6 +139,8 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		if (!profile) {
 			throw new Error("upsertProfile: row missing after upsert");
 		}
+		// Fire-and-forget alarm init — idempotent, only registers if no alarm exists.
+		void this.initAlarm();
 		return profile;
 	}
 
@@ -312,6 +321,9 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			.where(eq(schema.attachments.email_id, id))
 			.all();
 
+		// Phase 12 Wave 2: mark todos resolved before source is gone.
+		this.cleanupTodosForEmail(id);
+
 		this.db.delete(schema.emails).where(eq(schema.emails.id, id)).run();
 
 		return emailAttachments;
@@ -416,18 +428,328 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		if (attachments.length > 0) {
 			this.db.insert(schema.attachments).values(attachments).run();
 		}
+
+		// Phase 12 Wave 2: Extract todos from inbound Inbox emails only.
+		// Fire-and-forget (void) — extraction errors NEVER block email storage.
+		if (folderId === Folders.INBOX) {
+			const profile = await this.getProfile();
+			if (profile) {
+				void this.extractTodosFromEmail(email, profile.employeeId);
+			}
+		}
 	}
 
-	// ── Dashboard Mothership Agent (Phase 12) ──────────────────────
-	//
-	// Wave 1 ships this as a no-op stub: the `todos` table is empty by
-	// definition until Wave 2 wires the ingest paths (extractTodosFromEmail
-	// in createEmail() + the DO alarm calling extractTodosFromChat()).
-	//
-	// The shape returns `unknown[]` so the Hono route can serialize whatever
-	// row shape Wave 2 lands without a contract change here. Wave 2 will
-	// type the return as `Todo[]` once the column shape is in production use.
-	async getTodos(_view: string): Promise<unknown[]> {
-		return [];
+	// ── Todos ──────────────────────────────────────────────────────
+
+	private insertTodos(
+		todos: Array<{
+			source_channel: string;
+			source_id: string;
+			title: string;
+			preview?: string;
+			urgency_score: number;
+			deadline_at?: string | null;
+			mentioned_actors?: string[];
+			is_mention: boolean;
+			employee_id: string;
+		}>,
+	) {
+		for (const todo of todos) {
+			const id = crypto.randomUUID();
+			this.ctx.storage.sql.exec(
+				`INSERT OR IGNORE INTO todos
+					(id, employee_id, source_channel, source_id, title, preview,
+					 urgency_score, deadline_at, mentioned_actors, is_mention)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id,
+				todo.employee_id,
+				todo.source_channel,
+				todo.source_id,
+				todo.title,
+				todo.preview ?? null,
+				todo.urgency_score,
+				todo.deadline_at ?? null,
+				todo.mentioned_actors ? JSON.stringify(todo.mentioned_actors) : null,
+				todo.is_mention ? 1 : 0,
+			);
+		}
+	}
+
+	/**
+	 * Return unresolved todos ordered by hybrid rank formula:
+	 *   rank = (urgency_score * 2)
+	 *        + (is_mention ? 30 : 0)
+	 *        + (deadline within 24h ? 40 : 0, +20 if within 1h)
+	 *        - floor(hours_since_created / 6)  [recency decay]
+	 *
+	 * view: 'all' | 'mentions' | 'today' | 'week'
+	 */
+	async getTodos(view: string): Promise<unknown[]> {
+		const whereExtra =
+			{
+				mentions: "AND is_mention = 1",
+				today: "AND created_at >= datetime('now', 'start of day')",
+				week: "AND created_at >= datetime('now', '-7 days')",
+			}[view] ?? "";
+
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT
+					id, employee_id, source_channel, source_id, title, preview,
+					urgency_score, deadline_at, mentioned_actors, is_mention,
+					created_at, resolved_at,
+					(
+						(urgency_score * 2)
+						+ (CASE WHEN is_mention = 1 THEN 30 ELSE 0 END)
+						+ (CASE WHEN deadline_at IS NOT NULL
+												AND deadline_at < datetime('now', '+24 hours')
+										THEN 40 ELSE 0 END)
+						+ (CASE WHEN deadline_at IS NOT NULL
+												AND deadline_at < datetime('now', '+1 hour')
+										THEN 20 ELSE 0 END)
+						- CAST((JULIANDAY('now') - JULIANDAY(created_at)) * 24 / 6 AS INTEGER)
+					) AS rank
+				 FROM todos
+				 WHERE resolved_at IS NULL
+				 ${whereExtra}
+				 ORDER BY rank DESC
+				 LIMIT 50`,
+			),
+		];
+
+		return rows.map((row) => ({
+			...(row as Record<string, unknown>),
+			is_mention: Boolean((row as Record<string, unknown>).is_mention),
+			mentioned_actors: (() => {
+				const raw = (row as Record<string, unknown>).mentioned_actors;
+				if (!raw || typeof raw !== "string") return [];
+				try {
+					return JSON.parse(raw);
+				} catch {
+					return [];
+				}
+			})(),
+		}));
+	}
+
+	/**
+	 * DEV-ONLY: Insert a todo directly with an explicit urgency_score, bypassing LLM extraction.
+	 * Gated by PARROT_DEV_MODE=1. Used by Plan 12-03 regression tests for deterministic assertions.
+	 */
+	async debugInsertTodo(
+		employeeId: string,
+		todo: {
+			source_channel: string;
+			source_id: string;
+			title: string;
+			urgency_score: number;
+			is_mention: boolean;
+			preview?: string;
+		},
+	): Promise<{ inserted: boolean }> {
+		if (!this.env.PARROT_DEV_MODE) {
+			return { inserted: false };
+		}
+		this.insertTodos([{ ...todo, employee_id: employeeId }]);
+		return { inserted: true };
+	}
+
+	private cleanupTodosForEmail(emailId: string) {
+		this.ctx.storage.sql.exec(
+			`UPDATE todos SET resolved_at = datetime('now')
+			 WHERE source_channel = 'email' AND source_id = ?
+				 AND resolved_at IS NULL`,
+			emailId,
+		);
+	}
+
+	private async extractTodosFromEmail(email: EmailData, employeeId: string) {
+		try {
+			const text = [email.subject, email.body].filter(Boolean).join("\n\n");
+			const extracted = await extractTodosFromText(
+				text,
+				employeeId,
+				3600,
+				this.env,
+			);
+			if (extracted === null || extracted.length === 0) {
+				// null indicates 429 quota exceeded — log audit event (best-effort).
+				if (extracted === null) {
+					try {
+						this.ctx.storage.sql.exec(
+							`INSERT OR IGNORE INTO audit_events (id, employee_id, event_type, created_at)
+							 VALUES (?, ?, 'ai_gateway_quota_exceeded', datetime('now'))`,
+							crypto.randomUUID(),
+							employeeId,
+						);
+					} catch {
+						/* audit_events table may not exist yet */
+					}
+				}
+				return;
+			}
+			this.insertTodos(
+				extracted.map((t) => ({
+					...t,
+					source_channel: "email",
+					source_id: email.id,
+					employee_id: employeeId,
+				})),
+			);
+		} catch (err) {
+			console.error("extractTodosFromEmail failed", err);
+			// Fail-soft: never block email storage
+		}
+	}
+
+	// ── DO Alarm — Mattermost polling ──────────────────────────────
+
+	/**
+	 * Register the 2-minute polling alarm if not already set.
+	 * Called from upsertProfile() so the alarm starts on first employee login.
+	 */
+	async initAlarm() {
+		const existing = await this.ctx.storage.getAlarm();
+		if (!existing) {
+			await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+		}
+	}
+
+	/**
+	 * DO alarm handler. Polls Mattermost for new posts and extracts todos.
+	 * Always self-reschedules — even on error — to maintain the polling cycle.
+	 *
+	 * Skills referenced:
+	 *   cloudflare/skills: durable-objects — alarm self-reschedule pattern
+	 *   cloudflare/skills: cloudflare — Workers AI via AI Gateway (per-employee quota + prompt cache)
+	 */
+	async alarm() {
+		try {
+			await this.pollMattermostNewPosts();
+		} catch (err) {
+			console.error("Parrot alarm: Mattermost poll failed", err);
+		} finally {
+			// Always reschedule unconditionally (at-least-once guarantee)
+			await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+		}
+	}
+
+	private async pollMattermostNewPosts() {
+		const botToken = this.env.MATTERMOST_BOT_TOKEN;
+		const mattermostUrl = this.env.MATTERMOST_URL;
+		if (!botToken) {
+			// Not configured — skip silently
+			return;
+		}
+
+		const profile = await this.getProfile();
+		if (!profile) return;
+
+		// Resolve or retrieve cached MM user_id
+		let mmUserId = await this.ctx.storage.get<string>("mm_user_id");
+		if (!mmUserId) {
+			const resolved = await resolveMmUserId(
+				mattermostUrl,
+				botToken,
+				profile.email,
+			);
+			if (!resolved) {
+				// Employee hasn't logged into Mattermost yet — retry next cycle
+				await this.ctx.storage.put("mm_user_id", MM_USER_ID_NONE);
+				return;
+			}
+			mmUserId = resolved;
+			await this.ctx.storage.put("mm_user_id", mmUserId);
+		}
+		if (mmUserId === MM_USER_ID_NONE) {
+			// Retry resolution on each alarm — employee may have logged in since
+			const resolved = await resolveMmUserId(
+				mattermostUrl,
+				botToken,
+				profile.email,
+			);
+			if (!resolved) return;
+			mmUserId = resolved;
+			await this.ctx.storage.put("mm_user_id", mmUserId);
+		}
+
+		const lastPollMs =
+			(await this.ctx.storage.get<number>("last_mm_poll_at")) ??
+			Date.now() - 2 * 60 * 1000;
+
+		// Get channels this employee belongs to
+		const channelIds = await getMmChannelsForUser(
+			mattermostUrl,
+			botToken,
+			mmUserId,
+		);
+		if (channelIds.length === 0) return;
+
+		const nowMs = Date.now();
+
+		for (const channelId of channelIds) {
+			const posts = await getMmPostsSince(
+				mattermostUrl,
+				botToken,
+				channelId,
+				lastPollMs,
+			);
+			if (posts.length === 0) continue;
+
+			const batchText = posts
+				.map((p) => p.message)
+				.filter(Boolean)
+				.join("\n---\n")
+				.slice(0, 8000);
+
+			await this.extractTodosFromChat(batchText, posts, profile.employeeId);
+		}
+
+		// Advance watermark only on success
+		await this.ctx.storage.put("last_mm_poll_at", nowMs);
+	}
+
+	private async extractTodosFromChat(
+		batchText: string,
+		posts: Array<{ id: string; message: string }>,
+		employeeId: string,
+	) {
+		try {
+			// cacheTtl=1800 (30min) — chat posts are idempotent but refresh faster than email.
+			const extracted = await extractTodosFromText(
+				batchText,
+				employeeId,
+				1800,
+				this.env,
+			);
+			if (extracted === null || extracted.length === 0) {
+				if (extracted === null) {
+					// 429 quota exceeded — log audit event (best-effort)
+					try {
+						this.ctx.storage.sql.exec(
+							`INSERT OR IGNORE INTO audit_events (id, employee_id, event_type, created_at)
+							 VALUES (?, ?, 'ai_gateway_quota_exceeded', datetime('now'))`,
+							crypto.randomUUID(),
+							employeeId,
+						);
+					} catch {
+						/* audit_events table may not exist yet */
+					}
+				}
+				return;
+			}
+			// Associate extracted todos with the first post in the batch as source_id.
+			const sourceId = posts[0]?.id ?? "batch";
+			this.insertTodos(
+				extracted.map((t) => ({
+					...t,
+					source_channel: "chat",
+					source_id: sourceId,
+					employee_id: employeeId,
+				})),
+			);
+		} catch (err) {
+			console.error("extractTodosFromChat failed", err);
+		}
 	}
 }
