@@ -74,7 +74,15 @@
 		// Leave empty until provisioned — the Worker degrades gracefully
 		// (notification rows still land in the drawer; only the live
 		// browser-push fan-out is skipped).
-		"PUSH_VAPID_PUBLIC_KEY": "BAXYWRDcWvhPxBBU3BYmv97yrSNk2B7soXoniQ5aWI_zn_HUAV7g0WsOO3Nk6VxIC2ioJqlFAEbpqP9OKm-4fQo"
+		"PUSH_VAPID_PUBLIC_KEY": "BAXYWRDcWvhPxBBU3BYmv97yrSNk2B7soXoniQ5aWI_zn_HUAV7g0WsOO3Nk6VxIC2ioJqlFAEbpqP9OKm-4fQo",
+		// v1.3 Phase 18 Wave 2: HTTPS URL of the internjobs-graph-api Fly proxy.
+		// FALKORDB_URL / FALKORDB_PASSWORD were removed — the Worker no longer
+		// speaks Redis directly. Cypher calls POST to this URL via fetch().
+		// Pair this URL with the GRAPH_API_SECRET Worker secret (set via
+		// `wrangler secret put GRAPH_API_SECRET`; matches the secret on the
+		// Fly app via `flyctl secrets set GRAPH_API_SECRET`). URL is NOT a
+		// secret — it's an internet-facing HTTPS hostname.
+		"GRAPH_API_URL": "https://internjobs-graph-api.fly.dev"
 	},
 	// v1.2 Phase 12 Wave 1: Secrets — set via `wrangler secret put`.
 	// (wrangler.jsonc has no native `secrets` array, so we declare them as

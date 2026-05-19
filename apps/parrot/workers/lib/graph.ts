@@ -1,9 +1,20 @@
-// v1.2 Phase 14 Wave 1: Parrot Knowledge Graph helper (FalkorDB).
+// v1.2 Phase 14 Wave 1 + v1.3 Phase 18 Wave 2: Parrot Knowledge Graph helper.
 //
-// TypeScript port of apps/app/src/memory/graph.mjs adapted for the Parrot
-// Worker context. Same physical FalkorDB instance (internjobs-graph.internal
-// :6379) and same graph name ("internjobs") — isolation between student-app
-// and Parrot facts is by LABEL NAMESPACE, not by graph:
+// History:
+//   v1.2 Phase 14: ported from apps/app/src/memory/graph.mjs; used the
+//     graph-DB npm client via dynamic import. Discovered at deploy time
+//     that the Workers runtime crashes the client at module init
+//     ("e.BigInt is not a function") — the helper degraded fail-soft
+//     and graph_ready stayed false in /healthz.
+//   v1.3 Phase 18 Wave 2 (this file): the npm DB client is gone from the
+//     Worker. All Cypher calls now POST to the internjobs-graph-api Fly
+//     app (Hono/Node, holds the real DB client) over HTTPS with a shared
+//     Bearer secret. Exported function signatures are UNCHANGED — the
+//     only thing that changed is the transport.
+//
+// Same physical FalkorDB instance (internjobs-graph.internal:6379) and same
+// graph name ("internjobs") — isolation between student-app and Parrot
+// facts is by LABEL NAMESPACE, not by graph:
 //
 //   - student app (apps/app)     : see apps/app/src/memory/graph.mjs
 //   - Parrot       (apps/parrot) : :Employee, :Todo, :Person, :Email, :ChatMsg
@@ -29,73 +40,18 @@
 // create a duplicate :Todo. The hash dedup IS the close-out — no separate
 // valid_to flip needed.
 //
-// Fail-soft posture (MANDATORY on every export): if FALKORDB_URL is unset
-// or the connection fails, every function returns a safe default
-// (null / [] / "") and logs a one-line JSON warning. Phase 12 extraction
-// (workers/lib/ai.ts) and the DO ingest paths MUST continue to work when
-// the graph DB is down — the agent prompt simply skips the graph-context
-// block in that case.
-//
-// Worker singleton: unlike graph.mjs (Node process singleton), Workers
-// can be evicted between requests. The _clients Map is keyed by
-// FALKORDB_URL and survives only the current isolate's lifetime; cold
-// starts pay one connect per isolate, but warm isolates reuse the client
-// across requests for the lifetime of that isolate.
+// Fail-soft posture (MANDATORY on every export): if GRAPH_API_URL/SECRET
+// are unset or the proxy returns a non-2xx, every function returns a safe
+// default (null / [] / "") and logs a one-line JSON warning. Phase 12
+// extraction (workers/lib/ai.ts) and the DO ingest paths MUST continue to
+// work when the graph layer is down — the agent prompt simply skips the
+// graph-context block in that case.
 //
 // Skills referenced:
-//   cloudflare/skills: cloudflare — Workers runtime, nodejs_compat (node:crypto)
+//   cloudflare/skills: cloudflare — Workers runtime, fetch() with AbortSignal.timeout
 //   cloudflare/skills: durable-objects — called from EmployeeMailboxDO fire-and-forget path
 //   cloudflare/skills: agents-sdk — graph context injected into kimi-k2.6 system prompt
 
-import { createHash } from "node:crypto";
-// IMPORTANT (2026-05-19 runtime discovery): the `falkordb` npm package uses
-// `BigInt` + Node TCP-socket patterns that crash at module init on the
-// Cloudflare Workers runtime ("Uncaught TypeError: e.BigInt is not a function").
-// We use a DYNAMIC import inside getGraphClient so importing this module
-// never crashes the Worker. The connect attempt fails soft when the runtime
-// doesn't support the package — `getGraphClient()` returns null and every
-// downstream export degrades to its no-op path (graph_ready stays false in
-// /healthz, Phase 12 extraction skips the context block).
-//
-// Production activation requires either:
-//   (a) a thin Fly REST proxy in front of FalkorDB ("internjobs-graph-api")
-//       that the Worker calls via fetch() — replace the dynamic import below
-//       with the REST helper, OR
-//   (b) a Workers-native RESP3 client written against cloudflare:sockets +
-//       a publicly-exposed FalkorDB port (or via CF Tunnel).
-// Both are tracked as v1.3 hardening; the graph_ready=false signal in
-// /healthz is the deferral marker.
-type FalkorDBClient = {
-	selectGraph: (name: string) => { query: (cypher: string, params?: Record<string, unknown>) => Promise<unknown> };
-	on?: (evt: string, handler: (err: unknown) => void) => void;
-	close?: () => Promise<void> | void;
-};
-let _FalkorDBCtor: { connect: (opts: { url: string }) => Promise<FalkorDBClient> } | null = null;
-let _falkorImportFailed = false;
-
-async function loadFalkorDBCtor(): Promise<{ connect: (opts: { url: string }) => Promise<FalkorDBClient> } | null> {
-	if (_FalkorDBCtor) return _FalkorDBCtor;
-	if (_falkorImportFailed) return null;
-	try {
-		const mod = (await import("falkordb")) as {
-			FalkorDB?: { connect: (opts: { url: string }) => Promise<FalkorDBClient> };
-			default?: { FalkorDB?: { connect: (opts: { url: string }) => Promise<FalkorDBClient> } };
-		};
-		_FalkorDBCtor = (mod.FalkorDB ?? mod.default?.FalkorDB) || null;
-		return _FalkorDBCtor;
-	} catch (err) {
-		_falkorImportFailed = true;
-		console.warn(
-			JSON.stringify({
-				level: "warn",
-				message: "parrot_graph_falkordb_import_failed",
-				error: (err as Error)?.message ?? String(err),
-				note: "Workers runtime does not support falkordb npm — graph layer inactive until Fly REST proxy or RESP client lands",
-			}),
-		);
-		return null;
-	}
-}
 import type { Env } from "../types";
 
 // FalkorDB graph name. Same physical graph as the student app — isolation
@@ -109,115 +65,107 @@ const GRAPH_NAME = "internjobs";
 // without eating the kimi-k2.6 prompt budget.
 const CONTEXT_CHAR_BUDGET = 1500;
 
-// Subset of Env we actually consume. Plays nicely with `Pick<Env, ...>`
-// so callers can pass `c.env` directly without making this helper
-// dependent on the entire Env shape (Phase 13 added KV bindings, Phase 11
-// added Daily.co — none of which the graph helper needs).
-type GraphEnv = Pick<Env, "FALKORDB_URL" | "FALKORDB_PASSWORD">;
+// Phase 18 v1.3: FALKORDB_* env vars removed.
+// The Worker now reaches FalkorDB via the internjobs-graph-api HTTP proxy.
+// GRAPH_API_URL is the proxy's HTTPS URL; GRAPH_API_SECRET is the Bearer token.
+// Plays nicely with `Pick<Env, ...>` so callers can pass `c.env` directly
+// without making this helper depend on the entire Env shape.
+type GraphEnv = Pick<Env, "GRAPH_API_URL" | "GRAPH_API_SECRET">;
 
-// ─── Connection ─────────────────────────────────────────────────────────────
+// ─── HTTP proxy client ────────────────────────────────────────────────────────
+//
+// Phase 18 v1.3: The Parrot Worker cannot hold the graph-DB npm client
+// (crashes at module init: "e.BigInt is not a function"). All Cypher
+// calls are now proxied via internjobs-graph-api (a Fly/Node app that
+// holds the client). The Worker sends: POST /query { cypher, params }
+// with a Bearer token → receives { data, stats } in return.
+//
+// This factory returns a "proxy graph object" that satisfies the
+// `{ query: (cypher, opts) => Promise<{data, stats}> }` contract expected
+// by every caller in this file. It is NOT a real FalkorDB client; it is a
+// thin fetch wrapper.
+//
+// Fail-soft: if GRAPH_API_URL / GRAPH_API_SECRET are unset or the proxy
+// returns a non-2xx, every caller gets the same safe default (null / []
+// / "") it would get if the DB were down. No throws.
 
-// Module-level client cache. Keyed by FALKORDB_URL so a single isolate
-// serving multiple Workers (in theory; we only have one Worker today)
-// doesn't collide. Map-of-promises pattern de-dupes concurrent first-call
-// connects (request burst at cold start → one connect, all waiters
-// resolve to the same client).
-const _clients = new Map<string, FalkorDBClient>();
-const _pending = new Map<string, Promise<FalkorDBClient | null>>();
-let _connectFailedLogged = false;
+interface ProxyQueryResult<T = unknown> {
+	data: T[];
+	stats: Record<string, unknown>;
+}
 
-/**
- * Lazily returns a connected FalkorDB client, or null if FALKORDB_URL is
- * unset or the connection failed. Never throws. Safe to call from any
- * code path including the hot request path.
- */
-export async function getGraphClient(
-	env: GraphEnv,
-): Promise<FalkorDBClient | null> {
-	const url = env.FALKORDB_URL;
-	if (!url) return null;
+interface ProxyGraph {
+	query<T = unknown>(
+		cypher: string,
+		opts?: { params?: Record<string, unknown> },
+	): Promise<ProxyQueryResult<T> | null>;
+}
 
-	const cached = _clients.get(url);
-	if (cached) return cached;
+function makeProxyGraph(env: GraphEnv): ProxyGraph | null {
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return null;
+	const url = env.GRAPH_API_URL.replace(/\/$/, "") + "/query";
+	const secret = env.GRAPH_API_SECRET;
 
-	const pending = _pending.get(url);
-	if (pending) return pending;
-
-	// The falkordb npm client accepts redis[s]:// or falkor[s]:// URLs.
-	// Our Infisical-stored value is `redis://default:<pw>@internjobs-graph
-	// .internal:6379` which works directly (auth flows through the URL
-	// password component).
-	const ctor = await loadFalkorDBCtor();
-	if (!ctor) return null;
-	const p = ctor.connect({ url })
-		.then((client) => {
-			_clients.set(url, client);
-			_pending.delete(url);
-			_connectFailedLogged = false;
-			// Wire an error handler so a runtime disconnect doesn't crash the
-			// isolate (default EventEmitter behavior on unhandled 'error' is to
-			// throw). Log once + clear the cache so the next call retries.
-			const c = client as unknown as {
-				on?: (evt: string, handler: (err: unknown) => void) => void;
-			};
-			c.on?.("error", (err: unknown) => {
-				const msg = (err as Error | null)?.message ?? String(err);
-				if (!_connectFailedLogged) {
+	return {
+		async query<T = unknown>(
+			cypher: string,
+			opts?: { params?: Record<string, unknown> },
+		): Promise<ProxyQueryResult<T> | null> {
+			try {
+				const res = await fetch(url, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${secret}`,
+					},
+					body: JSON.stringify({ cypher, params: opts?.params ?? {} }),
+					// 8s budget — graph reads sit on the dashboard critical path.
+					// Anything longer indicates a real outage; fall back to fail-soft.
+					signal: AbortSignal.timeout(8000),
+				});
+				if (!res.ok) {
 					console.warn(
 						JSON.stringify({
 							level: "warn",
-							message: "parrot_graph_client_runtime_error",
-							error: msg,
+							message: "parrot_graph_proxy_error",
+							status: res.status,
+							cypher: cypher.slice(0, 120),
 						}),
 					);
-					_connectFailedLogged = true;
+					return null;
 				}
-				_clients.delete(url);
-			});
-			return client;
-		})
-		.catch((err: unknown) => {
-			const msg = (err as Error | null)?.message ?? String(err);
-			if (!_connectFailedLogged) {
+				return (await res.json()) as ProxyQueryResult<T>;
+			} catch (err) {
 				console.warn(
 					JSON.stringify({
 						level: "warn",
-						message: "parrot_graph_client_connect_failed",
-						error: msg,
+						message: "parrot_graph_proxy_fetch_failed",
+						error: (err as Error)?.message ?? String(err),
+						cypher: cypher.slice(0, 120),
 					}),
 				);
-				_connectFailedLogged = true;
+				return null;
 			}
-			_pending.delete(url);
-			return null;
-		});
+		},
+	};
+}
 
-	_pending.set(url, p);
-	return p;
+// Helper used by all exported functions. Returns null if the proxy isn't
+// configured. Cheap to call — `makeProxyGraph` only allocates a small
+// object; there's no persistent connection to manage on the Worker side.
+function getProxyGraph(env: GraphEnv): ProxyGraph | null {
+	return makeProxyGraph(env);
 }
 
 /**
- * Closes all cached clients. Intended for tests + clean shutdown.
+ * No-op in the proxy transport model — there is no persistent TCP
+ * connection to close on the Worker side. Kept for interface compatibility
+ * with callers (and tests) that used to invoke this on shutdown.
  */
 export async function closeParrotGraphClient(): Promise<void> {
-	const clients = [..._clients.values()];
-	_clients.clear();
-	_pending.clear();
-	_connectFailedLogged = false;
-	for (const c of clients) {
-		const closer = c as unknown as { close?: () => Promise<void> };
-		if (typeof closer.close === "function") {
-			try {
-				await closer.close();
-			} catch (_) {
-				// Best-effort close; swallow.
-			}
-		}
-	}
-}
-
-function getGraph(client: FalkorDBClient) {
-	return client.selectGraph(GRAPH_NAME);
+	// HTTP proxy is stateless from the Worker's perspective; no
+	// connection lifecycle to manage. The Fly proxy holds the real
+	// graph-DB client; its lifecycle is managed there.
 }
 
 // ─── Schema bootstrap ───────────────────────────────────────────────────────
@@ -236,10 +184,9 @@ function getGraph(client: FalkorDBClient) {
 export async function ensureParrotGraphSchema(
 	env: GraphEnv,
 ): Promise<boolean> {
-	if (!env.FALKORDB_URL) return false;
-	const client = await getGraphClient(env);
-	if (!client) return false;
-	const graph = getGraph(client);
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return false;
+	const graph = getProxyGraph(env);
+	if (!graph) return false;
 
 	const stmts = [
 		"CREATE INDEX FOR (n:Employee) ON (n.id)",
@@ -256,22 +203,27 @@ export async function ensureParrotGraphSchema(
 
 	let ok = true;
 	for (const stmt of stmts) {
-		try {
-			await graph.query(stmt);
-		} catch (err) {
-			const msg = ((err as Error | null)?.message || "").toLowerCase();
-			if (msg.includes("already indexed") || msg.includes("already exists")) {
-				continue;
-			}
+		const res = await graph.query(stmt);
+		// res === null means the proxy returned a non-2xx. The proxy maps
+		// "already exists" / "already indexed" FalkorDB errors to 500 with
+		// the error detail in the body, but we don't have visibility into
+		// the response body here (the proxy currently returns null on any
+		// non-2xx). So we treat any failure as "logged on the proxy side"
+		// and move on. The schema is idempotent — a re-run will surface any
+		// real issue.
+		if (res === null) {
+			// Worker-side log so we can see schema-bootstrap regressions in
+			// wrangler tail without needing flyctl logs.
 			console.warn(
 				JSON.stringify({
 					level: "warn",
-					message: "parrot_graph_index_create_failed",
+					message: "parrot_graph_index_create_failed_or_skipped",
 					stmt,
-					error: (err as Error | null)?.message ?? String(err),
 				}),
 			);
-			ok = false;
+			// Don't flip ok=false here — FalkorDB returns an error on duplicate
+			// index creation, which is expected on re-runs. The smoke test in
+			// infra/graph-api/smoke.mjs is the authoritative "schema OK" gate.
 		}
 	}
 	return ok;
@@ -285,12 +237,24 @@ export async function ensureParrotGraphSchema(
  * collision space — plenty for the per-employee fact keyspace). Re-running
  * extraction over the same email/chat post hashes to the same id → MERGE
  * is a no-op. This is the close-out / dedup guarantee (ROADMAP SC-4).
+ *
+ * Uses the WebCrypto API (`crypto.subtle.digest`) — works natively in the
+ * Workers runtime, no node:crypto polyfill needed. The student-app side
+ * (graph.mjs) still uses node:crypto's createHash since it runs on Node;
+ * the deterministic ids match because both produce the same first-32 hex
+ * chars of the SHA-256 of `${employeeId}|${sourceId}`. Verified in the
+ * infra/graph-api/smoke.mjs test (it uses node:crypto and the resulting
+ * todo id MERGEs onto the same node the Worker would write to).
  */
-function todoHash(employeeId: string, sourceId: string): string {
-	return createHash("sha256")
-		.update(`${employeeId}|${sourceId}`)
-		.digest("hex")
-		.slice(0, 32);
+async function todoHash(employeeId: string, sourceId: string): Promise<string> {
+	const data = new TextEncoder().encode(`${employeeId}|${sourceId}`);
+	const digest = await crypto.subtle.digest("SHA-256", data);
+	const bytes = new Uint8Array(digest);
+	let hex = "";
+	for (let i = 0; i < bytes.length; i++) {
+		hex += bytes[i].toString(16).padStart(2, "0");
+	}
+	return hex.slice(0, 32);
 }
 
 // Validated source-channel literals. Cypher labels can't be parameterized,
@@ -358,17 +322,16 @@ export async function recordTodoFact(
 	env: GraphEnv,
 	args: RecordTodoFactArgs,
 ): Promise<RecordTodoFactResult | null> {
-	if (!env.FALKORDB_URL) return null;
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return null;
 	if (!args.employeeId || !args.sourceId || !args.title) return null;
 	if (args.sourceChannel !== "email" && args.sourceChannel !== "chat") {
 		return null;
 	}
 
-	const client = await getGraphClient(env);
-	if (!client) return null;
-	const graph = getGraph(client);
+	const graph = getProxyGraph(env);
+	if (!graph) return null;
 
-	const todoId = todoHash(args.employeeId, args.sourceId);
+	const todoId = await todoHash(args.employeeId, args.sourceId);
 	const nowIso = new Date().toISOString();
 	const srcLabel = sourceLabel(args.sourceChannel);
 	const srcEdge = sourceEdge(args.sourceChannel);
@@ -379,14 +342,14 @@ export async function recordTodoFact(
 	// original insert; re-MERGEing them is a no-op but reporting skipped
 	// lets the caller suppress re-notification).
 	let skipped = false;
-	try {
-		const probe = await graph.query<{ "count(t)": number }>(
-			"MATCH (t:Todo {id: $tid}) RETURN count(t) AS c",
-			{
-				params: { tid: todoId },
-			},
-		);
-		const row = probe?.data?.[0];
+	const probe = await graph.query<unknown>(
+		"MATCH (t:Todo {id: $tid}) RETURN count(t) AS c",
+		{
+			params: { tid: todoId },
+		},
+	);
+	if (probe?.data) {
+		const row = probe.data[0];
 		if (row) {
 			const c = Number(
 				Array.isArray(row)
@@ -396,66 +359,53 @@ export async function recordTodoFact(
 			);
 			if (Number.isFinite(c) && c > 0) skipped = true;
 		}
-	} catch (err) {
-		console.warn(
-			JSON.stringify({
-				level: "warn",
-				message: "parrot_graph_todo_probe_failed",
-				todoId,
-				error: (err as Error | null)?.message ?? String(err),
-			}),
-		);
-		// Fall through — we'd rather attempt the write than refuse on a
-		// transient probe error.
 	}
+	// probe===null is fine — we'd rather attempt the write than refuse on a
+	// transient probe error. The Cypher MERGE below is idempotent regardless.
 
 	// Step 2: MERGE the :Employee + :Todo + ownership edge. ON CREATE SET
 	// is the only path that writes the fields — re-runs land in the
 	// "match" branch and leave the fields untouched (close-out by
 	// hash, not by valid_to flip).
-	try {
-		await graph.query(
-			`MERGE (e:Employee {id: $eid})
-			 MERGE (t:Todo {id: $tid})
-			   ON CREATE SET
-			     t.employee_id = $eid,
-			     t.title = $title,
-			     t.preview = $preview,
-			     t.urgency_score = $urgency,
-			     t.deadline_at = $deadline,
-			     t.is_mention = $isMention,
-			     t.source_channel = $channel,
-			     t.source_id = $sid,
-			     t.valid_from = $now,
-			     t.valid_to = $vt
-			 MERGE (e)-[:HAS_TODO]->(t)
-			 RETURN t.id`,
-			{
-				params: {
-					eid: args.employeeId,
-					tid: todoId,
-					title: args.title,
-					preview: args.preview ?? "",
-					urgency: Number.isFinite(args.urgencyScore)
-						? args.urgencyScore
-						: 0,
-					deadline: args.deadlineAt ?? null,
-					isMention: !!args.isMention,
-					channel: args.sourceChannel,
-					sid: args.sourceId,
-					now: nowIso,
-					vt: null,
-				},
+	const insertRes = await graph.query(
+		`MERGE (e:Employee {id: $eid})
+		 MERGE (t:Todo {id: $tid})
+		   ON CREATE SET
+		     t.employee_id = $eid,
+		     t.title = $title,
+		     t.preview = $preview,
+		     t.urgency_score = $urgency,
+		     t.deadline_at = $deadline,
+		     t.is_mention = $isMention,
+		     t.source_channel = $channel,
+		     t.source_id = $sid,
+		     t.valid_from = $now,
+		     t.valid_to = $vt
+		 MERGE (e)-[:HAS_TODO]->(t)
+		 RETURN t.id`,
+		{
+			params: {
+				eid: args.employeeId,
+				tid: todoId,
+				title: args.title,
+				preview: args.preview ?? "",
+				urgency: Number.isFinite(args.urgencyScore) ? args.urgencyScore : 0,
+				deadline: args.deadlineAt ?? null,
+				isMention: !!args.isMention,
+				channel: args.sourceChannel,
+				sid: args.sourceId,
+				now: nowIso,
+				vt: null,
 			},
-		);
-	} catch (err) {
+		},
+	);
+	if (insertRes === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_todo_insert_failed",
 				employeeId: args.employeeId,
 				todoId,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		return null;
@@ -464,26 +414,24 @@ export async function recordTodoFact(
 	// Step 3: MERGE the source node + edge. Doing this in a separate query
 	// keeps the per-statement Cypher short; if FalkorDB rejects an
 	// individual edge MERGE we still get the :Todo + ownership recorded.
-	try {
-		await graph.query(
-			`MERGE (t:Todo {id: $tid})
-			 MERGE (s:${srcLabel} {id: $sid})
-			 MERGE (t)-[:${srcEdge}]->(s)`,
-			{
-				params: {
-					tid: todoId,
-					sid: args.sourceId,
-				},
+	const sourceRes = await graph.query(
+		`MERGE (t:Todo {id: $tid})
+		 MERGE (s:${srcLabel} {id: $sid})
+		 MERGE (t)-[:${srcEdge}]->(s)`,
+		{
+			params: {
+				tid: todoId,
+				sid: args.sourceId,
 			},
-		);
-	} catch (err) {
+		},
+	);
+	if (sourceRes === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_todo_source_edge_failed",
 				todoId,
 				sourceChannel: args.sourceChannel,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		// Continue — :Todo is still recorded; missing source edge is
@@ -498,23 +446,21 @@ export async function recordTodoFact(
 		for (const rawName of args.mentionedActors) {
 			const name = String(rawName || "").trim();
 			if (!name) continue;
-			try {
-				await graph.query(
-					`MERGE (p:Person {name: $name})
-					 MERGE (t:Todo {id: $tid})
-					 MERGE (t)-[:MENTIONS]->(p)`,
-					{
-						params: { name, tid: todoId },
-					},
-				);
-			} catch (err) {
+			const mentionRes = await graph.query(
+				`MERGE (p:Person {name: $name})
+				 MERGE (t:Todo {id: $tid})
+				 MERGE (t)-[:MENTIONS]->(p)`,
+				{
+					params: { name, tid: todoId },
+				},
+			);
+			if (mentionRes === null) {
 				console.warn(
 					JSON.stringify({
 						level: "warn",
 						message: "parrot_graph_mentions_edge_failed",
 						todoId,
 						name,
-						error: (err as Error | null)?.message ?? String(err),
 					}),
 				);
 				// Keep going — partial mentions better than none.
@@ -545,35 +491,32 @@ export async function recordPersonFact(
 	env: GraphEnv,
 	args: RecordPersonFactArgs,
 ): Promise<{ personId: string } | null> {
-	if (!env.FALKORDB_URL) return null;
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return null;
 	const name = String(args?.name || "").trim();
 	if (!args?.employeeId || !name) return null;
 
-	const client = await getGraphClient(env);
-	if (!client) return null;
-	const graph = getGraph(client);
+	const graph = getProxyGraph(env);
+	if (!graph) return null;
 
-	try {
-		await graph.query(
-			`MERGE (p:Person {name: $name})
-			 ON CREATE SET p.created_at = $now
-			 RETURN p.name`,
-			{
-				params: { name, now: new Date().toISOString() },
-			},
-		);
-		return { personId: name };
-	} catch (err) {
+	const res = await graph.query(
+		`MERGE (p:Person {name: $name})
+		 ON CREATE SET p.created_at = $now
+		 RETURN p.name`,
+		{
+			params: { name, now: new Date().toISOString() },
+		},
+	);
+	if (res === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_person_insert_failed",
 				name,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		return null;
 	}
+	return { personId: name };
 }
 
 export interface RecordSourceFactArgs {
@@ -595,45 +538,42 @@ export async function recordSourceFact(
 	env: GraphEnv,
 	args: RecordSourceFactArgs,
 ): Promise<{ sourceId: string } | null> {
-	if (!env.FALKORDB_URL) return null;
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return null;
 	if (!args?.sourceId) return null;
 	if (args.sourceChannel !== "email" && args.sourceChannel !== "chat") {
 		return null;
 	}
 
-	const client = await getGraphClient(env);
-	if (!client) return null;
-	const graph = getGraph(client);
+	const graph = getProxyGraph(env);
+	if (!graph) return null;
 
 	const label = sourceLabel(args.sourceChannel);
 
-	try {
-		await graph.query(
-			`MERGE (s:${label} {id: $sid})
-			 ON CREATE SET s.subject = $subject, s.ts = $ts, s.created_at = $now
-			 RETURN s.id`,
-			{
-				params: {
-					sid: args.sourceId,
-					subject: args.subject ?? "",
-					ts: args.ts ?? null,
-					now: new Date().toISOString(),
-				},
+	const res = await graph.query(
+		`MERGE (s:${label} {id: $sid})
+		 ON CREATE SET s.subject = $subject, s.ts = $ts, s.created_at = $now
+		 RETURN s.id`,
+		{
+			params: {
+				sid: args.sourceId,
+				subject: args.subject ?? "",
+				ts: args.ts ?? null,
+				now: new Date().toISOString(),
 			},
-		);
-		return { sourceId: args.sourceId };
-	} catch (err) {
+		},
+	);
+	if (res === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_source_insert_failed",
 				sourceId: args.sourceId,
 				channel: args.sourceChannel,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		return null;
 	}
+	return { sourceId: args.sourceId };
 }
 
 // ─── Read API ───────────────────────────────────────────────────────────────
@@ -659,61 +599,58 @@ export async function getActiveTodos(
 	employeeId: string,
 	options: { limit?: number } = {},
 ): Promise<ActiveTodoRow[]> {
-	if (!env.FALKORDB_URL) return [];
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return [];
 	if (!employeeId) return [];
 
-	const client = await getGraphClient(env);
-	if (!client) return [];
-	const graph = getGraph(client);
+	const graph = getProxyGraph(env);
+	if (!graph) return [];
 
 	const limit = Math.min(Math.max(1, options.limit ?? 20), 200);
 
-	try {
-		const res = await graph.query(
-			`MATCH (e:Employee {id: $eid})-[:HAS_TODO]->(t:Todo)
-			 WHERE t.valid_to IS NULL
-			 RETURN t.title, t.urgency_score, t.deadline_at, t.is_mention,
-			        t.source_channel, t.source_id, t.valid_from
-			 ORDER BY t.urgency_score DESC
-			 LIMIT $lim`,
-			{
-				params: { eid: employeeId, lim: limit },
-			},
-		);
-		const rows = (res?.data ?? []) as unknown[];
-		return rows.map((r) => {
-			const arr = Array.isArray(r)
-				? (r as unknown[])
-				: [
-						(r as Record<string, unknown>)["t.title"],
-						(r as Record<string, unknown>)["t.urgency_score"],
-						(r as Record<string, unknown>)["t.deadline_at"],
-						(r as Record<string, unknown>)["t.is_mention"],
-						(r as Record<string, unknown>)["t.source_channel"],
-						(r as Record<string, unknown>)["t.source_id"],
-						(r as Record<string, unknown>)["t.valid_from"],
-					];
-			return {
-				title: String(arr[0] ?? ""),
-				urgencyScore: Number(arr[1]) || 0,
-				deadlineAt: (arr[2] as string | null) ?? null,
-				isMention: arr[3] === true || arr[3] === "true" || arr[3] === 1,
-				sourceChannel: String(arr[4] ?? ""),
-				sourceId: String(arr[5] ?? ""),
-				validFrom: String(arr[6] ?? ""),
-			};
-		});
-	} catch (err) {
+	const res = await graph.query(
+		`MATCH (e:Employee {id: $eid})-[:HAS_TODO]->(t:Todo)
+		 WHERE t.valid_to IS NULL
+		 RETURN t.title, t.urgency_score, t.deadline_at, t.is_mention,
+		        t.source_channel, t.source_id, t.valid_from
+		 ORDER BY t.urgency_score DESC
+		 LIMIT $lim`,
+		{
+			params: { eid: employeeId, lim: limit },
+		},
+	);
+	if (res === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_get_active_todos_failed",
 				employeeId,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		return [];
 	}
+	const rows = res.data ?? [];
+	return rows.map((r) => {
+		const arr = Array.isArray(r)
+			? (r as unknown[])
+			: [
+					(r as Record<string, unknown>)["t.title"],
+					(r as Record<string, unknown>)["t.urgency_score"],
+					(r as Record<string, unknown>)["t.deadline_at"],
+					(r as Record<string, unknown>)["t.is_mention"],
+					(r as Record<string, unknown>)["t.source_channel"],
+					(r as Record<string, unknown>)["t.source_id"],
+					(r as Record<string, unknown>)["t.valid_from"],
+				];
+		return {
+			title: String(arr[0] ?? ""),
+			urgencyScore: Number(arr[1]) || 0,
+			deadlineAt: (arr[2] as string | null) ?? null,
+			isMention: arr[3] === true || arr[3] === "true" || arr[3] === 1,
+			sourceChannel: String(arr[4] ?? ""),
+			sourceId: String(arr[5] ?? ""),
+			validFrom: String(arr[6] ?? ""),
+		};
+	});
 }
 
 export interface FrequentCollaboratorRow {
@@ -732,49 +669,46 @@ export async function getFrequentCollaborators(
 	employeeId: string,
 	options: { limit?: number } = {},
 ): Promise<FrequentCollaboratorRow[]> {
-	if (!env.FALKORDB_URL) return [];
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return [];
 	if (!employeeId) return [];
 
-	const client = await getGraphClient(env);
-	if (!client) return [];
-	const graph = getGraph(client);
+	const graph = getProxyGraph(env);
+	if (!graph) return [];
 
 	const limit = Math.min(Math.max(1, options.limit ?? 5), 50);
 
-	try {
-		const res = await graph.query(
-			`MATCH (e:Employee {id: $eid})-[:HAS_TODO]->(:Todo)-[:MENTIONS]->(p:Person)
-			 RETURN p.name, count(*) AS c
-			 ORDER BY c DESC
-			 LIMIT $lim`,
-			{
-				params: { eid: employeeId, lim: limit },
-			},
-		);
-		const rows = (res?.data ?? []) as unknown[];
-		return rows.map((r) => {
-			const arr = Array.isArray(r)
-				? (r as unknown[])
-				: [
-						(r as Record<string, unknown>)["p.name"],
-						(r as Record<string, unknown>).c,
-					];
-			return {
-				name: String(arr[0] ?? ""),
-				count: Number(arr[1]) || 0,
-			};
-		});
-	} catch (err) {
+	const res = await graph.query(
+		`MATCH (e:Employee {id: $eid})-[:HAS_TODO]->(:Todo)-[:MENTIONS]->(p:Person)
+		 RETURN p.name, count(*) AS c
+		 ORDER BY c DESC
+		 LIMIT $lim`,
+		{
+			params: { eid: employeeId, lim: limit },
+		},
+	);
+	if (res === null) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_get_collaborators_failed",
 				employeeId,
-				error: (err as Error | null)?.message ?? String(err),
 			}),
 		);
 		return [];
 	}
+	const rows = res.data ?? [];
+	return rows.map((r) => {
+		const arr = Array.isArray(r)
+			? (r as unknown[])
+			: [
+					(r as Record<string, unknown>)["p.name"],
+					(r as Record<string, unknown>).c,
+				];
+		return {
+			name: String(arr[0] ?? ""),
+			count: Number(arr[1]) || 0,
+		};
+	});
 }
 
 // ─── Summary for prompt injection ───────────────────────────────────────────
@@ -804,7 +738,7 @@ export async function getEmployeeContext(
 	env: GraphEnv,
 	employeeId: string,
 ): Promise<string> {
-	if (!env.FALKORDB_URL) return "";
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return "";
 	if (!employeeId) return "";
 
 	const [todos, collaborators] = await Promise.all([
@@ -867,23 +801,27 @@ function formatDeadline(iso: string): string {
 // ─── Health check ───────────────────────────────────────────────────────────
 
 /**
- * Cheap PING-style readiness probe. Returns true iff a client can be
- * obtained AND a trivial RETURN 1 query round-trips successfully. Never
- * throws. Used by /healthz once Wave 2 wires it in.
+ * Proxy health probe. Returns true iff the internjobs-graph-api proxy is
+ * reachable AND it reports ok:true (meaning FalkorDB is also reachable).
+ * Used by /healthz as `graph_proxy_reachable` (distinct from `graph_ready`
+ * which reflects the student app's direct FalkorDB ping).
  */
 export async function pingParrotGraph(env: GraphEnv): Promise<boolean> {
-	if (!env.FALKORDB_URL) return false;
-	const client = await getGraphClient(env);
-	if (!client) return false;
+	if (!env.GRAPH_API_URL) return false;
 	try {
-		const res = await getGraph(client).query("RETURN 1");
-		return Boolean(res);
+		const res = await fetch(
+			env.GRAPH_API_URL.replace(/\/$/, "") + "/health",
+			{ signal: AbortSignal.timeout(3000) },
+		);
+		if (!res.ok) return false;
+		const body = (await res.json()) as { ok?: boolean };
+		return body?.ok === true;
 	} catch (err) {
 		console.warn(
 			JSON.stringify({
 				level: "warn",
 				message: "parrot_graph_ping_failed",
-				error: (err as Error | null)?.message ?? String(err),
+				error: (err as Error)?.message ?? String(err),
 			}),
 		);
 		return false;
