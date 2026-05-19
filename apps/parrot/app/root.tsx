@@ -24,15 +24,23 @@ import {
 	type LoaderFunctionArgs,
 } from "react-router";
 import "./index.css";
+import { OnboardingWizard } from "~/components/OnboardingWizard";
+import { useCurrentEmployee } from "~/lib/auth";
 
-// Server loader — hand the publishable key to the client. Publishable
-// keys are safe to ship to the browser (that's their entire purpose).
+// Server loader — hand the publishable key + VAPID public key to the
+// client. Both are SAFE TO SHIP to the browser:
+//   - Clerk publishable key: it's literally designed for client-side
+//     embedding.
+//   - VAPID public key: the public half of the keypair. The matching
+//     PUSH_VAPID_PRIVATE_KEY is a wrangler secret and never leaves the
+//     Worker.
 export async function loader({ context }: LoaderFunctionArgs) {
 	const env =
 		(context as { cloudflare?: { env?: Record<string, string> } }).cloudflare
 			?.env || {};
 	return {
 		clerkPublishableKey: env.PARROT_CLERK_PUBLISHABLE_KEY || "",
+		vapidPublicKey: env.PUSH_VAPID_PUBLIC_KEY || "",
 	};
 }
 
@@ -92,10 +100,37 @@ export function HydrateFallback() {
 	);
 }
 
+/**
+ * Phase 13 Wave 3: AppShell wraps <Outlet /> with the OnboardingWizard.
+ *
+ * Lives inside <QueryClientProvider> so useCurrentEmployee() can read
+ * /api/me via React Query. Renders the wizard ONLY when an employee is
+ * signed in (me is truthy) AND has not completed onboarding
+ * (onboarded_at === null). The wizard is dismissable per-visit but the
+ * server-side flag is the canonical gate: it re-appears on every visit
+ * until POST /api/onboarding/complete flips onboarded_at.
+ */
+function AppShell({ vapidPublicKey }: { vapidPublicKey: string }) {
+	const { data: me } = useCurrentEmployee();
+	const showWizard = !!me && me.onboarded_at === null;
+	return (
+		<>
+			<Outlet />
+			{showWizard && me ? (
+				<OnboardingWizard
+					initialDisplayName={me.display_name ?? ""}
+					vapidPublicKey={vapidPublicKey}
+				/>
+			) : null}
+		</>
+	);
+}
+
 export default function App() {
 	const [queryClient] = useState(getQueryClient);
 	const data = useLoaderData<typeof loader>();
 	const publishableKey = data?.clerkPublishableKey || "";
+	const vapidPublicKey = data?.vapidPublicKey || "";
 
 	// If the publishable key is somehow empty, render without ClerkProvider
 	// so we don't blow up the whole shell. The SignIn page will show a
@@ -103,7 +138,7 @@ export default function App() {
 	if (!publishableKey) {
 		return (
 			<QueryClientProvider client={queryClient}>
-				<Outlet />
+				<AppShell vapidPublicKey={vapidPublicKey} />
 			</QueryClientProvider>
 		);
 	}
@@ -122,7 +157,7 @@ export default function App() {
 			}}
 		>
 			<QueryClientProvider client={queryClient}>
-				<Outlet />
+				<AppShell vapidPublicKey={vapidPublicKey} />
 			</QueryClientProvider>
 		</ClerkProvider>
 	);
