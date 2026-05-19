@@ -90,6 +90,12 @@ function extractToken(req: Request): string | null {
 function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 	const c = claims as Record<string, unknown>;
 	const employeeId = typeof claims.sub === "string" ? claims.sub : null;
+	// Only employeeId is strictly required. Clerk's default session JWT
+	// template doesn't include phone_number/email unless explicitly added —
+	// so phone-OTP users have valid sessions with no identifier claims.
+	// We accept that: anything signed-in to the employee Clerk app IS
+	// an employee. The Clerk user ID (sub) keys the EmployeeMailboxDO.
+	if (!employeeId) return null;
 	const email =
 		(typeof claims.email === "string" && claims.email) ||
 		(typeof c.primary_email_address === "string" &&
@@ -101,10 +107,6 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		(typeof c.primary_phone_number === "string" &&
 			(c.primary_phone_number as string)) ||
 		"";
-	// Either an email OR phone identifier suffices (employee Clerk app is
-	// phone-OTP only — no email is attached to most user records).
-	const identifier = email || phoneNumber;
-	if (!employeeId || !identifier) return null;
 
 	const givenName =
 		typeof c.given_name === "string" ? (c.given_name as string) : undefined;
@@ -129,7 +131,7 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 
 	return {
 		employeeId,
-		email: email || phoneNumber, // fall back to phone for callers that key on `email`
+		email: email || phoneNumber || employeeId, // never empty — callers key on this
 		displayName,
 		givenName,
 		familyName,
