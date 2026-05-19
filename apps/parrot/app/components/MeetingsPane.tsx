@@ -30,10 +30,42 @@
 //     signed-in employee's EmployeeMailboxDO.
 
 import { DailyProvider } from "@daily-co/daily-react";
+import DailyIframe from "@daily-co/daily-js";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Loader2, Users, Video } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { api, ApiError } from "~/lib/api";
+
+/**
+ * "Campus Aurora" — InternJobs Daily.co Prebuilt theme.
+ *
+ * Picked 2026-05-19 for the college-student recruiting context:
+ *   - Vivid violet accent (#7C3AED indigo-600) — energetic without being
+ *     childish; matches Gen-Z-coded recruiting tools (Standout, Wellfound)
+ *   - Off-white background in light mode reads premium, not corporate
+ *   - Lighter violet (#A78BFA violet-400) in dark mode for contrast
+ *
+ * Slate text/border palette ties into the rest of the Parrot workspace
+ * UI which is Tailwind slate-* throughout.
+ *
+ * Applied via @daily-co/daily-js createFrame({ theme }) — Daily.co does
+ * NOT accept `theme` via the REST API, it's a client-side SDK call.
+ */
+const CAMPUS_AURORA_THEME = {
+	colors: {
+		// Light mode (default)
+		accent: "#7C3AED",
+		accentText: "#FFFFFF",
+		background: "#FAFAFA",
+		backgroundAccent: "#F1F5F9",
+		baseText: "#1E293B",
+		border: "#E2E8F0",
+		mainAreaBg: "#FFFFFF",
+		mainAreaBgAccent: "#F8FAFC",
+		mainAreaText: "#0F172A",
+		supportiveText: "#64748B",
+	},
+} as const;
 
 export type MeetingsTab = "your-room" | "active" | "history";
 
@@ -148,56 +180,43 @@ function YourRoomTab() {
  * and is opaque to us beyond url/token; we only own the parent box.
  */
 function DailyEmbed() {
-	const parentRef = useRef<HTMLDivElement | null>(null);
-
-	// We intentionally do NOT call useCallFrame here. The DailyProvider
-	// at our parent already accepts `url`/`token` and creates a callObject
-	// internally — but for iframe-mode rendering we still need a parent
-	// element. The simplest cross-version-safe path is to render the
-	// iframe ourselves directly to roomUrl (Daily.co prebuilt UI is
-	// hosted at the room URL — visiting it loads the same UI the SDK
-	// would embed). This keeps Wave 2 SDK-light and avoids tight
-	// coupling to daily-react's evolving createFrame API.
-	useEffect(() => {
-		// Intentional no-op; iframe src is bound via JSX below.
-	}, []);
-
 	return (
 		<div
-			ref={parentRef}
-			className="rounded-lg overflow-hidden border border-slate-200 bg-black"
-			style={{ width: "100%", height: "600px" }}
+			className="rounded-lg overflow-hidden border border-slate-200"
+			style={{ width: "100%", height: "600px", background: "#FAFAFA" }}
 			data-daily-embed-parent
 		>
-			{/*
-			 * Daily.co prebuilt UI is served directly from the room URL,
-			 * so an <iframe src={roomUrl}> renders the full embedded
-			 * meeting UI (camera/mic/chat/screenshare). We let DailyProvider
-			 * own the React-side state (participants, devices) for any
-			 * future panes that want to call useDaily() hooks — the URL
-			 * already wires the iframe to the same call.
-			 */}
-			<DailyIframeFromProvider />
+			<DailyPrebuiltFrame />
 		</div>
 	);
 }
 
 /**
- * Renders a Daily.co prebuilt-UI iframe sized to its parent. The src
- * comes from the DailyProvider's room URL via a ref-based read so we
- * stay decoupled from internal daily-react APIs.
+ * Renders a Daily.co Prebuilt CallFrame with the Campus Aurora theme.
  *
- * Token is appended as a `t=` query param when present (the prebuilt UI
- * picks it up automatically).
+ * Earlier (Wave-2) implementation rendered a raw `<iframe src={roomUrl}>`
+ * which loads Daily.co's hosted UI WITHOUT theming. To apply the
+ * CAMPUS_AURORA_THEME we must use the @daily-co/daily-js SDK's
+ * `createFrame()` — which accepts a `theme` config and produces a
+ * theme-wired iframe under the hood.
+ *
+ * Lifecycle:
+ *   - On mount: createFrame({ url, token, theme, ... }) attached to
+ *     parentRef, then frame.join().
+ *   - On unmount: frame.destroy() (idempotent — Daily.co handles double-call).
+ *   - URL/token changes: tear down + recreate (uncommon — a single
+ *     personal room URL is stable for the employee's session).
  */
-function DailyIframeFromProvider() {
-	// Read the URL+token via the top-level query result. We can't use
-	// useDaily() to read these directly without depending on internal
-	// daily-react state shapes, so we re-read from React Query cache.
+function DailyPrebuiltFrame() {
+	const parentRef = useRef<HTMLDivElement | null>(null);
+	const frameRef = useRef<ReturnType<typeof DailyIframe.createFrame> | null>(
+		null,
+	);
+
 	const roomQuery = useQuery({
 		queryKey: ["meetings", "my-room"],
 		queryFn: () => api.getMyRoom(),
-		enabled: false, // already populated by parent
+		enabled: false,
 	});
 	const tokenQuery = useQuery({
 		queryKey: ["meetings", "room-token", roomQuery.data?.url ?? null],
@@ -206,22 +225,60 @@ function DailyIframeFromProvider() {
 	});
 
 	const roomUrl = roomQuery.data?.url;
+	const token =
+		tokenQuery.data && tokenQuery.data.ok ? tokenQuery.data.token : undefined;
+
+	useEffect(() => {
+		if (!parentRef.current || !roomUrl) return;
+
+		// Defensive: tear down any prior frame before creating a new one.
+		// Daily.co throws "Duplicate DailyIframe instances are not allowed"
+		// if createFrame is called twice for the same parent without
+		// destroy() in between (e.g., on a fast-refresh in dev).
+		if (frameRef.current) {
+			try {
+				frameRef.current.destroy();
+			} catch {
+				/* no-op */
+			}
+			frameRef.current = null;
+		}
+
+		const frame = DailyIframe.createFrame(parentRef.current, {
+			url: roomUrl,
+			token: token ?? undefined,
+			theme: CAMPUS_AURORA_THEME,
+			iframeStyle: {
+				width: "100%",
+				height: "100%",
+				border: "none",
+			},
+		});
+		frameRef.current = frame;
+
+		// Best-effort auto-join — Daily.co Prebuilt's UI also has a Join
+		// button if this fails (e.g., user denies camera permission).
+		frame.join().catch((err) => {
+			console.warn("Daily.co frame.join() failed (non-fatal)", err);
+		});
+
+		return () => {
+			try {
+				frame.destroy();
+			} catch {
+				/* no-op */
+			}
+			if (frameRef.current === frame) frameRef.current = null;
+		};
+	}, [roomUrl, token]);
+
 	if (!roomUrl) return null;
 
-	const tokenStr =
-		tokenQuery.data && tokenQuery.data.ok && tokenQuery.data.token
-			? tokenQuery.data.token
-			: undefined;
-	const iframeSrc = tokenStr
-		? `${roomUrl}${roomUrl.includes("?") ? "&" : "?"}t=${encodeURIComponent(tokenStr)}`
-		: roomUrl;
-
 	return (
-		<iframe
-			title="Daily.co meeting"
-			src={iframeSrc}
-			allow="camera; microphone; fullscreen; speaker; display-capture; autoplay"
-			style={{ width: "100%", height: "100%", border: "none" }}
+		<div
+			ref={parentRef}
+			style={{ width: "100%", height: "100%" }}
+			data-daily-prebuilt-parent
 		/>
 	);
 }
