@@ -33,7 +33,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 - [x] **Phase 09: LinkedIn Enrichment + QR Onboarding** — Standout-style flow: LinkedIn OAuth → Proxycurl/Cognee enrichment → QR-code phone pairing. Shipped 2026-05-18.
 - [x] **Phase 10: Parrot — Internal Employee Workspace (Wave 1+2+2b)** — `workspace.internjobs.ai` live with phone-OTP auth, Slack-style dual-rail UI (Dashboard / Email / Chat / Meetings), Mattermost-embedded Chat, embedded Clerk SignIn, UserMenu with sign-out, CF Email Routing per employee. Two separate production Clerk apps (student + employee) instead of the originally-planned shared instance. Shipped 2026-05-19. (Waves 3, 4, 5 split into Phase 11, 12, 13 below.)
 - [ ] **Phase 11: Daily.co Integration (was Parrot Wave 3)** — Daily.co account + REST + JS SDK embed in Parrot's Meetings pane. Per-employee always-on personal rooms. "Start meeting" CTAs from Inbox + Chat. (Split from Phase 10 on 2026-05-19.)
-- [ ] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent (kimi-k2.6 via Workers AI direct REST) monitoring Email + Chat, extracting cross-channel todos via DO alarm-driven Mattermost polling + inline email hook, ranking them with a hybrid urgency formula, and surfacing them on the Parrot Dashboard pane. Phone + SMS placeholder nav icons + route stubs (seams, not integrations) also ship here. Storage is `EmployeeMailboxDO` extended with a `todos` table — no new DO class, no Mastra in Parrot. (Planning: 2026-05-19.)
+- [x] **Phase 12: Dashboard Mothership Agent (was Parrot Wave 4)** — Per-employee LLM agent (kimi-k2.6 via Cloudflare AI Gateway with per-employee daily caps) monitoring Email + Chat, extracting cross-channel todos via DO alarm-driven Mattermost polling + fire-and-forget email hook, ranking them with a hybrid urgency formula, and surfacing them on the Parrot Dashboard pane. Phone + SMS placeholder nav icons + route stubs (seams, not integrations) also ship here. Storage is `EmployeeMailboxDO` extended with a `todos` table — no new DO class, no Mastra in Parrot. Shipped 2026-05-19 (10 commits 5fe02a9..f7d4be6; 3 waves: 12-01 foundation + 12-02 ingest/extraction + 12-03 UI/ranking; verifier `human_needed` for live AI Gateway + browser checks; 1 advisory fixed inline as `f7d4be6`).
 - [ ] **Phase 13: Cross-pane Actions + Launch Polish (was Parrot Wave 5)** — Email↔Chat↔Meeting cross-pane actions, unified notification pane, browser push, first-login wizard, pilot rollout. (Split from Phase 10.)
 
 ## Phase Details
@@ -204,9 +204,9 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 
 **Architecture decisions locked (do not re-litigate):**
 - Storage: `EmployeeMailboxDO` extended with `todos` table (migration `3_todos_table`). No new DashboardDO. No Mastra in the Parrot Worker.
-- Email ingest: synchronous hook inside `createEmail()` when folder = Inbox.
+- Email ingest: fire-and-forget hook (`void this.extractTodosFromEmail(...)`) inside `createEmail()` when folder = Inbox. Never blocks email storage; extraction failures don't propagate to caller.
 - Chat ingest: DO alarm self-rescheduling at 2-minute intervals via `ctx.storage.setAlarm()`.
-- LLM: `@cf/moonshotai/kimi-k2.6` via Workers AI direct REST. Same pattern as student app. Account `0fffd3dc637bdb26d4963df445a69fd3`. Fail-soft (returns [] on error).
+- LLM: `@cf/moonshotai/kimi-k2.6` via **Cloudflare AI Gateway** (`gateway.ai.cloudflare.com/v1/{account}/{PARROT_AI_GATEWAY_ID}/workers-ai/...`) — NOT direct Workers AI REST. Per-employee daily caps via `cf-aig-metadata: {"user_id": clerk_user_id}` header; prompt caching via `cf-aig-cache-ttl` (3600 email, 1800 chat). Account `0fffd3dc637bdb26d4963df445a69fd3`. Fail-soft (returns [] on error; 429 logs `audit_events.event_type='ai_gateway_quota_exceeded'`). **Contrast:** student app at apps/app/ still uses direct REST — no migration as side-effect of Phase 12. *(Decided 2026-05-19; see memory `project-llm-via-ai-gateway.md`.)*
 - Mattermost: bot account REST polling, `GET /api/v4/channels/{id}/posts?since={ms-5000}`. INSERT OR IGNORE deduplication on `source_id`.
 - Ranking: hybrid SQL `ORDER BY` at read time — `(urgency_score*2) + mention_boost + deadline_boost - recency_decay`.
 - Phone/SMS: lucide `Phone` + `MessageCircle` icons in WorkspaceShell NAV; route stubs at `/phone` + `/sms` with source comments documenting future `@cloudflare/voice` + `withVoice(Agent)` + Twilio/Telnyx direction.
@@ -239,7 +239,7 @@ Stand up a Mastra-powered agent that drafts AND autonomously sends both sides of
 | 04. Mastra Agent Core | v1.2 | 0/TBD | Not started | — |
 | 05. Operator Audit Log (was: Approval Gate) | v1.2 | 0/TBD | Not started | — |
 | 06. Two-Sided Integration Smoke Test | v1.2 | 0/TBD | Not started | — |
-| 12. Dashboard Mothership Agent | v1.2 | 0/3 | Planning complete | — |
+| 12. Dashboard Mothership Agent | v1.2 | 3/3 | Shipped (browser/AI gateway verify pending user) | 2026-05-19 |
 
 ## v1.3 Candidates
 
@@ -249,4 +249,4 @@ See REQUIREMENTS.md "Future Milestones → v1.3 Candidates" — TELNYX-ADAPT-01,
 
 ---
 
-*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 12 planning complete: 3 plans in 3 sequential waves. Corrected Phase 12 description: uses EmployeeMailboxDO extension (not DashboardDO), Workers AI direct REST (not Mastra), CF Agents SDK deferred to v1.3.*
+*Roadmap created: 2026-05-16. v1.2 = 6 phases, 13 requirements, 100% coverage. Last updated 2026-05-19 — Phase 12 planning complete: 3 plans in 3 sequential waves. Phase 12 LLM transport pivot 2026-05-19: switched from Workers AI direct REST → Cloudflare AI Gateway for per-employee daily usage caps + prompt caching (see memory `project-llm-via-ai-gateway.md`). Email ingest also corrected to fire-and-forget. EmployeeMailboxDO extension (not DashboardDO), CF Agents SDK deferred to v1.3.*
