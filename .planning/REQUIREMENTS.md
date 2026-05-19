@@ -1,170 +1,207 @@
 # Requirements: InternJobs.ai
 
-**Defined:** 2026-05-16
+**Defined:** 2026-05-19
 **Core Value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current Milestone:** v1.2 — Two-Sided Agent MVP
+**Current Milestone:** v1.3 Pilot Hardening
 
 ## Validated
 
-Shipped and verified in production. Immutable.
+Requirements shipped and verified. These are immutable — they represent what works.
 
-### v1.0 — Waitlist App
+### v1.0 — Waitlist Identity and Messaging Foundation (shipped 2026-05-09)
 
-**Marketing foundation:**
+- [x] **MKT-01..02**: Public student landing at `/` + public startup page at `/startups` — *verified 2026-05-09*
+- [x] **LEGAL-01..02**: Privacy + Terms pages — *verified 2026-05-09*
+- [x] **DEPLOY-01**: Marketing deploy verifies production CSS/JS — *verified 2026-05-09*
+- [x] **ARCH-01..04**: Separately deployable `apps/marketing` + `apps/app` workspaces with shared contracts — *verified 2026-05-09*
+- [x] **AUTH-01..04**: Clerk-first LinkedIn auth, no email/password in student waitlist, post-auth lands on pairing, Clerk user ID stored in Neon — *verified 2026-05-15 prod-activation*
+- [x] **DATA-01..04**: Neon schema for students/waitlist/pairing/profiles/consents/audit, repeatable migrations, Infisical-managed secrets, idempotent writes — *verified 2026-05-09*
+- [x] **MSG-01..05**: Pairing codes, QR/code screen, Photon/Spectrum inbound webhook, welcome message, delivery state tracking — *verified 2026-05-09*
+- [x] **LINK-01..04**: Clerk/OAuth-authorized profile storage, explicit enrichment consent, browser-enrichment gated behind compliance design, student review/correction UI — *verified 2026-05-09*
+- [x] **OPS-01..04**: Fly health checks, webhook signature validation, no sensitive-data logging, documented privacy/delete/export paths — *verified 2026-05-09*
 
-- [x] **MKT-01**: Public student landing at `/` — *verified v1.0*
-- [x] **MKT-02**: Public startup page at `/startups` — *verified v1.0*
-- [x] **LEGAL-01**: Privacy page at `/privacy` — *verified v1.0*
-- [x] **LEGAL-02**: Terms page at `/terms` — *verified v1.0*
-- [x] **DEPLOY-01**: Marketing deploy verifies production CSS/JS — *verified v1.0*
+### v1.1 — Seamless Waitlist and Threading (shipped 2026-05-15)
 
-**Architecture and identity:**
+- [x] **WAIT-01..03**: Authenticated users land on QR/SMS pairing; QR opens exact verification text; 8-char pairing code — *verified 2026-05-15*
+- [x] **THREAD-01**: Follow-up texts attach to the verified student via normalized phone-number routing — *verified 2026-05-15*
+- [x] **GRAPH-01**: Durable `student_threads` placeholder records for Cognee handoff — *verified 2026-05-15*
+- [x] **ENRICH-01**: Durable `profile_enrichment_jobs` placeholder records for Sprite.dev + Bright Data handoff — *verified 2026-05-15*
 
-- [x] **ARCH-01..04**: Separately deployable `apps/marketing` + `apps/app` workspaces with shared contracts — *verified v1.0*
-- [x] **AUTH-01..04**: Clerk-first LinkedIn auth, no email/password in student waitlist, post-auth lands on pairing, Clerk user ID stored in Neon — *verified v1.0 (AUTH-01 prod-activated 2026-05-15 during v1.1 deploy)*
+### v1.2 — Two-Sided Agent MVP + Parrot Workspace (shipped 2026-05-19)
 
-**Data and messaging:**
+- [x] **SMS-01**: `SmsProvider` interface seam fronting the Spectrum/Photon path — *verified 2026-05-19*
+- [x] **STARTUP-01..02**: Dedicated startup Clerk app at workspace.internjobs.ai (phone-OTP) + startups/startup_members schema — *verified 2026-05-19*
+- [x] **ROLE-01**: `roles` schema + in-app CRUD — *verified 2026-05-19*
+- [x] **EMAIL-01..03**: CF Email Routing → Worker → Mastra ingest; CF Email Service outbound; per-conversation Reply-To aliases on `agent.internjobs.ai` — *verified 2026-05-19*
+- [x] **AGENT-01..03**: Mastra agent core with thread memory + pgvector semantic memory — *verified 2026-05-19*
+- [x] **AGENT-VOICE**: Llama 3.3 70B fp8-fast + explicit voice rules + few-shot exemplars — *verified 2026-05-17*
+- [x] **MEMORY-01**: Self-hosted FalkorDB on Fly + Graphiti-style temporal facts in Node — *verified 2026-05-17 (graphReady=true; runtime activation for Parrot Worker deferred to v1.3 PHASE14-RUNTIME)*
+- [x] **OPS-01..02**: Read-only `/ops/drafts` audit log + autonomous send with system-prompt guardrails — *verified 2026-05-17*
+- [x] **STORAGE-01**: Private R2 bucket `internjobs-agent-store` with signed-URL-only access (scaffold) — *verified 2026-05-19*
+- [x] **INTEG-01**: Two-sided autonomous smoke test (student SMS → agent → startup email → agent → student SMS) — *verified 2026-05-19*
+- [x] **PARROT-WORKSPACE**: workspace.internjobs.ai with Slack-style UI, phone-OTP, three-tab Meetings, notification drawer + Web Push, OnboardingWizard — *verified 2026-05-19*
+- [x] **DASHBOARD-AGENT**: kimi-k2.6 cross-channel todo extraction via CF AI Gateway with per-employee daily caps + prompt caching — *verified 2026-05-19*
+- [x] **IMESSAGE-BRIDGE**: BlueBubbles on HostMyApple Mac mini + Cloudflare Tunnel — *verified 2026-05-19*
+- [x] **AGENTIC-INBOX**: Maya MCP Worker at agent.internjobs.ai + R2 attachments + CF Access SSO — *verified 2026-05-19*
+- [x] **LINK-ENRICH-QR**: Proxycurl enrichment + Standout-style QR onboarding — *verified 2026-05-19*
+- [x] **DAILY-CO**: Per-employee always-on personal rooms + ephemeral StartMeeting CTA — *verified 2026-05-19*
+- [x] **MATTERMOST-OIDC**: Mattermost OIDC SSO bridge via Parrot `/oidc/*` — *verified 2026-05-19*
+- [x] **ADMIN-INVITE**: Admin invite UX with capability toggles + phone-OTP + warm welcome email — *verified 2026-05-19*
 
-- [x] **DATA-01..04**: Neon schema for students/waitlist/pairing/profiles/consents/audit, repeatable migrations, Infisical-managed secrets, idempotent writes — *verified v1.0*
-- [x] **MSG-01..05**: Pairing codes, QR/code screen, Photon/Spectrum inbound webhook, welcome message, delivery state tracking — *verified v1.0*
+## v1.3 — Pilot Hardening (Active)
 
-**LinkedIn ingestion and operations:**
+Make v1.2 production-safe for the first 5-10 startup pilots. Tight 4-item scope sourced from `.planning/milestones/v1.3-pilot-hardening/research/SUMMARY.md` (research synthesized 2026-05-19).
 
-- [x] **LINK-01..04**: Clerk/OAuth-authorized profile storage, explicit enrichment consent, browser-enrichment gated behind compliance design, student review/correction UI — *verified v1.0*
-- [x] **OPS-01..04**: Fly health checks, webhook signature validation, no sensitive-data logging, documented privacy/delete/export paths — *verified v1.0*
+### Graph Bridge — PHASE14-RUNTIME
 
-### v1.1 — Seamless Waitlist
+Wire the v1.2 FalkorDB graph layer to the Parrot Worker via a Fly REST proxy (`internjobs-graph-api`). Workers RESP3 path ruled out — `cloudflare:sockets` blocks private IPs + no Cypher support in available Workers-runtime Redis libraries.
 
-- [x] **WAIT-01**: Authenticated users land directly on QR/SMS pairing — *verified 2026-05-15*
-- [x] **WAIT-02**: QR opens the exact verification text `Hey internjobs.ai! My verification code is {CODE}. What's next?` — *verified 2026-05-15*
-- [x] **WAIT-03**: 8-character pairing code is short, unique, and textable — *verified 2026-05-15*
-- [x] **THREAD-01**: Follow-up texts from the same phone attach to the verified student via normalized phone-number routing — *verified 2026-05-15*
-- [x] **GRAPH-01**: Durable `student_threads` placeholder records created for Cognee hosted handoff (no provider call) — *verified 2026-05-15*
-- [x] **ENRICH-01**: Durable `profile_enrichment_jobs` placeholder records created for Sprite.dev + Bright Data handoff (no provider call) — *verified 2026-05-15*
+- [ ] **GRAPH-PROXY-01**: New Fly app `internjobs-graph-api` deployed in `internjobs-sios-org`/`ord` with `min_machines_running = 1` (always-warm to keep Worker dashboard reads off cold-start path)
+- [ ] **GRAPH-PROXY-02**: `infra/graph-api/` directory contains `fly.toml`, `Dockerfile`, and `src/index.mjs` (Hono/Node) exposing `POST /query` and `GET /health`
+- [ ] **GRAPH-PROXY-03**: `POST /query` accepts `{ cypher, params, namespace? }` and returns `{ data, error? }`; authenticated via `Authorization: Bearer ${GRAPH_API_SECRET}`
+- [ ] **GRAPH-PROXY-04**: `GRAPH_API_SECRET` (new secret) and `GRAPH_API_URL` added to Infisical `/internjobs-ai` before first deploy
+- [ ] **GRAPH-PROXY-05**: `FALKORDB_URL` and `FALKORDB_PASSWORD` removed from Parrot Worker env (no longer needed — proxy holds the FalkorDB client)
+- [ ] **GRAPH-WORKER-01**: `apps/parrot/workers/lib/graph.ts` rewired — dynamic `falkordb` import guard removed, transport replaced with `fetch()` to `${GRAPH_API_URL}/query`
+- [ ] **GRAPH-WORKER-02**: `workers/types.ts` env definitions swap `FALKORDB_URL`/`FALKORDB_PASSWORD` for `GRAPH_API_URL`/`GRAPH_API_SECRET`
+- [ ] **GRAPH-WORKER-03**: Parrot Worker `/healthz` returns both `graph_ready: true` AND `graph_proxy_reachable: true` (distinct fields to distinguish DB-down from proxy-down)
+- [ ] **GRAPH-VERIFY-01**: Manual smoke test against production FalkorDB passes 4 operations: `ensureParrotGraphSchema`, `recordTodoFact`, `getActiveTodos`, `getEmployeeContext` (shapes correct, no errors)
+- [ ] **GRAPH-VERIFY-02**: `npm run smoke:parrot-graph` exits 0 with all invariants PASS
+- [ ] **GRAPH-VERIFY-03**: A real inbound email triggers `extractTodosFromEmail` and logs `{"event":"graph_context_injected","chars":>0}` in production
 
-## v1.2 — Two-Sided Agent MVP (Active)
+### Todo Auto-Resolution — PARROT-AUTO-CLEAR
 
-Spectrum/Photon stays the only active student SMS path. v1.2 adds startups + an operator approval gate, with Mastra as the agent core. Telnyx is held for v1.3.
+Cron-based reconciliation: when a Graphiti fact's `valid_to` is set, the underlying todo auto-resolves with full audit trail + undo. Strictly blocked on PHASE14-RUNTIME.
 
-### Pre-flight
+- [ ] **AUTO-CLEAR-01**: `wrangler.jsonc` adds cron trigger `*/5 * * * *` on the `internjobs-parrot` Worker
+- [ ] **AUTO-CLEAR-02**: `scheduled` handler in `workers/app.ts` invokes new `workers/lib/auto-clear.ts`
+- [ ] **AUTO-CLEAR-03**: Auto-clear Cypher guards with `fact.valid_to < NOW() - INTERVAL '5 minutes'` (minimum-open-window guard — prevents race-condition false clears)
+- [ ] **AUTO-CLEAR-04**: `EmployeeMailboxDO` migration 8 adds `resolution_source TEXT` nullable column to todos table
+- [ ] **AUTO-CLEAR-05**: `TodoItem` interface gains `resolution_source: 'agent' | 'user' | null`
+- [ ] **AUTO-CLEAR-06**: `EmployeeMailboxDO` exposes `resolveTodo(sourceId, source)` RPC method
+- [ ] **AUTO-CLEAR-07**: `GET /api/dashboard/todos?view=resolved` returns resolved todos with `resolution_source` + `resolved_at`
+- [ ] **AUTO-CLEAR-08**: `POST /api/dashboard/todos/:id/unresolve` is idempotent — clears `resolved_at` and fail-soft sets `valid_to = NULL` in graph
+- [ ] **AUTO-CLEAR-UX-01**: "Resolved" secondary nav item added to workspace dashboard
+- [ ] **AUTO-CLEAR-UX-02**: Agent-cleared todo animates out of active list (CSS slide-up + fade, ~250ms)
+- [ ] **AUTO-CLEAR-UX-03**: "Recently resolved" view shows agent-cleared todos with violet "Agent" pill + relative timestamp
+- [ ] **AUTO-CLEAR-UX-04**: One-click undo restores todo to active list
+- [ ] **AUTO-CLEAR-UX-05**: First auto-clear per session shows one-time toast; dismissed state persisted in localStorage per employee
+- [ ] **AUTO-CLEAR-VERIFY-01**: Smoke test for cross-namespace Cypher query (`:Fact` in student namespace, `:Todo` in employee namespace) passes
+- [ ] **AUTO-CLEAR-VERIFY-02**: End-to-end: reply in Mattermost thread → todo disappears from active list within 30s → appears in Resolved view → Undo restores it
 
-- [ ] **SEC-01**: Cloudflare DNS proxy on `accounts.internjobs.ai` and `clerk.internjobs.ai` is set to DNS-only (gray cloud) and a real LinkedIn → Clerk → app sign-in completes end-to-end against prod Clerk. Gates all subsequent v1.2 phases — no new user type (startup, operator) can authenticate until this is fixed.
+### Pre-LLM Safety Screening — SAFETY-01
 
-### SMS Provider Abstraction
+Lakera Guard pre-LLM screening on student SMS and email inbound. Fail-open. Soft-flag default; hard-block on `prompt_injection >= 0.8`. **Lakera was acquired by Cisco in May 2025 — verify current API at `platform.lakera.ai` before any integration code is written.**
 
-- [ ] **SMS-01**: Existing Spectrum/Photon send/receive path is refactored behind an `SmsProvider` interface so a Telnyx (or other) adapter can drop in later without touching call-sites. v1.2 ships exactly one implementation (Spectrum/Photon); no Telnyx stub, no second number.
+- [ ] **SAFETY-LAKERA-01**: Lakera/Cisco AI Defense account provisioned; current API endpoint + auth format + response schema verified at `platform.lakera.ai`; pricing tier confirmed (Community 10k/month insufficient for 30k/month pilot — Pro tier required)
+- [ ] **SAFETY-LAKERA-02**: `LAKERA_GUARD_API_KEY` added to Infisical `/internjobs-ai`; deployed to both Fly student app and Parrot Worker
+- [ ] **SAFETY-NODE-01**: `apps/app/src/safety/screen.mjs` — Node fetch helper with 1s hard timeout, fail-open, structured response `{ flagged, action, reason, score, raw }`
+- [ ] **SAFETY-WORKER-01**: `apps/parrot/workers/lib/safety.ts` — Worker fetch helper, same contract as Node version (deliberately not shared — 30-line helpers, ESM vs TS module boundary friction not worth abstracting)
+- [ ] **SAFETY-INSERT-01**: `apps/app/src/webhooks/photon.mjs` calls `screenMessage()` BEFORE any Mastra workflow step on student SMS inbound
+- [ ] **SAFETY-INSERT-02**: `apps/parrot/workers/lib/inbound-email.ts` calls `screenMessage()` BEFORE `extractTodosFromText()` on email ingest
+- [ ] **SAFETY-SCOPE-01**: Mattermost ingest is explicitly NOT screened (internal channel — wrong threat model, wastes Lakera quota)
+- [ ] **SAFETY-SCOPE-02**: Email from known startup_members senders is NOT screened (already authenticated identity)
+- [ ] **SAFETY-POLICY-01**: Hard-block rule — `prompt_injection` score >= 0.8, unconditional across channels; message dropped + logged with `action='hard_blocked'`
+- [ ] **SAFETY-POLICY-02**: Soft-flag default — all other flag categories let the message through, logged to `/ops/safety` with `action='soft_flagged'`
+- [ ] **SAFETY-POLICY-03**: Fail-open — Lakera timeout (>1s) or 5xx → logged as `action='passed_lakera_unavailable'`, message proceeds normally
+- [ ] **SAFETY-RESPONSE-01**: Student SMS hard-block triggers exact agent-voice reply: `"hey — couldn't process that one. try rephrasing?"` (lowercase, no emojis, matches AGENT-VOICE rules)
+- [ ] **SAFETY-RESPONSE-02**: Email hard-block does NOT auto-reply (out-of-office loop risk); logged in `/ops/safety` only
+- [ ] **SAFETY-LOG-01**: `safety_events` table in Neon (NOT per-employee DO SQLite — operator view is cross-employee) with columns: `id`, `created_at`, `channel`, `direction`, `sender_last4`, `action`, `reason_label`, `score`, `preview_80char`
+- [ ] **SAFETY-VIEW-01**: `/ops/safety` route renders the flag log; reviewer can mark a flag reviewed
+- [ ] **SAFETY-BADGE-01**: Red dot badge on `/ops/safety` nav item when any unreviewed flag exists within last 24h
+- [ ] **SAFETY-VERIFY-01**: Injection test SMS (e.g., "ignore previous instructions and …") appears in `/ops/safety` as hard-blocked AND student receives the canned reply
+- [ ] **SAFETY-VERIFY-02**: Benign student SMS produces no log entry (zero noise on clean traffic)
+- [ ] **SAFETY-VERIFY-03**: p99 latency on screen call instrumented; if >500ms after first pilot week, move to fire-and-forget pattern with 200ms budget
 
-### Startup Identity
+### Credential Rotation — SEC-ROTATE
 
-- [ ] **STARTUP-01**: Startup founder can sign in with email/password, Google, or Microsoft via Clerk (LinkedIn is NOT required) and land on a startup dashboard. Clerk user ID stored in Neon. Identity uses a single Clerk app with `publicMetadata.userType = 'startup'` (not a separate Clerk app).
-- [ ] **STARTUP-02**: Startup completes profile capture (company name, website, founder name, email) and grants explicit `messaging_on_behalf` consent before reaching agent features. New Neon schema: `startups`, `startup_members`, `startup_consents`. Middleware blocks agent surfaces without consent.
+Rotate 5 token families (not 4 — two Clerk apps). No code changes. Run LAST as the definitive green-board for v1.3 ship. Critical constraint: `CLOUDFLARE_AI_API_TOKEN` is shared by Fly student app + Parrot Worker — rotate Fly first, verify, then Worker, then revoke old.
 
-### Roles Catalog
-
-- [ ] **ROLE-01**: Startup founder can create, view, edit, and deactivate roles (title, description, requirements, status, location, comp range) from the startup dashboard. Stored in Neon `roles` table and readable by the agent. Deactivate sets `status='paused'` (no hard delete) so agent references stay valid.
-
-### Startup Email Channel
-
-- [ ] **EMAIL-01**: Email sent to `internjobs.ai` startup-facing addresses is received by a Cloudflare Worker via Cloudflare Email Routing. Worker validates and forwards a signed payload (HMAC / shared secret) to a Mastra ingest endpoint on the Fly app. Receipt is logged in `audit_events`.
-- [ ] **EMAIL-02**: Outbound transactional email via Cloudflare Email Service (public beta 2026-04-17, the "Agent Mail" product) is configured for sending operator-approved agent drafts to startups, with SPF + DKIM + DMARC + `cf-bounce.internjobs.ai` MX verified on the `internjobs.ai` zone. `noreply@internjobs.ai` (or equivalent) deliverable to Gmail/Outlook end-to-end. CF Email Routing handles inbound; CF Email Service handles outbound — same vendor, one less integration to operate.
-
-### Agent Core (Mastra)
-
-- [ ] **AGENT-01**: When a student inbound SMS arrives (Spectrum/Photon path), the Mastra workflow fires, reads the student's profile context, matches against active `roles`, and writes a student-side draft message to a `drafts` table with `status='pending_review'`. v1.2 match is keyword heuristic; pgvector match is layered on via AGENT-03. *Workers AI direct REST (no OpenAI billing, no proxy Worker, no AI Gateway) — 2026-05-16 tear-out.*
-- [ ] **AGENT-02**: Mastra maintains persistent thread memory keyed separately by `student_id` and `startup_id`, backed by Postgres (Mastra `PostgresStore`) under a dedicated `mastra` Postgres schema (`schemaName: 'mastra'`, never `public`). Thread context prevents duplicate intros and supports full conversation history. *Workers AI direct REST (no OpenAI billing, no proxy Worker, no AI Gateway) — 2026-05-16 tear-out.*
-- [ ] **AGENT-03**: pgvector semantic memory enabled on Neon (`vector` extension + HNSW index created in migration, not deferred). Student profile and role embeddings written on save/update. Embedding model is Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768-dim) via direct REST (`api.cloudflare.com/client/v4/accounts/{id}/ai/run/...` with `Authorization: Bearer {CLOUDFLARE_AI_API_TOKEN}`); vector column is `vector(768)`. Agent match optionally uses cosine similarity when `USE_VECTOR_MATCH` flag is set; falls back to AGENT-01 keyword match otherwise. *Workers AI direct REST (no OpenAI billing, no proxy Worker, no AI Gateway) — 2026-05-16 tear-out.*
-- [x] **MEMORY-01**: Self-hosted graph memory for cross-conversation recall (Phase B; AGENT-VOICE was Phase A). Self-hosted FalkorDB (Redis-protocol graph DB + Cypher) running as a separate Fly app `internjobs-graph` on the org's private network at `internjobs-graph.internal:6379` (10GB volume, AOF persistence, password auth via Fly secret). Native Node implementation of the Graphiti temporal-fact pattern at `apps/app/src/memory/graph.mjs` — every fact is a `:Fact` node attached to `:Student | :Role | :Startup` via `-[:HAS_FACT]->`, with `predicate / object_value / confidence / source_message_id / valid_from / valid_to`. Single-valued predicates (STUDIES_AT, STATUS, PREFERS) close conflicting active facts atomically (valid_to = now()); multi-valued (INTERESTED_IN, SKILLS_IN, MENTIONED) accumulate. Mastra workflow injects `getStudentSummary(studentId)` as the FIRST block of the per-turn user prompt (cross-day recall — "hey raj. been a minute - how'd the valon thing land?") and runs fire-and-forget post-reply fact extraction against Workers AI 70B (temperature 0.1, JSON-only). Fail-soft end-to-end: app boots without FALKORDB_URL, workflow completes turn without graph (degraded UX, no recall). New /healthz key `graphReady` (cached 30s). NO Python sidecar.
-
-### Operator Audit
-
-- [ ] **OPS-01**: Read-only message audit log at `/ops/drafts` (single Clerk app with `publicMetadata.userType = 'operator'`, not a DB flag) showing every agent-sent message + every inbound with conversation context, ordered newest-first. Flag-for-review action (POST `/ops/drafts/:id/flag`) writes to `draft_feedback` with `feedback_type='flagged'` + free-text reason. No approve/edit/reject pre-send — the autonomy pivot 2026-05-17 removed the gate. Legacy `feedback_type='rejected'`/`'edited'` rows from the pre-pivot approval queue stay queryable for historical context.
-- [ ] **OPS-02**: Mastra workflow auto-sends agent responses on both student SMS (Spectrum) and startup email (CF Email Service) channels without human approval. Workflow INSERTs the draft with transient `status='sending'`, then UPDATEs to `'sent'` (with `sent_at` + `provider_message_id`) on success or `'failed'` on send error (with `audit_events` row `event_type='auto_send_failed'`). Send failures do NOT crash the workflow. The operator can flag bad messages post-hoc via OPS-01; they cannot recall or edit a sent message. Auto-retry on failure is deferred to v1.3.
-
-### Storage & Threading
-
-- [ ] **EMAIL-03**: Outbound startup emails set `Reply-To: conv-{conversation_id}@agent.internjobs.ai`. The catch-all Worker bound to the `agent.internjobs.ai` subdomain parses the `conv-` prefix on inbound, extracts the UUID, and the Fly app writes it into `inbound_messages.metadata.conversation_id`. Replaces fragile From-address lookup as the PRIMARY inbound startup identification path; legacy lookup stays as fallback when the alias is absent. **Subdomain isolation (2026-05-16 update):** aliases live on the dedicated `agent.internjobs.ai` subdomain (NOT the apex) so the apex `internjobs.ai` stays free for human/employee email (raj@, support@); hard separation prevents a stripped-subdomain typo from accidentally invoking the Worker.
-- [ ] **STORAGE-01**: R2 bucket `internjobs-agent-store` (private, signed-URL-only) scaffolded. Per-entity folder convention (`students/{id}/`, `startups/{id}/`, `conversations/{id}/`, `startups/{id}/roles/{role_id}/`). R2 client at `apps/app/src/storage/r2.mjs` with fail-soft singleton (`getR2Client()` returns null when envs unset). NO ingestion wired yet — just the storage layer.
-
-### Integration Acceptance
-
-- [ ] **INTEG-01**: Two-sided smoke test executes end-to-end in production without manual DB intervention: student inbound (Spectrum) → agent draft → operator approve → startup email send → startup reply (CF Email Routing → Worker → Mastra ingest) → agent draft → operator approve → student SMS (Spectrum). All 11 steps from `.planning/milestones/v1.2-two-sided-agent-mvp/research/FEATURES.md` INTEG-01 pass.
+- [ ] **SEC-ROTATE-ORDER**: Rotation sequence per token: generate new → write Infisical → redeploy consuming services → verify `/healthz` green + one live action → only then revoke old in vendor dashboard
+- [ ] **SEC-ROTATE-CLERK-01**: Clerk student app (`Internjobs.ai` / `app_38BrRDRKnvbo7vlE2ZZtMc7hFPC`) Secret Key rotated via multi-key overlap (add new → deploy → verify → delete old); JWT Signing Key NOT touched
+- [ ] **SEC-ROTATE-CLERK-02**: Clerk workspace app (employee phone-OTP at workspace.internjobs.ai) Secret Key rotated via same procedure
+- [ ] **SEC-ROTATE-EMAIL-01**: CF Email token inventory audit — confirm whether `CLOUDFLARE_EMAIL_API_TOKEN` or `CLOUDFLARE_EMAIL_ROUTING_API_TOKEN` is the live one in Infisical and which Worker consumes it
+- [ ] **SEC-ROTATE-EMAIL-02**: CF Email API token rotated (correct one identified above)
+- [ ] **SEC-ROTATE-AI-01**: `CLOUDFLARE_AI_API_TOKEN` rotated — Fly student app FIRST: `fly secrets set`, verify `/healthz workersAiReady: true` + one live student SMS turn succeeds
+- [ ] **SEC-ROTATE-AI-02**: After Fly verified, Parrot Worker AI Gateway credential updated and verified; THEN and only then old token revoked in CF dashboard
+- [ ] **SEC-ROTATE-BROAD-01**: Broad-scope CF API token rotated LAST — local shell env updated first, then wrangler-deployed services, then Infisical, then revoke
+- [ ] **SEC-ROTATE-GRAPH-01**: `GRAPH_API_SECRET` (new v1.3 credential introduced by PHASE14-RUNTIME) included in SEC-ROTATE inventory + Infisical
+- [ ] **SEC-ROTATE-VERIFY-01**: All `/healthz` endpoints green across student app, Parrot Worker, agentic-inbox Worker, graph-api Fly app
+- [ ] **SEC-ROTATE-VERIFY-02**: Old tokens confirmed "Revoked" in Clerk dashboards (both apps) + Cloudflare dashboard
+- [ ] **SEC-ROTATE-VERIFY-03**: JWKS endpoint `https://clerk.internjobs.ai/.well-known/jwks.json` returns valid JSON post-rotation
+- [ ] **SEC-ROTATE-VERIFY-04**: No error rate spike (≤ baseline) on either Clerk app for 15 minutes following rotation
 
 ## Future Milestones
 
-Named candidates for v1.3+. No checkboxes — these become Active when promoted via `/rrr:new-milestone`.
+Candidates flagged by v1.3 milestone research or deferred from v1.2 — not in current roadmap.
 
-### v1.3 Candidates
+### v1.4 Candidates
 
-*Carry-over from v1.2 Out of Scope + research suggestions*
+*Source: v1.3 milestone research (research/SUMMARY.md) and v1.2 audit deferrals*
 
-- **TELNYX-ADAPT-01**: Telnyx adapter implementation of the `SmsProvider` interface (provisioning, Ed25519 webhook verification, A2P 10DLC registration) — *Source: v1.2 scope revision; SMS-01 ships the seam, not the adapter*
-- **TELNYX-MIGRATE-01**: Soft cutover state machine + one-time migration SMS for existing Spectrum students (cross-provider duplicate handling per PITFALLS #4–#6) — *Source: v1.2 research*
-- **SUNSET-01**: Hard Spectrum sunset — gate: ≥30 days stable on Telnyx, zero student SMS regressions, A2P 10DLC registration complete — *Source: v1.2 research*
-- **COGNEE-ACTIVATE-01**: Light up Cognee hosted handoff against the v1.1 `student_threads` placeholders; gate is matching-quality plateau or explicit need — *Source: PROJECT.md Out of Scope*
-- **ENRICH-ACTIVATE-01**: Light up Sprite.dev + Bright Data against v1.1 `profile_enrichment_jobs` placeholders; gate is legal/compliance approval — *Source: PROJECT.md Out of Scope*
-- **VOICE-01**: Voice channel for students (any provider) — gate: >10% inbound asks for voice — *Source: PROJECT.md Out of Scope*
-- **SLACK-01**: Slack channel for startups (instead of/alongside email) — gate: first 5–10 startups indicate Slack > email — *Source: PROJECT.md Out of Scope*
-- **STARTUP-SMS-01**: Second SMS number dedicated to startup-side messaging — gate: startup feedback that email alone is insufficient — *Source: PROJECT.md Out of Scope*
-- **FEEDBACK-LOOP-01**: Automated draft feedback loop — structured rejection reasons (enum, not free text) feed Mastra prompt tuning automatically — *Source: v1.2 research*
-- **THREAD-SUMMARY-01**: Background job that summarizes Mastra threads exceeding ~50 messages so context windows don't bloat — *Source: PITFALLS #19*
-- **CONSENT-INFER-01**: Extend `consents` table with `agent_inference_consent` so the agent can persist inferences derived from startup emails about students (TCPA/CAN-SPAM surface) — *Source: PITFALLS #15*
-- **MULTI-MEMBER-01**: Multi-member invites for startups (v1.2 ships one founder per startup only) — *Source: v1.2 research*
-- **STORAGE-02**: Email attachment ingest + MMS attachment ingest. Phase 03 Worker writes attachments to R2 per-entity folders; Mastra workflow reads referenced files into thread context — *Source: v1.2 STORAGE-01 scope-add*
-- **STORAGE-03**: Permanent short links via mapping bucket + redirector Worker (STAB-02 pattern from SuperIntelligence) — replaces 1h presigned URL TTL in outbound channel messages — *Source: v1.2 STORAGE-01 scope-add*
-- **EMAIL-04**: Per-startup vanity addresses (e.g. `acme@internjobs.ai` forwards to the startup's real email) — branding nicety, not load-bearing — *Source: v1.2 EMAIL-03 scope-add*
+- **TELNYX-ADAPT-01 / TELNYX-MIGRATE-01 / SUNSET-01** — Telnyx SMS adapter migration; A2P 10DLC registration takes weeks
+- **STORAGE-02** — Email + MMS attachment ingest into R2
+- **STORAGE-03** — Permanent short links via mapping bucket + redirector Worker
+- **EMAIL-04** — Per-startup vanity addresses (`acme@internjobs.ai`)
+- **DAILY-VANITY-01** — Custom Daily.co subdomain `meet.internjobs.ai`
+- **STARTUP-SMS-01** — Second SMS number for startup-side messaging
+- **CONSENT-INFER-01** — `agent_inference_consent` on the consents table
+- **FEEDBACK-LOOP-01** — Automated draft feedback loop into prompt tuning
+- **THREAD-SUMMARY-01** — Background summarizer for long Mastra threads
+- **MULTI-MEMBER-01** — Multi-member startup invites
+- **SAFETY-OUTBOUND-01** — Lakera Guard on agent outbound messages (gate: first pilot report of an agent message causing reputational harm)
+- **SAFETY-HARD-BLOCK-EXPAND-01** — Convert student SMS soft-flag → hard-block once 30 days of pilot FP-rate data exists
+- **WORKERS-VPC-REVISIT** — If Workers VPC reaches GA with viable pricing, retire `internjobs-graph-api` Fly proxy in favor of native CF service binding
 
 ### Backlog (Unassigned)
 
-- **SEC-ROTATE-01**: Rotate `CLERK_SECRET_KEY` (pasted in chat 2026-05-15); update Infisical `prod`/`/internjobs-ai` and re-run `flyctl secrets import`. *(Currently tracked as STATE.md blocker; not formally promoted to v1.2 requirement.)*
-- **SEC-ROTATE-CF-EMAIL-01**: Rotate the Cloudflare Email Service API token pasted in chat 2026-05-16 (same posture as SEC-ROTATE-01). Update Infisical `prod`/`/internjobs-ai` `CLOUDFLARE_EMAIL_API_TOKEN` and re-run `flyctl secrets import`. Tracked as STATE.md blocker pending the v1.2 INTEG-01 smoke run.
-- **SEC-ROTATE-CF-AI-01**: Rotate the Cloudflare Workers AI API token pasted in chat 2026-05-16 (same posture as SEC-ROTATE-CF-EMAIL-01). The token is scoped for Workers AI direct (used by `apps/app/src/embeddings.mjs` and `apps/app/src/workflows/student-inbound.mjs` to call `api.cloudflare.com/client/v4/accounts/{id}/ai/run/...`). Update Infisical `prod`/`/internjobs-ai` `CLOUDFLARE_AI_API_TOKEN` and re-run `flyctl secrets import`. Tracked as STATE.md blocker pending the next post-launch rotation pass.
-- **SAFETY-01**: Pre-LLM injection screening (Lakera Guard or equivalent). With the agent autonomous from 2026-05-17, prompt-level guardrails in `apps/app/src/workflows/student-inbound.mjs` (`AGENT_SAFETY_GUARDRAILS`) are the first line of defense. SAFETY-01 layers Lakera Guard (or equivalent) on inbound message body and any reply-to alias before the LLM call, to catch prompt-injection / jailbreaks / TOS-violating asks before they reach the model. Defer to v1.3.
+- **COGNEE-ACTIVATE-01** — Activate Cognee placeholders (still gated on legal approval)
+- **ENRICH-ACTIVATE-01** — Activate Sprite.dev + Bright Data placeholders (still gated on legal approval)
+- **VOICE-01** — Voice channel (demand-gated on >10% inbound voice asks)
+- **SLACK-01** — Slack integration for startups (demand-gated on first 5-10 startups preferring Slack > email)
 
 ## Out of Scope
 
-Explicit exclusions. Documented to prevent scope creep.
-
 | Feature | Reason | Revisit? |
 |---------|--------|----------|
-| LinkedIn credential capture / private-surface scraping | High legal/security risk; Clerk OAuth + user-authorized data only | Never (without legal review) |
-| Replacing marketing site with the app | Marketing stays a static Cloudflare Pages deployment | Never |
-| ATS or recruiter dashboard | Wrong product feel; app stays messaging-first | Never |
-| Cognee in v1.2 | Agent memory lives in Mastra thread + pgvector; placeholders stay inert | v1.3+ (COGNEE-ACTIVATE-01) |
-| Telnyx activation in v1.2 | Avoid stacking unfamiliar SMS platform on unfamiliar agent framework in one milestone; v1.2 ships only the `SmsProvider` seam (SMS-01) | v1.3 (TELNYX-ADAPT-01) |
-| Voice (any provider) | Not yet validated as user need | v1.3 gated on >10% inbound asks |
-| Slack integration for startups | Email is the v1.2 startup channel | v1.3 gated on first 5–10 startups asking |
-| Second SMS number for startup SMS | Email covers startups in v1.2 | v1.3 gated on startup feedback |
-| Sprite.dev + Bright Data browser enrichment activation | Placeholders stay inert until legal/compliance approval | v1.3+ (ENRICH-ACTIVATE-01) |
-| `students.sms_provider` column / cross-provider state machine | Only one provider live in v1.2 — column lands when Telnyx adapter does | v1.3 (with TELNYX-ADAPT-01) |
+| LinkedIn credential capture or login scraping | High legal/security risk | Never |
+| Automated private LinkedIn scraping | Likely violates platform expectations | Only after legal review + approved API path |
+| Replacing the marketing site with the app | Marketing remains static CF Pages | Never |
+| ATS or recruiter dashboard | Wrong product feel — app stays messaging-first | Never |
+| Telnyx activation in v1.3 | A2P 10DLC registration takes weeks (external timeline) | v1.4 |
+| Cognee activation in v1.3 | Legal-gated | When legal cleared |
+| Sprite.dev + Bright Data activation in v1.3 | Legal-gated | When legal cleared |
+| STORAGE-02/03, EMAIL-04, DAILY-VANITY-01 in v1.3 | Pilot polish, not pilot-blocking | v1.3 patches if needed, otherwise v1.4 |
+| Voice channel (any provider) | Demand-gated | When >10% inbound asks for voice |
+| Slack integration for startups | Demand-gated | When first 5-10 startups prefer Slack |
+| 2nd SMS number for startup-side SMS | Demand-gated | When startup feedback shows email insufficient |
+| Outbound message safety screening | System-prompt guardrails cover v1.3 scale | After pilot harm event OR v1.4 |
+| Rotating Clerk JWT Signing Keys in SEC-ROTATE | Mass user sign-out across both apps | Only on confirmed signing-key compromise |
+| Workers-native RESP3 client for FalkorDB | `cloudflare:sockets` blocks private IPs + no Cypher lib support today | When Workers VPC reaches GA |
 
 ## Traceability
 
-Maps current-milestone (v1.2) requirements to roadmap phases.
+Which phases cover which requirements for the current milestone. **To be filled by `/rrr:create-roadmap`.**
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 01 — Pre-flight + SMS Abstraction | Pending |
-| SMS-01 | Phase 01 — Pre-flight + SMS Abstraction | Pending |
-| STARTUP-01 | Phase 02 — Startup Identity, Consent & Roles | Pending |
-| STARTUP-02 | Phase 02 — Startup Identity, Consent & Roles | Pending |
-| ROLE-01 | Phase 02 — Startup Identity, Consent & Roles | Pending |
-| EMAIL-01 | Phase 03 — Startup Email Channel | Pending |
-| EMAIL-02 | Phase 03 — Startup Email Channel | Pending |
-| AGENT-01 | Phase 04 — Mastra Agent Core | Pending |
-| AGENT-02 | Phase 04 — Mastra Agent Core | Pending |
-| AGENT-03 | Phase 04 — Mastra Agent Core | Pending |
-| MEMORY-01 | Phase 04 — Agent Core (scope-add 2026-05-17 Phase B) | Shipped 2026-05-17 |
-| OPS-01 | Phase 05 — Operator Audit Log (was: Approval Gate) | Pending |
-| OPS-02 | Phase 05 — Operator Audit Log (was: Approval Gate) | Pending |
-| EMAIL-03 | Phase 03/04 enhancement (scope-add 2026-05-16) | Pending |
-| STORAGE-01 | Phase 04 enhancement (scope-add 2026-05-16) | Pending |
-| INTEG-01 | Phase 06 — Two-Sided Integration Smoke Test | Pending |
+| GRAPH-PROXY-* | TBD | Pending |
+| GRAPH-WORKER-* | TBD | Pending |
+| GRAPH-VERIFY-* | TBD | Pending |
+| AUTO-CLEAR-* | TBD | Pending |
+| AUTO-CLEAR-UX-* | TBD | Pending |
+| AUTO-CLEAR-VERIFY-* | TBD | Pending |
+| SAFETY-LAKERA-* | TBD | Pending |
+| SAFETY-NODE-01 / SAFETY-WORKER-01 | TBD | Pending |
+| SAFETY-INSERT-*, SAFETY-SCOPE-*, SAFETY-POLICY-*, SAFETY-RESPONSE-* | TBD | Pending |
+| SAFETY-LOG-01, SAFETY-VIEW-01, SAFETY-BADGE-01 | TBD | Pending |
+| SAFETY-VERIFY-* | TBD | Pending |
+| SEC-ROTATE-* | TBD | Pending |
 
-**Coverage (v1.2):**
-- Active requirements: 16 total
-- Mapped to phases: 16 ✓
-- Unmapped: 0
+**Coverage (v1.3):**
+- Active requirements: 57 total (12 graph + 15 auto-clear + 18 safety + 12 SEC-ROTATE)
+- Mapped to phases: 0
+- Unmapped: 57 ⚠️ *(expected — roadmap not yet generated)*
 
 ---
-*Requirements defined: 2026-05-16*
-*Last updated: 2026-05-17 — MEMORY-01 (Phase B): Self-hosted graph memory shipped. New Fly app `internjobs-graph` (FalkorDB Redis-protocol graph DB + Cypher, 10GB volume, AOF persistence, internal-only at `internjobs-graph.internal:6379`); native Node implementation of Graphiti temporal-fact pattern at `apps/app/src/memory/graph.mjs`; Mastra workflow injects `getStudentSummary` as the first user-prompt block and runs fire-and-forget post-reply fact extraction via Workers AI 70B. NO Python sidecar. `/healthz` adds `graphReady` (cached 30s). Verified live: graphReady=true on production student app. Earlier 2026-05-17 — AUTONOMY PIVOT: APPROVE-01/02 reframed as OPS-01/02 (read-only audit log + flag-for-review; no operator approval pre-send). "Auto-send of agent-drafted messages" line removed from Out of Scope. SAFETY-01 (Lakera Guard) added to Backlog as the v1.3 layered defense ahead of the LLM call. Traceability table updated to reflect Phase 05 rename (Operator Audit Log, was: Approval Gate). See PROJECT.md Key Decisions for rationale. Earlier 2026-05-16 — EMAIL-03 subdomain isolation: agent aliases moved from apex `internjobs.ai` to dedicated `agent.internjobs.ai` subdomain (hard cut-over, no apex fallback). Worker bound to `*@agent.internjobs.ai`; apex stays free for human/employee email via separate forward-to-personal-inbox rules. Earlier 2026-05-16: Workers AI direct tear-out: AGENT-01..03 re-annotated (proxy Worker removed; Fly Node app now calls Workers AI REST directly with `CLOUDFLARE_AI_API_TOKEN`). SEC-ROTATE-CF-AI-01 added to backlog. Earlier 2026-05-16: STORAGE-01 + EMAIL-03 scope-add (R2 per-entity folder scaffold + per-conversation Reply-To aliases for deterministic threading; modeled on SuperIntelligence patterns); SEC-ROTATE-CF-EMAIL-01 added to backlog; v1.3 candidates extended with STORAGE-02, STORAGE-03, EMAIL-04. Prior 2026-05-16 updates: Resend → Cloudflare Email Service swap for EMAIL-02; v1.2 scope revision (Telnyx held for v1.3; Spectrum stays active behind `SmsProvider` seam).*
+*Requirements defined: 2026-05-19*
+*Source: `.planning/milestones/v1.3-pilot-hardening/research/SUMMARY.md` §4 New Requirements Discovered*
