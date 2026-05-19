@@ -1099,6 +1099,73 @@ app.post("/api/dev/smoke/dailyco", async (c: AppContext) => {
 	});
 });
 
+// ── 2026-05-19 fix: dev-only seed for WorkspaceDO employee rows ──
+//
+// PARROT_DEV_MODE-gated. Bypasses the normal /api/admin/invite flow
+// (which requires Clerk operator session + creates a fresh Clerk
+// user). Used for one-off provisioning of EXISTING Clerk users into
+// the WorkspaceDO directory — e.g., when an employee was created in
+// Clerk outside the invite flow and now needs an inbound email
+// mailbox alias.
+//
+// POST body: { clerk_user_id, workspace_email, personal_email, display_name }
+// Returns the created/existing WorkspaceDO row.
+app.post("/api/dev/seed-employee", async (c: AppContext) => {
+	if (!c.env.PARROT_DEV_MODE) {
+		return c.json({ error: "dev mode only" }, 403);
+	}
+	const body = (await c.req.json().catch(() => null)) as {
+		clerk_user_id?: string;
+		workspace_email?: string;
+		personal_email?: string;
+		display_name?: string;
+	} | null;
+	if (
+		!body?.clerk_user_id ||
+		!body?.workspace_email ||
+		!body?.personal_email ||
+		!body?.display_name
+	) {
+		return c.json(
+			{
+				error: "missing fields",
+				required: [
+					"clerk_user_id",
+					"workspace_email",
+					"personal_email",
+					"display_name",
+				],
+			},
+			400,
+		);
+	}
+	const workspace = c.env.WORKSPACE.get(c.env.WORKSPACE.idFromName("workspace"));
+	const existing = await (
+		workspace as unknown as {
+			getEmployeeByWorkspaceEmail(email: string): Promise<unknown | null>;
+		}
+	).getEmployeeByWorkspaceEmail(body.workspace_email.toLowerCase());
+	if (existing) {
+		return c.json({ created: false, existing });
+	}
+	const created = await (
+		workspace as unknown as {
+			createEmployee(input: {
+				clerkUserId: string;
+				workspaceEmail: string;
+				personalEmail: string;
+				displayName: string;
+			}): Promise<unknown>;
+		}
+	).createEmployee({
+		clerkUserId: body.clerk_user_id,
+		workspaceEmail: body.workspace_email.toLowerCase(),
+		personalEmail: body.personal_email,
+		displayName: body.display_name,
+	});
+	return c.json({ created: true, employee: created });
+});
+
 // ── Phase 13 Wave 3: global Hono error handler ──────────────────
 //
 // Catches anything that escapes a route handler, posts it to Sentry
