@@ -39,14 +39,13 @@ import { pingParrotGraph } from "./lib/graph";
 import type { Env } from "./types";
 
 // — Phase 14 Wave 3: graphReady cache (30s) ────────────────────────
-// pingParrotGraph() opens a TCP connection to the Fly private network
-// (internjobs-graph.internal:6379). Cache the result 30s so a busy
-// /healthz poll doesn't hammer FalkorDB. Pattern mirrors the student
+// pingParrotGraph() now (Phase 18 v1.3) GETs internjobs-graph-api/health,
+// which itself probes FalkorDB via RETURN 1. Cache the result 30s so a
+// busy /healthz poll doesn't hammer the proxy. Pattern mirrors the student
 // app's _graphReadyCache in apps/app/src/server.mjs.
 //
-// Module-level state survives the isolate's lifetime — same posture
-// as workers/lib/graph.ts's `_clients` Map. Cold-start pays one
-// FalkorDB round-trip; warm isolates reuse the cached value.
+// Module-level state survives the isolate's lifetime — cold-start pays
+// one proxy HTTPS round-trip; warm isolates reuse the cached value.
 let _graphReadyCacheValue: boolean | null = null;
 let _graphReadyCacheAt = 0;
 const GRAPH_READY_TTL_MS = 30_000;
@@ -62,6 +61,47 @@ async function getCachedGraphReady(env: Env): Promise<boolean> {
 	const result = await pingParrotGraph(env);
 	_graphReadyCacheValue = result;
 	_graphReadyCacheAt = now;
+	return result;
+}
+
+// — Phase 18 v1.3: graph_proxy_reachable cache (30s) ───────────────
+// Separate from graph_ready (which uses pingParrotGraph → proxy /health,
+// which ALSO probes FalkorDB). This is a cheap direct HTTP check to the
+// proxy's /health endpoint with a tight 2s timeout. Its ONLY job is to
+// distinguish three diagnostic states:
+//   graph_ready=false, graph_proxy_reachable=true  → proxy up, DB down
+//   graph_ready=false, graph_proxy_reachable=false → proxy itself is unreachable
+//   graph_ready=true,  graph_proxy_reachable=true  → fully healthy
+//
+// We treat ANY HTTP response (even 503) from the proxy as proxy-reachable;
+// only fetch() throwing (network blip, DNS failure, timeout) flips this
+// to false. That's exactly the semantic split we want.
+const GRAPH_PROXY_TTL_MS = 30_000;
+let _graphProxyCacheValue: boolean | null = null;
+let _graphProxyCacheAt = 0;
+
+async function getCachedGraphProxyReachable(env: Env): Promise<boolean> {
+	const now = Date.now();
+	if (
+		_graphProxyCacheValue !== null &&
+		now - _graphProxyCacheAt < GRAPH_PROXY_TTL_MS
+	) {
+		return _graphProxyCacheValue;
+	}
+	let result = false;
+	try {
+		if (env.GRAPH_API_URL) {
+			await fetch(env.GRAPH_API_URL.replace(/\/$/, "") + "/health", {
+				signal: AbortSignal.timeout(2000),
+			});
+			// Any response — including 503 — proves the proxy is up.
+			result = true;
+		}
+	} catch {
+		result = false;
+	}
+	_graphProxyCacheValue = result;
+	_graphProxyCacheAt = now;
 	return result;
 }
 
@@ -226,7 +266,7 @@ app.get("/healthz", async (c) => {
 
 	// 4. Graph readiness — Phase 14 Wave 3. Cached 30s in
 	//    getCachedGraphReady so /healthz polls don't open a fresh
-	//    FalkorDB connection every call. Fail-soft: any error → false,
+	//    proxy round-trip every call. Fail-soft: any error → false,
 	//    NEVER a 500 (healthz must not crash on a graph outage).
 	let graph_ready = false;
 	try {
@@ -235,11 +275,23 @@ app.get("/healthz", async (c) => {
 		graph_ready = false;
 	}
 
+	// 5. Graph proxy reachability — Phase 18 v1.3. Separate from
+	//    graph_ready: proxy-reachable can be true while graph_ready=false
+	//    (proxy up, FalkorDB down) — gives operators a one-bit signal
+	//    for "is internjobs-graph-api itself responding."
+	let graph_proxy_reachable = false;
+	try {
+		graph_proxy_reachable = await getCachedGraphProxyReachable(env);
+	} catch {
+		graph_proxy_reachable = false;
+	}
+
 	return c.json({
 		ok: mattermost_reachable && ai_gateway_reachable,
 		mattermost_reachable,
 		ai_gateway_reachable,
-		graph_ready, // Phase 14 — FalkorDB ping (30s cached)
+		graph_ready, // Phase 14 — proxy /health → FalkorDB ping (30s cached)
+		graph_proxy_reachable, // Phase 18 — proxy HTTP reachable (30s cached)
 		mailbox_count,
 	});
 });

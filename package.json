@@ -21,6 +21,7 @@
     "deploy:pages": "npm --workspace @internjobs/marketing run deploy:pages",
     "dev:app": "npm --workspace @internjobs/app run dev",
     "start:app": "npm --workspace @internjobs/app run start",
-    "build:app": "npm --workspace @internjobs/app run build"
+    "build:app": "npm --workspace @internjobs/app run build",
+    "smoke:parrot-graph": "node infra/graph-api/smoke.mjs"
   }
 }
