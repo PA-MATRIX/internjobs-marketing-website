@@ -172,5 +172,22 @@
 				"WorkspaceDO"
 			]
 		}
-	]
+	],
+	// v1.3 Phase 19 Plan 01 (PARROT-AUTO-CLEAR): Cron Trigger for the auto-clear
+	// reconciliation loop. Every 5 minutes the Worker's scheduled() handler
+	// fires runAutoClear(env) which queries the graph proxy for :Todo nodes
+	// whose valid_to was set more than 5 minutes ago (the grace window — see
+	// PITFALL-AC-01 in research/PITFALLS.md), then calls resolveTodo() on the
+	// owning EmployeeMailboxDO for each match.
+	//
+	// 5-minute interval rationale (PITFALL-AC-03):
+	//   - Pilot has ~5-10 employees; the global :Todo scan is trivial.
+	//   - 1-minute would waste CF cron quota without observable UX improvement.
+	//   - The grace window inside the Cypher (`datetime() - duration({minutes: 5})`)
+	//     means newly-created todos can't flash and disappear before Ridhi
+	//     reads them — they remain visible for at least 5 minutes after
+	//     valid_to is set.
+	"triggers": {
+		"crons": ["*/5 * * * *"]
+	}
 }

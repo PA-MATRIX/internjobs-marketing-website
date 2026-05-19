@@ -290,4 +290,32 @@ export const employeeMailboxMigrations: Migration[] = [
 			CREATE INDEX idx_notifications_employee_read ON notifications(employee_id, read, created_at DESC);
 		`,
 	},
+	{
+		// v1.3 Phase 19 Plan 01 (PARROT-AUTO-CLEAR): Todo auto-resolution.
+		//
+		// Adds a single TEXT column `resolution_source` to the existing `todos`
+		// table to record HOW a todo was resolved:
+		//   - 'agent' : closed by the Phase 19 cron (auto-clear.ts) after the
+		//               underlying :Todo node's valid_to was set in FalkorDB
+		//   - 'user'  : (future, currently NULL) closed by manual operator
+		//               dismiss. The pre-Phase-19 cleanupTodosForEmail() path
+		//               leaves this NULL — the UI treats NULL == 'user' so
+		//               legacy rows render as "You" in the Resolved view.
+		//
+		// No DEFAULT — existing resolved rows (created by cleanupTodosForEmail
+		// during email-delete) stay NULL, and the new auto-clear path writes
+		// 'agent' explicitly. The CHECK constraint mirrors the source_channel
+		// pattern from migration 3 and allows NULL.
+		//
+		// Migration 8 — incremented from 7, NO collision: existing migrations
+		// are 1 through 7 (see entries above). DO migration runner rejects
+		// duplicate names via INSERT INTO d1_migrations (name) UNIQUE constraint.
+		//
+		// AUTO-CLEAR-01, AUTO-CLEAR-02
+		name: "8_resolution_source",
+		sql: `
+			ALTER TABLE todos ADD COLUMN resolution_source TEXT
+				CHECK (resolution_source IN ('agent', 'user') OR resolution_source IS NULL);
+		`,
+	},
 ];

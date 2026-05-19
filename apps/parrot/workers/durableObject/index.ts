@@ -683,6 +683,108 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	}
 
 	/**
+	 * v1.3 Phase 19 Plan 01: Mark a todo as resolved by the agent cron.
+	 *
+	 * Called from workers/lib/auto-clear.ts via DO stub RPC after the cron
+	 * finds a :Todo node in FalkorDB whose valid_to has been set (more than
+	 * 5 minutes ago — see FIND_CLOSED_TODOS_CYPHER grace period).
+	 *
+	 * Idempotent: a second call on an already-resolved todo is a no-op via
+	 * the `WHERE resolved_at IS NULL` guard — `rowsWritten` reports 0.
+	 *
+	 * Returns `{ resolved: true }` only when this call actually flipped a row
+	 * from active to resolved. The cron logs this for the operator audit
+	 * trail; replays / overlaps quietly return `{ resolved: false }`.
+	 *
+	 * AUTO-CLEAR-01, AUTO-CLEAR-02
+	 */
+	async resolveTodo(sourceId: string): Promise<{ resolved: boolean }> {
+		const cursor = this.ctx.storage.sql.exec(
+			`UPDATE todos
+			 SET resolved_at = datetime('now'), resolution_source = 'agent'
+			 WHERE source_id = ? AND resolved_at IS NULL`,
+			sourceId,
+		);
+		// Drain the cursor before reading rowsWritten (CF DO SqlStorageCursor
+		// requires iteration to materialize the statement's effect counters).
+		for (const _row of cursor) void _row;
+		return { resolved: cursor.rowsWritten > 0 };
+	}
+
+	/**
+	 * v1.3 Phase 19 Plan 01: Undo an agent auto-resolution.
+	 *
+	 * Called from POST /api/dashboard/todos/:id/unresolve (Plan 02 route).
+	 * Sets resolved_at and resolution_source back to NULL — restores the todo
+	 * to the active list on the next poll cycle.
+	 *
+	 * Idempotent + guarded:
+	 *   - Already-active todos (resolved_at IS NULL): no-op, returns
+	 *     `{ unresolved: false }`.
+	 *   - User-resolved todos (resolution_source IS NULL, the legacy
+	 *     cleanupTodosForEmail path): no-op via the `resolution_source =
+	 *     'agent'` guard. We refuse to "undo" manual-dismiss because the user
+	 *     deliberately closed those — only agent-resolved rows are reversible.
+	 *
+	 * AUTO-CLEAR-06, AUTO-CLEAR-07
+	 */
+	async unresolveTodo(todoId: string): Promise<{ unresolved: boolean }> {
+		const cursor = this.ctx.storage.sql.exec(
+			`UPDATE todos
+			 SET resolved_at = NULL, resolution_source = NULL
+			 WHERE id = ? AND resolution_source = 'agent'`,
+			todoId,
+		);
+		for (const _row of cursor) void _row;
+		return { unresolved: cursor.rowsWritten > 0 };
+	}
+
+	/**
+	 * v1.3 Phase 19 Plan 02: Resolved-todo view for the Resolved nav item.
+	 *
+	 * Returns todos where resolved_at IS NOT NULL, ordered by resolved_at DESC.
+	 * Limited to the last 48 hours so the Resolved view doesn't accumulate
+	 * months of history (FEATURES.md: "Limit to last 48 hours by default").
+	 *
+	 * The agent vs user distinction is on `resolution_source`:
+	 *   - 'agent'  : auto-cleared by the cron (Phase 19) — render with violet
+	 *                Agent pill + Undo button.
+	 *   - NULL/user: closed by cleanupTodosForEmail or future manual dismiss —
+	 *                render with grey You pill, no Undo.
+	 *
+	 * AUTO-CLEAR-08, AUTO-CLEAR-UX-03
+	 */
+	async getResolvedTodos(): Promise<unknown[]> {
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT
+					id, employee_id, source_channel, source_id, title, preview,
+					urgency_score, deadline_at, mentioned_actors, is_mention,
+					created_at, resolved_at, resolution_source
+				 FROM todos
+				 WHERE resolved_at IS NOT NULL
+					 AND resolved_at >= datetime('now', '-48 hours')
+				 ORDER BY resolved_at DESC
+				 LIMIT 100`,
+			),
+		];
+
+		return rows.map((row) => ({
+			...(row as Record<string, unknown>),
+			is_mention: Boolean((row as Record<string, unknown>).is_mention),
+			mentioned_actors: (() => {
+				const raw = (row as Record<string, unknown>).mentioned_actors;
+				if (!raw || typeof raw !== "string") return [];
+				try {
+					return JSON.parse(raw);
+				} catch {
+					return [];
+				}
+			})(),
+		}));
+	}
+
+	/**
 	 * DEV-ONLY: Insert a todo directly with an explicit urgency_score, bypassing LLM extraction.
 	 * Gated by PARROT_DEV_MODE=1. Used by Plan 12-03 regression tests for deterministic assertions.
 	 */

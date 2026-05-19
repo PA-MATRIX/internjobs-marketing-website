@@ -281,6 +281,7 @@ app.all("*", (c) => {
 });
 
 import { receiveEmail } from "./lib/inbound-email";
+import { runAutoClear } from "./lib/auto-clear";
 
 export default {
 	fetch: app.fetch,
@@ -306,5 +307,23 @@ export default {
 			// Swallowing here would silently drop mail.
 			throw e;
 		}
+	},
+	// v1.3 Phase 19 Plan 01 (PARROT-AUTO-CLEAR): Cron handler.
+	//
+	// Fires every 5 minutes per `triggers.crons` in wrangler.jsonc. Walks
+	// the graph proxy for :Todo nodes past the 5-minute grace window and
+	// calls resolveTodo() on each owning EmployeeMailboxDO to close the
+	// SQLite row. runAutoClear is fail-soft — never throws — so the
+	// scheduled handler does not need a try/catch.
+	//
+	// ctx.waitUntil() ensures CF doesn't terminate the Worker before
+	// reconciliation completes (the cron tick has a soft limit but we
+	// rarely process more than a handful of items per run).
+	async scheduled(
+		_event: ScheduledEvent,
+		env: Env,
+		ctx: ExecutionContext,
+	): Promise<void> {
+		ctx.waitUntil(runAutoClear(env));
 	},
 };
