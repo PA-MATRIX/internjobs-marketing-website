@@ -159,6 +159,14 @@ app.use("*", async (c, next) => {
 	// Always allow /api/health (used by uptime checks and CI).
 	if (path === "/api/health") return next();
 
+	// 2026-05-19: allow /api/dev/* through ONLY when PARROT_DEV_MODE is
+	// set as a Worker env. Each dev route still has its own PARROT_DEV_MODE
+	// gate (defense in depth), so a stale Worker var here doesn't leak
+	// production data. The Clerk middleware skip is necessary because dev
+	// endpoints can't always carry an employee JWT (e.g., one-off operator
+	// provisioning via `curl`).
+	if (path.startsWith("/api/dev/") && c.env.PARROT_DEV_MODE) return next();
+
 	// Always allow the sign-in route — Clerk's Account Portal redirects
 	// land here when an unauth user hits a protected page.
 	if (
