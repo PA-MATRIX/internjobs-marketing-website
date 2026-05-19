@@ -28,5 +28,11 @@ export default [
 	// Wave 2b: operator-only employee invite UI. The API enforces the
 	// operator role; the page itself just renders the form (and the
 	// fetch call will 403 for non-operators).
+	//
+	// Phase 16 Wave 2: /admin parent route is the employee directory
+	// (list + inline capability editor). It is a SIBLING of /admin/invite,
+	// not a parent route in the React Router sense — we keep them flat to
+	// match the file naming convention already in use.
+	route("admin", "routes/admin.tsx"),
 	route("admin/invite", "routes/admin.invite.tsx"),
 ] satisfies RouteConfig;
