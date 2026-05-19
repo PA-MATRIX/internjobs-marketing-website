@@ -74,7 +74,7 @@
 		// Leave empty until provisioned — the Worker degrades gracefully
 		// (notification rows still land in the drawer; only the live
 		// browser-push fan-out is skipped).
-		"PUSH_VAPID_PUBLIC_KEY": ""
+		"PUSH_VAPID_PUBLIC_KEY": "BAXYWRDcWvhPxBBU3BYmv97yrSNk2B7soXoniQ5aWI_zn_HUAV7g0WsOO3Nk6VxIC2ioJqlFAEbpqP9OKm-4fQo"
 	},
 	// v1.2 Phase 12 Wave 1: Secrets — set via `wrangler secret put`.
 	// (wrangler.jsonc has no native `secrets` array, so we declare them as
@@ -114,8 +114,8 @@
 	"kv_namespaces": [
 		{
 			"binding": "PARROT_FEATURE_FLAGS",
-			"id": "",
-			"preview_id": ""
+			"id": "4f2791da98bf440895ab9bf9d10d38de",
+			"preview_id": "4f2791da98bf440895ab9bf9d10d38de"
 		}
 	],
 	"send_email": [
