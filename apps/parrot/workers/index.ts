@@ -26,6 +26,7 @@ import {
 } from "./lib/email-helpers";
 import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
+import { createRoom, deleteRoom, getRoom } from "./lib/daily";
 import type { Env } from "./types";
 
 type AppContext = Context<ParrotContext>;
@@ -440,18 +441,44 @@ app.post(
 	},
 );
 
-// -- Meetings (Daily.co — Wave 3 stub) ------------------------------
+// -- Meetings (Daily.co — Phase 11 Wave 1) --------------------------
+//
+// POST /api/meetings/ensure-room lazily provisions the signed-in
+// employee's personal Daily.co room on first call (parrot-<clerk_user_id>);
+// subsequent calls return the stored URL from the DO (no extra Daily.co
+// call). Falls back gracefully when DAILY_API_KEY is absent — returns
+// 503 with `error: 'room_provisioning_unavailable'` so the UI can drop
+// to the Phase 13 "Daily.co not configured" toast.
+//
+// Skills referenced:
+//   cloudflare/skills: durable-objects — per-employee room ownership
+//     via EmployeeMailboxDO.ensurePersonalRoom().
 
-app.post("/api/meetings/create", requireEmployeeMailbox, async (c) => {
-	// Wave 3 will replace this with a real POST to Daily.co's /rooms API.
-	// Shape mirrors the future real response so the React UI doesn't need
-	// to change when the stub flips to live.
-	return c.json({
-		url: "https://daily.co/room-stub",
-		token: "stub-token",
-		note: "Wave 3 stub: real Daily.co room creation lands once PARROT_DAILY_API_KEY is provisioned.",
-	});
-});
+app.post(
+	"/api/meetings/ensure-room",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const result = await c.var.mailboxStub.ensurePersonalRoom(
+			c.env.DAILY_API_KEY,
+		);
+		if (!result.ok) {
+			// Key absent or Daily.co error — degrade to Phase 13 toast path.
+			return c.json({ ok: false, error: result.error }, 503);
+		}
+		return c.json({ ok: true, url: result.url, name: result.name });
+	},
+);
+
+// Backwards-compat alias for the old Wave-3 stub. Callers that still
+// hit /api/meetings/create get redirected to /ensure-room rather than 404.
+// 308 preserves the POST method on redirect.
+app.post(
+	"/api/meetings/create",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		return c.redirect("/api/meetings/ensure-room", 308);
+	},
+);
 
 // -- Cross-pane actions (Phase 13 Wave 2) ---------------------------
 //
@@ -920,6 +947,52 @@ app.post(
 		});
 	},
 );
+
+// ── Phase 11 Daily.co smoke test (dev-only) ─────────────────────────
+//
+// Hit with:
+//   curl -X POST http://localhost:8787/api/dev/smoke/dailyco
+//
+// pass: true   = DAILY_API_KEY present AND createRoom + getRoom +
+//                deleteRoom all succeed against the real Daily.co API.
+// pass: false  = key absent OR any call failed — reason field explains
+//                which. NEVER throws — daily.ts swallows errors into null.
+//
+// Auth gate: PARROT_DEV_MODE only, NOT requireEmployeeMailbox — this
+// endpoint only exercises the Worker→Daily.co plumbing and creates a
+// throwaway room (deleted at end of run) so it doesn't need a DO.
+app.post("/api/dev/smoke/dailyco", async (c: AppContext) => {
+	if (!c.env.PARROT_DEV_MODE) {
+		return c.json({ error: "dev mode only" }, 403);
+	}
+	const apiKey = c.env.DAILY_API_KEY;
+	if (!apiKey) {
+		return c.json({
+			pass: false,
+			reason: "daily_api_key_missing",
+			detail:
+				"DAILY_API_KEY not set — run `wrangler secret put DAILY_API_KEY --cwd apps/parrot`",
+		});
+	}
+	const roomName = `parrot-smoke-${Date.now()}`;
+	const created = await createRoom(apiKey, roomName);
+	if (!created) {
+		return c.json({
+			pass: false,
+			reason: "create_room_failed",
+			room_name: roomName,
+		});
+	}
+	const fetched = await getRoom(apiKey, roomName);
+	const deleted = await deleteRoom(apiKey, roomName);
+	return c.json({
+		pass: !!fetched && !!deleted,
+		room_name: roomName,
+		room_url: created.url,
+		get_ok: !!fetched,
+		delete_ok: !!deleted,
+	});
+});
 
 // ── Phase 13 Wave 3: global Hono error handler ──────────────────
 //

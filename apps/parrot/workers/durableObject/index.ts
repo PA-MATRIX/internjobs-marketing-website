@@ -34,6 +34,7 @@ import {
 	MM_USER_ID_NONE,
 } from "../lib/mattermost";
 import { buildVapidAuthHeader } from "../lib/vapid";
+import { createRoom } from "../lib/daily";
 
 const ALLOWED_SORT_COLUMNS = [
 	"id",
@@ -1286,5 +1287,79 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				}
 			}),
 		);
+	}
+
+	/**
+	 * Phase 11 Wave 1: lazily provision the employee's personal Daily.co
+	 * room. Idempotent — if `profile.personal_room_url` is already set we
+	 * return it without hitting Daily.co.
+	 *
+	 * Fail-soft: when `DAILY_API_KEY` is absent (or Daily.co errors), we
+	 * return `{ ok: false, error: 'room_provisioning_unavailable' }` so the
+	 * route handler can return a 503 and the UI can degrade to the Phase 13
+	 * "Daily.co not configured" toast. NEVER throws.
+	 *
+	 * Room name derivation: `parrot-<employee_id>` where employee_id is the
+	 * Clerk user ID (already URL-safe — Clerk emits `user_<base64-ish>`).
+	 * Keeping it short + deterministic means we can derive the URL from the
+	 * employee ID alone in places where we don't have the DO handy.
+	 *
+	 * Skills referenced:
+	 *   cloudflare/skills: durable-objects — single-writer guarantees so the
+	 *     "check existing → create → persist" trio is race-free per employee.
+	 */
+	async ensurePersonalRoom(
+		apiKey: string | undefined,
+	): Promise<
+		| { ok: true; url: string; name: string }
+		| { ok: false; error: string }
+	> {
+		// 1. Idempotency probe — return immediately if we already have a room.
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT employee_id, personal_room_name, personal_room_url
+				 FROM profile WHERE id = 1`,
+			),
+		] as Array<{
+			employee_id: string;
+			personal_room_name: string | null;
+			personal_room_url: string | null;
+		}>;
+		if (rows.length === 0) {
+			// No profile row yet — onboarding hasn't run. Caller (the route)
+			// should have ensured upsertProfile() ran first.
+			return { ok: false, error: "profile_missing" };
+		}
+		const row = rows[0];
+		if (row.personal_room_url && row.personal_room_name) {
+			return {
+				ok: true,
+				url: row.personal_room_url,
+				name: row.personal_room_name,
+			};
+		}
+
+		// 2. Derive the deterministic room name from the Clerk user ID.
+		const roomName = `parrot-${row.employee_id}`;
+
+		// 3. Provision via Daily.co. Personal rooms are always-on (no exp).
+		const room = await createRoom(apiKey, roomName);
+		if (!room) {
+			// Key absent OR Daily.co error — already logged inside daily.ts.
+			return { ok: false, error: "room_provisioning_unavailable" };
+		}
+
+		// 4. Persist to profile (id = 1 is the per-DO singleton row).
+		this.ctx.storage.sql.exec(
+			`UPDATE profile
+			   SET personal_room_name = ?,
+			       personal_room_url = ?,
+			       updated_at = datetime('now')
+			 WHERE id = 1`,
+			roomName,
+			room.url,
+		);
+
+		return { ok: true, url: room.url, name: roomName };
 	}
 }
