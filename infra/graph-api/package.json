@@ -1,0 +1,15 @@
+{
+  "name": "internjobs-graph-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "node --watch src/index.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "falkordb": "6.6.2",
+    "hono": "^4.6.0"
+  }
+}

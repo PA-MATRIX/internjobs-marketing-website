@@ -1,0 +1,32 @@
+# infra/graph-api/fly.toml
+# Thin Hono/Node REST proxy fronting internjobs-graph FalkorDB.
+# The Parrot Worker (CF) cannot reach internjobs-graph.internal:6379 directly
+# (cloudflare:sockets blocks private IPs; falkordb npm crashes Workers at init).
+# This app bridges HTTP fetch from the Worker to the Redis-wire-protocol FalkorDB.
+#
+# CRITICAL: min_machines_running = 1, auto_stop_machines = "off"
+# Graph reads are on the Parrot Worker critical path for dashboard loads.
+# A cold Fly machine + FalkorDB TCP auth handshake adds 500ms+ to every
+# /api/dashboard/todos load. Always-warm is worth the ~$1.94/mo shared-cpu-1x.
+
+app = "internjobs-graph-api"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
