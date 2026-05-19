@@ -43,7 +43,18 @@ export interface TodoItem {
 	is_mention: boolean;
 	created_at: string;
 	resolved_at?: string | null;
-	rank: number;
+	/**
+	 * v1.3 Phase 19: HOW the todo was resolved. Optional so existing callers
+	 * that construct TodoItem objects (smoke tests, stubs, Phase 12 ranked
+	 * query result before the migration runs) remain valid without updates.
+	 *   - 'agent' : auto-cleared by the cron — render with violet Agent pill + Undo
+	 *   - 'user'  : explicit manual dismiss (future) — render with grey You pill
+	 *   - null/undefined : active todo (NULL in SQLite) OR legacy resolved
+	 *     row from cleanupTodosForEmail — UI treats this as "You" in the Resolved view.
+	 */
+	resolution_source?: "agent" | "user" | null;
+	/** Active-list rank score. Absent in resolved-view payload. */
+	rank?: number;
 }
 
 type LucideIcon = ComponentType<SVGProps<SVGSVGElement> & { size?: number; strokeWidth?: number }>;
@@ -176,3 +187,80 @@ export function TodoCard({ todo, onSelect }: TodoCardProps) {
 }
 
 export default TodoCard;
+
+// ─── v1.3 Phase 19 Plan 03: ResolvedTodoCard ───────────────────────────────────
+//
+// Variant of TodoCard for the Resolved view (/dashboard?view=resolved).
+//
+// Visual differences from TodoCard:
+//   - Lower visual weight (opacity-80, muted title color).
+//   - Pill badge: violet "Agent" for resolution_source='agent',
+//     grey "You" for null/'user'.
+//   - Relative timestamp shows resolved_at, not created_at.
+//   - Inline "Undo" button (only when resolution_source='agent') — calls
+//     onUndo(todo) which the parent wires to POST /api/dashboard/todos/:id/unresolve.
+//
+// NOT a boolean-prop variant of TodoCard: the two have meaningfully different
+// interaction models (TodoCard navigates to inbox/chat on click; ResolvedTodoCard
+// has no primary click action and renders a stand-alone Undo button), so a
+// single component with `resolved?: boolean` would muddle both.
+//
+// AUTO-CLEAR-UX-01, AUTO-CLEAR-UX-02
+
+interface ResolvedTodoCardProps {
+	todo: TodoItem;
+	onUndo: (todo: TodoItem) => void;
+}
+
+export function ResolvedTodoCard({ todo, onUndo }: ResolvedTodoCardProps) {
+	const { Icon, color, bg } =
+		SOURCE_ICON[todo.source_channel] ?? SOURCE_ICON.email;
+	const resolvedAge = todo.resolved_at ? formatAge(todo.resolved_at) : "";
+
+	const isAgent = todo.resolution_source === "agent";
+	const pillClass = isAgent
+		? "bg-violet-100 text-violet-700"
+		: "bg-slate-100 text-slate-500";
+	const pillLabel = isAgent ? "Agent" : "You";
+
+	return (
+		<div className="w-full text-left rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex items-start gap-3 opacity-80">
+			<div
+				className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${bg}`}
+				aria-label={`${todo.source_channel} source`}
+			>
+				<Icon size={18} className={color} strokeWidth={2} />
+			</div>
+
+			<div className="flex-1 min-w-0">
+				<div className="flex items-start gap-2">
+					<h3 className="text-sm font-medium text-slate-500 line-clamp-2 flex-1">
+						{todo.title}
+					</h3>
+				</div>
+
+				<div className="mt-2 flex items-center gap-2 flex-wrap">
+					<span
+						className={`text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded ${pillClass}`}
+					>
+						{pillLabel}
+					</span>
+					{resolvedAge && (
+						<span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400">
+							resolved {resolvedAge}
+						</span>
+					)}
+					{isAgent && (
+						<button
+							type="button"
+							onClick={() => onUndo(todo)}
+							className="ml-auto text-xs text-slate-400 hover:text-slate-600 underline"
+						>
+							Undo
+						</button>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
