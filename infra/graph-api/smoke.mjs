@@ -262,7 +262,7 @@ try {
 //
 // Cross-namespace invariant: seed a :Todo node with valid_to set 10 minutes
 // in the past, then confirm the grace-period Cypher used by
-// workers/lib/auto-clear.ts (`WHERE valid_to < datetime() - duration({minutes: 5})`)
+// workers/lib/auto-clear.ts (`WHERE valid_to < timestamp() - 300000`)
 // returns that node as a closed-todo candidate.
 //
 // This is the one untested code path from research SUMMARY.md §8 open
@@ -282,8 +282,9 @@ const AUTO_CLEAR_TEST_SOURCE = `smoke-auto-clear-source-${Date.now()}`;
 try {
   // Seed a :Todo node whose valid_to is 10 minutes in the past (well past
   // the 5-minute grace window). Use a UNIQUE id so concurrent smoke runs
-  // don't collide.
-  const tenMinAgoIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  // don't collide. FalkorDB stores time as ms-since-epoch (number) since it
+  // does not implement the openCypher datetime() function.
+  const tenMinAgoMs = Date.now() - 10 * 60 * 1000;
   await query(
     `MERGE (t:Todo {id: $tid})
        ON CREATE SET
@@ -300,7 +301,7 @@ try {
       tid: AUTO_CLEAR_TEST_ID,
       eid: SMOKE_EMPLOYEE_ID,
       sid: AUTO_CLEAR_TEST_SOURCE,
-      tenMinAgo: tenMinAgoIso,
+      tenMinAgo: tenMinAgoMs,
     },
   );
 
@@ -308,10 +309,12 @@ try {
   // (FIND_CLOSED_TODOS_CYPHER). The seeded todo must appear in the result
   // set — if it doesn't, the grace-period predicate is broken and the
   // production cron would never auto-clear anything.
+  // FalkorDB exposes wall-clock time via timestamp() (ms since epoch);
+  // 300000 ms = 5-minute grace window.
   const res = await query(
     `MATCH (t:Todo)
      WHERE t.valid_to IS NOT NULL
-       AND t.valid_to < datetime() - duration({minutes: 5})
+       AND t.valid_to < timestamp() - 300000
      RETURN t.source_id AS source_id,
             t.employee_id AS employee_id,
             t.valid_to AS valid_to

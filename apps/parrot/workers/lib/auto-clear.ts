@@ -25,7 +25,10 @@ import type { Env } from "../types";
 interface ClosedTodoRow {
 	source_id: string;
 	employee_id: string;
-	valid_to: string;
+	// FalkorDB stores wall-clock time as ms-since-epoch (number) since it
+	// does not implement the openCypher datetime() function. The proxy
+	// returns the raw value; callers stringify for transport.
+	valid_to: number | string;
 }
 
 /**
@@ -43,6 +46,11 @@ interface ClosedTodoRow {
  * valid_to but are NOT the subject of this query — the reconciliation
  * does not cross into the student app's label namespace.
  *
+ * FalkorDB Cypher dialect: timestamp() returns current ms-since-epoch as a
+ * number. We do NOT use datetime() / duration() — FalkorDB doesn't
+ * implement those openCypher temporal functions (verified live 2026-05-19
+ * smoke test: "Unknown function 'datetime'"). 300000 ms = 5 min.
+ *
  * LIMIT 100 caps a single cron tick — at 5-employee pilot scale we expect
  * ~0-5 hits per tick; the cap exists so a runaway graph state (e.g., a bulk
  * close-out script) doesn't fan out into hundreds of DO RPCs per cron run.
@@ -50,7 +58,7 @@ interface ClosedTodoRow {
 const FIND_CLOSED_TODOS_CYPHER = `
 	MATCH (t:Todo)
 	WHERE t.valid_to IS NOT NULL
-		AND t.valid_to < datetime() - duration({minutes: 5})
+		AND t.valid_to < timestamp() - 300000
 	RETURN t.source_id AS source_id,
 				 t.employee_id AS employee_id,
 				 t.valid_to AS valid_to
