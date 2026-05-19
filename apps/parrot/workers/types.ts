@@ -48,8 +48,8 @@ type CfEnvBase = Omit<
 	| "PARROT_FEATURE_FLAGS"
 	| "SENTRY_DSN"
 	| "DAILY_API_KEY"
-	| "FALKORDB_URL"
-	| "FALKORDB_PASSWORD"
+	| "GRAPH_API_URL"
+	| "GRAPH_API_SECRET"
 >;
 
 export interface Env extends CfEnvBase {
@@ -142,15 +142,34 @@ export interface Env extends CfEnvBase {
 	 *  Infisical /internjobs-ai/DAILY_API_KEY. */
 	DAILY_API_KEY?: string;
 
-	// — Phase 14 Wave 1: Parrot Knowledge Graph (FalkorDB).
-	/** Redis-protocol URL for the shared internjobs-graph Fly app.
-	 *  Format: redis://default:<pw>@internjobs-graph.internal:6379
-	 *  Set via `wrangler secret put FALKORDB_URL`. Optional at type level
-	 *  so the Worker boots without it; graph helper returns null when absent. */
-	FALKORDB_URL?: string;
-	/** FalkorDB auth password (same value as the redis URL password).
-	 *  Set via `wrangler secret put FALKORDB_PASSWORD`. */
-	FALKORDB_PASSWORD?: string;
+	// — Phase 18 Wave 2 (v1.3): Parrot graph via REST proxy.
+	// FALKORDB_URL / FALKORDB_PASSWORD removed — the Worker no longer speaks
+	// Redis directly. All Cypher calls go via the internjobs-graph-api HTTP proxy.
+	/** HTTPS URL of the internjobs-graph-api Fly proxy.
+	 *  Example: https://internjobs-graph-api.fly.dev
+	 *  Set in wrangler.jsonc [vars] (not a secret — the URL is not sensitive).
+	 *  Optional at the type level so the Worker boots without it; graph helper
+	 *  returns null/[] fail-soft when absent. */
+	GRAPH_API_URL?: string;
+	/** Shared Bearer secret for internjobs-graph-api proxy auth.
+	 *  Set via `wrangler secret put GRAPH_API_SECRET`. Matches the secret set
+	 *  on the Fly app via `flyctl secrets set GRAPH_API_SECRET`. */
+	GRAPH_API_SECRET?: string;
+
+	// — Phase 20 SAFETY-01: Lakera Guard pre-LLM screening.
+	/** Lakera Guard API key (now Cisco AI Defense). Set via `wrangler secret put LAKERA_GUARD_API_KEY`.
+	 *  Also stored in Infisical /internjobs-ai/LAKERA_GUARD_API_KEY.
+	 *  Optional at type level — Worker boots without it; screenMessage() fails open. */
+	LAKERA_GUARD_API_KEY?: string;
+
+	// — Phase 20 SAFETY-03: Neon connection for safety_events writes (operator view).
+	/** Neon DATABASE_URL for safety_events inserts from the Parrot Worker.
+	 *  Uses @neondatabase/serverless (HTTP-based driver, CF Workers compatible).
+	 *  Set via `wrangler secret put NEON_DATABASE_URL`. Also in Infisical
+	 *  /internjobs-ai/NEON_DATABASE_URL (mirrors DATABASE_URL).
+	 *  Optional at type level — when absent, Worker logs to console only and
+	 *  /api/ops/safety returns empty {events:[], total:0}. */
+	NEON_DATABASE_URL?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).
