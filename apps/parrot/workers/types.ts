@@ -48,6 +48,8 @@ type CfEnvBase = Omit<
 	| "PARROT_FEATURE_FLAGS"
 	| "SENTRY_DSN"
 	| "DAILY_API_KEY"
+	| "FALKORDB_URL"
+	| "FALKORDB_PASSWORD"
 >;
 
 export interface Env extends CfEnvBase {
@@ -139,6 +141,16 @@ export interface Env extends CfEnvBase {
 	 *  the Phase 13 "Daily.co not configured" toast path. Also store in
 	 *  Infisical /internjobs-ai/DAILY_API_KEY. */
 	DAILY_API_KEY?: string;
+
+	// — Phase 14 Wave 1: Parrot Knowledge Graph (FalkorDB).
+	/** Redis-protocol URL for the shared internjobs-graph Fly app.
+	 *  Format: redis://default:<pw>@internjobs-graph.internal:6379
+	 *  Set via `wrangler secret put FALKORDB_URL`. Optional at type level
+	 *  so the Worker boots without it; graph helper returns null when absent. */
+	FALKORDB_URL?: string;
+	/** FalkorDB auth password (same value as the redis URL password).
+	 *  Set via `wrangler secret put FALKORDB_PASSWORD`. */
+	FALKORDB_PASSWORD?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).
