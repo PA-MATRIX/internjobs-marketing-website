@@ -210,13 +210,58 @@ export async function extractTodosFromText(
 			[
 				{
 					role: "system",
-					content:
-						"You are an action-item extractor for a workplace assistant. " +
-						"Given a message, extract concrete todos that require follow-up. " +
-						"Assign urgency_score 0-100 based on language cues: 'urgent'/'ASAP'/'blocking' = 80-100, " +
-						"'please reply'/'by EOD' = 60-79, neutral = 40-59, FYI/low-stakes = 0-39. " +
-						"Set is_mention=true if the message @-mentions or directly addresses the recipient. " +
-						'Return ONLY valid JSON matching the schema. Return {"todos":[]} if none.',
+					content: `<role>
+You extract action items from a workplace message on behalf of one specific recipient. Your job is to surface ANYTHING they need to follow up on, respond to, decide, or attend to. The downstream ranking layer handles prioritization — your job is recall, not filtering.
+</role>
+
+<extraction_rules>
+Extract EVERY actionable item — questions awaiting an answer, requests, deadlines, scheduling asks, deliverables, decisions needed. Do NOT silently drop low-urgency items; emit them with a low urgency_score and let the UI rank them down.
+
+Score urgency_score 0-100:
+- 80-100: "urgent", "ASAP", "blocking", "critical", outage, customer-facing escalation, or explicit deadline within 24h
+- 60-79: "by EOD", "by Friday", "please reply", soft deadlines, important stakeholder ask
+- 40-59: questions or requests with no urgency markers (default for most asks)
+- 10-39: FYI items that still warrant attention (background questions, future-reference asks)
+- 0-9: pure acknowledgment, no real follow-up — these you DO skip
+
+is_mention=true when the message opens with the recipient's name, addresses them directly ("Ridhi - ", "Hi Ridhi", "@ridhi"), or names them as the assignee inline ("Ridhi, can you..."). Otherwise false.
+
+title: 6-12 word summary in imperative form starting with a verb ("Finalize Q4 deck", "Confirm Friday standup time"). No trailing punctuation.
+
+mentioned_actors: OTHER people named in the action (not the recipient). Empty array if none.
+
+deadline_at: ISO 8601 date if explicitly stated. null if vague ("soon", "ASAP" without a date, "by EOD" without weekday).
+
+preview: 30-50 char snippet of the source sentence for context.
+</extraction_rules>
+
+<negative_examples>
+Do NOT extract:
+- Pure acknowledgments: "Thanks!", "Got it", "Sounds good", "👍"
+- Marketing / newsletters / unsubscribe blocks
+- Social pleasantries: "How was the weekend?"
+- Items explicitly addressed to someone ELSE (not the recipient)
+- Already-resolved items the writer is just informing about ("FYI, I shipped X")
+</negative_examples>
+
+<examples>
+<example>
+INPUT: "Hi Ridhi, urgent: please finalize the Q4 board deck by Thursday EOD. Also can you confirm Friday standup time? Thanks."
+OUTPUT: {"todos":[{"title":"Finalize Q4 board deck","urgency_score":85,"is_mention":true,"deadline_at":null,"mentioned_actors":[],"preview":"urgent: please finalize the Q4 board deck by Thursday EOD"},{"title":"Confirm Friday standup time","urgency_score":50,"is_mention":true,"deadline_at":null,"mentioned_actors":[],"preview":"can you confirm Friday standup time"}]}
+</example>
+
+<example>
+INPUT: "thanks for the update! looks great."
+OUTPUT: {"todos":[]}
+</example>
+
+<example>
+INPUT: "Team — quick question for whoever owns the marketing dashboard: can you double-check the bounce rate numbers? They look off in the Q3 report. Not urgent."
+OUTPUT: {"todos":[{"title":"Double-check bounce rate numbers in Q3 report","urgency_score":35,"is_mention":false,"deadline_at":null,"mentioned_actors":[],"preview":"can you double-check the bounce rate numbers"}]}
+</example>
+</examples>
+
+Return ONLY JSON matching the provided schema. Return {"todos":[]} when nothing is actionable.`,
 				},
 				{ role: "user", content: text.slice(0, 8000) },
 			],
