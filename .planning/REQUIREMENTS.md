@@ -180,27 +180,31 @@ Candidates flagged by v1.3 milestone research or deferred from v1.2 — not in c
 
 ## Traceability
 
-Which phases cover which requirements for the current milestone. **To be filled by `/rrr:create-roadmap`.**
+Which phases cover which requirements for the current milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-PROXY-* | TBD | Pending |
-| GRAPH-WORKER-* | TBD | Pending |
-| GRAPH-VERIFY-* | TBD | Pending |
-| AUTO-CLEAR-* | TBD | Pending |
-| AUTO-CLEAR-UX-* | TBD | Pending |
-| AUTO-CLEAR-VERIFY-* | TBD | Pending |
-| SAFETY-LAKERA-* | TBD | Pending |
-| SAFETY-NODE-01 / SAFETY-WORKER-01 | TBD | Pending |
-| SAFETY-INSERT-*, SAFETY-SCOPE-*, SAFETY-POLICY-*, SAFETY-RESPONSE-* | TBD | Pending |
-| SAFETY-LOG-01, SAFETY-VIEW-01, SAFETY-BADGE-01 | TBD | Pending |
-| SAFETY-VERIFY-* | TBD | Pending |
-| SEC-ROTATE-* | TBD | Pending |
+| GRAPH-PROXY-01..05 | Phase 18 | Pending |
+| GRAPH-WORKER-01..03 | Phase 18 | Pending |
+| GRAPH-VERIFY-01..03 | Phase 18 | Pending |
+| AUTO-CLEAR-01..08 | Phase 19 | Pending |
+| AUTO-CLEAR-UX-01..05 | Phase 19 | Pending |
+| AUTO-CLEAR-VERIFY-01..02 | Phase 19 | Pending |
+| SAFETY-LAKERA-01..02 | Phase 20 | Pending |
+| SAFETY-NODE-01, SAFETY-WORKER-01 | Phase 20 | Pending |
+| SAFETY-INSERT-01..02, SAFETY-SCOPE-01..02 | Phase 20 | Pending |
+| SAFETY-POLICY-01..03, SAFETY-RESPONSE-01..02 | Phase 20 | Pending |
+| SAFETY-LOG-01, SAFETY-VIEW-01, SAFETY-BADGE-01 | Phase 20 | Pending |
+| SAFETY-VERIFY-01..03 | Phase 20 | Pending |
+| SEC-ROTATE-ORDER, CLERK-01..02 | Phase 21 | Pending |
+| SEC-ROTATE-EMAIL-01..02, AI-01..02 | Phase 21 | Pending |
+| SEC-ROTATE-BROAD-01, GRAPH-01 | Phase 21 | Pending |
+| SEC-ROTATE-VERIFY-01..04 | Phase 21 | Pending |
 
 **Coverage (v1.3):**
-- Active requirements: 57 total (12 graph + 15 auto-clear + 18 safety + 12 SEC-ROTATE)
-- Mapped to phases: 0
-- Unmapped: 57 ⚠️ *(expected — roadmap not yet generated)*
+- Active requirements: 58 total (11 graph + 15 auto-clear + 19 safety + 13 SEC-ROTATE)
+- Mapped to phases: 58
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-19*
