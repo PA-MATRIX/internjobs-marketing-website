@@ -1,12 +1,12 @@
 ---
 schema_version: 2
 milestone: "v1.2"
-phase: 11
-phase_name: "Daily.co Integration"
-phase_total: 13
-plan: 3
-plan_total: 3
-status: "phase_11_complete"
+phase: 14
+phase_name: "Parrot Knowledge Graph (FalkorDB extension)"
+phase_total: 14
+plan: 0
+plan_total: 0
+status: "phase_11_12_13_complete_phase_14_pending_plan"
 progress: 100
 last_activity: "2026-05-19"
 session_last: "2026-05-19"
