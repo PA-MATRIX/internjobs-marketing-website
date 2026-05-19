@@ -79,6 +79,22 @@ export interface InboxListResponse {
 	folder: string;
 }
 
+// — Phase 13 Wave 1: notifications + push.
+export interface NotificationItem {
+	id: string;
+	event_type: "urgent_todo" | "starred_email" | "chat_mention";
+	title: string;
+	body: string | null;
+	url: string | null;
+	read: number;
+	created_at: string;
+}
+
+export interface NotificationsResponse {
+	notifications: NotificationItem[];
+	unread: number;
+}
+
 export const api = {
 	getMe: () => request<MeResponse>("/api/me"),
 	getHealth: () => request<{ ok: boolean; service: string }>("/api/health"),
@@ -123,4 +139,24 @@ export const api = {
 			"/api/crosspane/start-meeting",
 			{ method: "POST" },
 		),
+	// — Phase 13 Wave 1: notifications + push.
+	getNotifications: (limit = 20) =>
+		request<NotificationsResponse>(`/api/notifications?limit=${limit}`),
+	markNotificationsRead: (ids?: string[]) =>
+		request<{ ok: boolean }>("/api/notifications/mark-read", {
+			method: "POST",
+			body: JSON.stringify({ ids }),
+		}),
+	subscribePush: (subscription: PushSubscription) => {
+		const json = subscription.toJSON();
+		return request<{ ok: boolean }>("/api/push/subscribe", {
+			method: "POST",
+			body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+		});
+	},
+	unsubscribePush: (endpoint: string) =>
+		request<{ ok: boolean }>("/api/push/subscribe", {
+			method: "DELETE",
+			body: JSON.stringify({ endpoint }),
+		}),
 };

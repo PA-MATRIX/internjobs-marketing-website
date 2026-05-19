@@ -243,6 +243,73 @@ app.get(
 	},
 );
 
+// -- Push subscriptions (Phase 13 Wave 1) ---------------------------
+// Browser registers a PushSubscription via PushManager.subscribe()
+// (using PUSH_VAPID_PUBLIC_KEY as applicationServerKey) and POSTs the
+// resulting endpoint+keys here. The DO stores one row per endpoint.
+// DELETE is used by the wizard when the employee opts out.
+
+app.post(
+	"/api/push/subscribe",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json()) as {
+			endpoint?: string;
+			keys?: { p256dh?: string; auth?: string };
+		};
+		if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
+			return c.json({ error: "Missing endpoint or keys" }, 400);
+		}
+		await c.var.mailboxStub.addPushSubscription(
+			body.endpoint,
+			body.keys.p256dh,
+			body.keys.auth,
+		);
+		return c.json({ ok: true });
+	},
+);
+
+app.delete(
+	"/api/push/subscribe",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			endpoint?: string;
+		} | null;
+		if (!body?.endpoint) return c.json({ error: "Missing endpoint" }, 400);
+		await c.var.mailboxStub.removePushSubscription(body.endpoint);
+		return c.json({ ok: true });
+	},
+);
+
+// -- Notifications (Phase 13 Wave 1) --------------------------------
+// Drawer reads notifications via GET. POST mark-read clears unread —
+// either a subset by id (when row-click marks one) or all unread (when
+// the drawer is opened and the user dismisses the bell badge).
+
+app.get(
+	"/api/notifications",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const limit = Number(c.req.query("limit") ?? 20);
+		const items = await c.var.mailboxStub.getNotifications(limit);
+		const unread = items.filter((n) => n.read === 0).length;
+		return c.json({ notifications: items, unread });
+	},
+);
+
+app.post(
+	"/api/notifications/mark-read",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			ids?: string[];
+		} | null;
+		await c.var.mailboxStub.markNotificationsRead(body?.ids);
+		return c.json({ ok: true });
+	},
+);
+
 // -- Meetings (Daily.co — Wave 3 stub) ------------------------------
 
 app.post("/api/meetings/create", requireEmployeeMailbox, async (c) => {
@@ -444,6 +511,71 @@ app.post(
 				(hiResult?.inserted ?? false) &&
 				(loResult?.inserted ?? false),
 			note: "Deterministic — no LLM involved. Scores are explicit via debugInsertTodo.",
+		});
+	},
+);
+
+// ── Phase 13 push smoke (dev-only, deterministic) ───────────────
+// Hit with: curl -X POST http://localhost:8787/api/dev/smoke/push \
+//   -H "X-Parrot-Dev-Employee: dev@internjobs.ai"
+//
+// Verifies that the notification + push_subscription tables and the
+// markNotificationsRead path work end-to-end WITHOUT requiring live
+// VAPID keys or a real push service:
+//   1. Inserts a sentinel push subscription row
+//   2. Stores a notification via addNotification
+//   3. Reads back via getNotifications, asserts the row landed
+//   4. Calls markNotificationsRead(), asserts everything is read
+//   5. Removes the sentinel push subscription
+//
+// Returns { pass: true } only when every step succeeded. When VAPID
+// is configured the sendPushToSubscriptions path will also fan out
+// to the sentinel endpoint and prune it on 410 — but this smoke does
+// NOT call that helper directly to keep the test deterministic when
+// the keys are absent.
+
+app.post(
+	"/api/dev/smoke/push",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.PARROT_DEV_MODE) {
+			return c.json({ error: "dev-only endpoint" }, 403);
+		}
+		const stub = c.var.mailboxStub;
+		const fakeEndpoint = `https://smoke.example.com/push/${Date.now()}`;
+
+		// 1. Sentinel subscription
+		await stub.addPushSubscription(fakeEndpoint, "smoke_p256dh", "smoke_auth");
+
+		// 2. Direct notification insert (bypass VAPID so we don't need keys)
+		await stub.addNotification({
+			event_type: "urgent_todo",
+			title: "Smoke test notification",
+			body: "Push smoke test",
+			url: "/dashboard",
+		});
+
+		// 3. Read back
+		const notifications = await stub.getNotifications(5);
+		const smokeNotif = notifications.find(
+			(n) => n.title === "Smoke test notification",
+		);
+
+		// 4. Mark everything read, assert no unread rows remain
+		await stub.markNotificationsRead();
+		const afterRead = await stub.getNotifications(5);
+		const allRead = afterRead.every((n) => n.read === 1);
+
+		// 5. Cleanup
+		await stub.removePushSubscription(fakeEndpoint);
+
+		return c.json({
+			notification_stored: !!smokeNotif,
+			mark_read_works: allRead,
+			vapid_configured:
+				!!c.env.PUSH_VAPID_PRIVATE_KEY && !!c.env.PUSH_VAPID_PUBLIC_KEY,
+			pass: !!smokeNotif && allRead,
+			note: "Push fan-out via VAPID is exercised separately in live integration tests; this smoke is store/read/mark-read only.",
 		});
 	},
 );
