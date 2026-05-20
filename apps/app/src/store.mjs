@@ -13,6 +13,22 @@ export function createPairingCode() {
   return randomBytes(4).toString("hex").toUpperCase();
 }
 
+export function hasLinkedInProfileUrl(value) {
+  return Boolean(canonicalLinkedInProfileUrl(value));
+}
+
+function canonicalLinkedInProfileUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/\/+$/, "");
+}
+
+function hasDifferentConfirmedPhone(student, channelAddress) {
+  const existing = normalizeAddress(student?.channelAddress || student?.channel_address || "");
+  const incoming = normalizeAddress(channelAddress);
+  return Boolean((student?.channelConfirmedAt || student?.channel_confirmed_at) && existing && incoming && existing !== incoming);
+}
+
 export function eventIdFromPayload(payload) {
   return (
     payload.id ||
@@ -52,23 +68,36 @@ class MemoryStore {
 
   async upsertStudentFromAuth(auth) {
     const existing = this.students.get(auth.clerkUserId);
+    const incomingLinkedInUrl = canonicalLinkedInProfileUrl(auth.linkedinProfileUrl);
+    const existingLinkedInUrl = canonicalLinkedInProfileUrl(existing?.linkedinProfileUrl);
+    const linkedinChanged = Boolean(existing && existingLinkedInUrl && incomingLinkedInUrl && existingLinkedInUrl !== incomingLinkedInUrl);
     const now = new Date().toISOString();
     const student = {
       id: existing?.id || randomUUID(),
       clerkUserId: auth.clerkUserId,
       email: auth.email || existing?.email || "",
       name: auth.name || existing?.name || "",
-      linkedinProfileUrl: auth.linkedinProfileUrl || existing?.linkedinProfileUrl || "",
-      status: existing?.status || "linkedin_connected",
-      channelType: existing?.channelType || "",
-      channelAddress: existing?.channelAddress || "",
-      channelConfirmedAt: existing?.channelConfirmedAt || "",
+      linkedinProfileUrl: incomingLinkedInUrl || existing?.linkedinProfileUrl || "",
+      status: linkedinChanged ? "linkedin_connected" : existing?.status || "linkedin_connected",
+      channelType: linkedinChanged ? "" : existing?.channelType || "",
+      channelAddress: linkedinChanged ? "" : existing?.channelAddress || "",
+      channelConfirmedAt: linkedinChanged ? "" : existing?.channelConfirmedAt || "",
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
     this.students.set(auth.clerkUserId, student);
-    await this.storeProfileSnapshot(student.id, auth);
-    await this.queueProfileEnrichment(student.id, auth);
+    const normalizedAuth = { ...auth, linkedinProfileUrl: incomingLinkedInUrl || auth.linkedinProfileUrl || "" };
+    if (linkedinChanged) {
+      for (const pairing of this.pairingCodes.values()) {
+        if (pairing.studentId === student.id && pairing.status === "active") pairing.status = "expired";
+      }
+      await this.writeAuditEvent(student.id, "linkedin_profile_url_changed_phone_unbound", "system", {
+        previousLinkedInUrl: existingLinkedInUrl,
+        nextLinkedInUrl: incomingLinkedInUrl,
+      });
+    }
+    await this.storeProfileSnapshot(student.id, normalizedAuth);
+    await this.queueProfileEnrichment(student.id, normalizedAuth);
     await this.writeConsent(student.id, "linkedin_oauth_profile", true, auth.source);
     await this.writeAuditEvent(student.id, "student_upserted", "system", { source: auth.source });
     return student;
@@ -79,6 +108,10 @@ class MemoryStore {
   }
 
   async createOrRefreshPairingCode(studentId) {
+    const student = [...this.students.values()].find((item) => item.id === studentId);
+    if (!hasLinkedInProfileUrl(student?.linkedinProfileUrl)) {
+      throw new Error("linkedin_profile_required_for_pairing");
+    }
     const now = Date.now();
     const active = [...this.pairingCodes.values()].find((item) => item.studentId === studentId && item.status === "active" && Date.parse(item.expiresAt) > now);
     if (active) return active;
@@ -119,11 +152,26 @@ class MemoryStore {
     pairing.confirmedAt = new Date().toISOString();
     const student = [...this.students.values()].find((item) => item.id === pairing.studentId);
     if (!student) return { duplicate: false, student: null, welcomeNeeded: false, error: "student_not_found" };
+    if (!hasLinkedInProfileUrl(student.linkedinProfileUrl)) {
+      pairing.status = "active";
+      pairing.confirmedAt = "";
+      return { duplicate: false, student: null, welcomeNeeded: false, error: "linkedin_profile_required_for_pairing" };
+    }
+    if (hasDifferentConfirmedPhone(student, channelAddress)) {
+      pairing.status = "active";
+      pairing.confirmedAt = "";
+      await this.writeAuditEvent(student.id, "pairing_phone_rejected", "provider", {
+        channelType,
+        reason: "phone_already_bound",
+      });
+      return { duplicate: false, student: null, welcomeNeeded: false, error: "phone_already_bound" };
+    }
 
+    const welcomeNeeded = !student.channelConfirmedAt;
     student.status = "channel_confirmed";
-    student.channelType = channelType;
-    student.channelAddress = channelAddress;
-    student.channelConfirmedAt = pairing.confirmedAt;
+    student.channelType = student.channelType || channelType;
+    student.channelAddress = student.channelAddress || channelAddress;
+    student.channelConfirmedAt = student.channelConfirmedAt || pairing.confirmedAt;
     student.updatedAt = pairing.confirmedAt;
 
     await this.writeMessagingEvent({
@@ -139,7 +187,7 @@ class MemoryStore {
     });
     await this.ensureStudentThread(student.id, channelAddress, { trigger: "pairing_confirmed", channelType });
     await this.writeAuditEvent(student.id, "channel_confirmed", "provider", { channelType });
-    return { duplicate: false, student, welcomeNeeded: true };
+    return { duplicate: false, student, welcomeNeeded };
   }
 
   async recordInboundMessage({ providerEventId, channelType, channelAddress, text, metadata }) {
@@ -473,18 +521,49 @@ class PostgresStore {
   }
 
   async upsertStudentFromAuth(auth) {
+    const incomingLinkedInUrl = canonicalLinkedInProfileUrl(auth.linkedinProfileUrl);
+    const existingResult = await this.pool.query(
+      "select id, linkedin_profile_url from students where clerk_user_id = $1",
+      [auth.clerkUserId],
+    );
+    const existing = existingResult.rows[0] || null;
+    const existingLinkedInUrl = canonicalLinkedInProfileUrl(existing?.linkedin_profile_url);
+    const linkedinChanged = Boolean(existing && existingLinkedInUrl && incomingLinkedInUrl && existingLinkedInUrl !== incomingLinkedInUrl);
+
     const result = await this.pool.query(
       `insert into students (clerk_user_id, email, name, linkedin_profile_url, status)
        values ($1, $2, $3, $4, 'linkedin_connected')
        on conflict (clerk_user_id) do update set
          email = coalesce(nullif(excluded.email, ''), students.email),
          name = coalesce(nullif(excluded.name, ''), students.name),
-         linkedin_profile_url = coalesce(nullif(excluded.linkedin_profile_url, ''), students.linkedin_profile_url),
+         linkedin_profile_url = case when $5 then $4 else coalesce(nullif(excluded.linkedin_profile_url, ''), students.linkedin_profile_url) end,
+         status = case when $5 then 'linkedin_connected' else students.status end,
+         channel_type = case when $5 then null else students.channel_type end,
+         channel_address = case when $5 then null else students.channel_address end,
+         channel_confirmed_at = case when $5 then null else students.channel_confirmed_at end,
          updated_at = now()
        returning *`,
-      [auth.clerkUserId, auth.email, auth.name, auth.linkedinProfileUrl],
+      [auth.clerkUserId, auth.email, auth.name, incomingLinkedInUrl || "", linkedinChanged],
     );
     const student = mapStudent(result.rows[0]);
+    const normalizedAuth = { ...auth, linkedinProfileUrl: incomingLinkedInUrl || auth.linkedinProfileUrl || "" };
+
+    if (linkedinChanged) {
+      await this.pool.query(
+        "update channel_pairing_codes set status = 'expired' where student_id = $1 and status = 'active'",
+        [student.id],
+      );
+      await this.pool.query(
+        `update pairing_sessions
+            set expires_at = least(expires_at, now())
+          where student_id = $1 and claimed_at is null and expires_at > now()`,
+        [student.id],
+      );
+      await this.writeAuditEvent(student.id, "linkedin_profile_url_changed_phone_unbound", "system", {
+        previousLinkedInUrl: existingLinkedInUrl,
+        nextLinkedInUrl: incomingLinkedInUrl,
+      });
+    }
 
     await this.pool.query(
       `insert into waitlist_status (student_id, status, source)
@@ -492,8 +571,8 @@ class PostgresStore {
        on conflict (student_id) do update set status = excluded.status, updated_at = now()`,
       [student.id, auth.source],
     );
-    await this.storeProfileSnapshot(student.id, auth);
-    await this.queueProfileEnrichment(student.id, auth);
+    await this.storeProfileSnapshot(student.id, normalizedAuth);
+    await this.queueProfileEnrichment(student.id, normalizedAuth);
     await this.writeConsent(student.id, "linkedin_oauth_profile", true, auth.source);
     await this.writeAuditEvent(student.id, "student_upserted", "system", { source: auth.source });
     return student;
@@ -505,6 +584,7 @@ class PostgresStore {
   }
 
   async createOrRefreshPairingCode(studentId) {
+    await this.assertStudentPairingEligible(studentId);
     const active = await this.pool.query(
       `select * from channel_pairing_codes
        where student_id = $1 and status = 'active' and expires_at > now()
@@ -517,11 +597,13 @@ class PostgresStore {
   }
 
   async expireAndCreatePairingCode(studentId) {
+    await this.assertStudentPairingEligible(studentId);
     await this.pool.query("update channel_pairing_codes set status = 'expired' where student_id = $1 and status = 'active'", [studentId]);
     return this.insertPairingCode(studentId);
   }
 
   async insertPairingCode(studentId) {
+    await this.assertStudentPairingEligible(studentId);
     for (let attempt = 0; attempt < 4; attempt += 1) {
       try {
         const result = await this.pool.query(
@@ -537,6 +619,15 @@ class PostgresStore {
       }
     }
     throw new Error("pairing_code_generation_failed");
+  }
+
+  async assertStudentPairingEligible(studentId) {
+    const result = await this.pool.query("select linkedin_profile_url from students where id = $1", [studentId]);
+    const row = result.rows[0];
+    if (!row) throw new Error("student_not_found");
+    if (!hasLinkedInProfileUrl(row.linkedin_profile_url)) {
+      throw new Error("linkedin_profile_required_for_pairing");
+    }
   }
 
   async confirmPairingCode({ code, providerEventId, channelType, channelAddress, metadata, provider = "spectrum" }) {
@@ -564,9 +655,38 @@ class PostgresStore {
         return { duplicate: false, student: null, welcomeNeeded: false, error: "pairing_code_invalid" };
       }
 
+      const existingStudentResult = await client.query(
+        `select * from students where id = $1 for update`,
+        [pairing.student_id],
+      );
+      const existingStudent = existingStudentResult.rows[0];
+      if (!existingStudent) {
+        await client.query("rollback");
+        return { duplicate: false, student: null, welcomeNeeded: false, error: "student_not_found" };
+      }
+      if (!hasLinkedInProfileUrl(existingStudent.linkedin_profile_url)) {
+        await client.query("rollback");
+        return { duplicate: false, student: null, welcomeNeeded: false, error: "linkedin_profile_required_for_pairing" };
+      }
+      if (hasDifferentConfirmedPhone(existingStudent, channelAddress)) {
+        await client.query(
+          `insert into audit_events (student_id, event_type, actor, metadata)
+           values ($1, 'pairing_phone_rejected', 'provider', $2)`,
+          [pairing.student_id, { channelType, reason: "phone_already_bound" }],
+        );
+        await client.query("commit");
+        return { duplicate: false, student: null, welcomeNeeded: false, error: "phone_already_bound" };
+      }
+
+      const welcomeNeeded = !existingStudent.channel_confirmed_at;
       await client.query("update channel_pairing_codes set status = 'confirmed', confirmed_at = now() where id = $1", [pairing.id]);
       const studentResult = await client.query(
-        `update students set status = 'channel_confirmed', channel_type = $2, channel_address = $3, channel_confirmed_at = now(), updated_at = now()
+        `update students
+            set status = 'channel_confirmed',
+                channel_type = coalesce(nullif(channel_type, ''), $2),
+                channel_address = coalesce(nullif(channel_address, ''), $3),
+                channel_confirmed_at = coalesce(channel_confirmed_at, now()),
+                updated_at = now()
          where id = $1
          returning *`,
         [pairing.student_id, channelType, channelAddress],
@@ -583,7 +703,7 @@ class PostgresStore {
       );
       await this.ensureStudentThread(pairing.student_id, channelAddress, { trigger: "pairing_confirmed", channelType }, client);
       await client.query("commit");
-      return { duplicate: false, student: mapStudent(studentResult.rows[0]), welcomeNeeded: true };
+      return { duplicate: false, student: mapStudent(studentResult.rows[0]), welcomeNeeded };
     } catch (error) {
       await client.query("rollback");
       throw error;

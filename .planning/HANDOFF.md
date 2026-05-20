@@ -85,6 +85,14 @@ Agent features (AgentPanel, MCPPanel, summarize/draft/translate, 11 MCP tools) d
 - `chat.internjobs.ai` console: CF Insights beacon blocked by CSP (harmless); `/api/v4/brand/image` 404 (we set brand *text* not *image* — `MATTERMOST_ADMIN_PASSWORD` in Infisical was blank, couldn't upload a logo).
 - DAILY-THEME-01 (Campus Aurora theme) reverted earlier — see ROADMAP v1.3.1 candidates for 3 safe retry paths.
 
+### 3.6 ✅ Student QR identity invariant fixed
+
+Latest patch: QR / START-code creation now requires a stored LinkedIn profile URL. Phone claims are immutable for that LinkedIn identity: if a student already has a confirmed phone, a different inbound phone is rejected and audited instead of replacing `students.channel_address`. If the LinkedIn URL changes for the same Clerk user, the student is reset to `linkedin_connected`, confirmed channel fields are cleared, and active pairing codes are expired so the new LinkedIn identity can pair cleanly.
+
+Verified with:
+- `npm run build` in `apps/app`
+- `npm run test:auth` in `apps/app`
+
 ---
 
 ## 4. Key context Codex needs

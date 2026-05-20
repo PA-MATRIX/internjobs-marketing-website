@@ -32,6 +32,7 @@ import {
   renderMessageLog,
   renderDraftDetail,
   renderFeedbackLog,
+  renderLinkedInRequired,
 } from "./views.mjs";
 // v1.2 Phase 09 — LinkedIn enrichment + Standout-style pairing.
 // proxycurl client is loaded lazily inside the /onboard/start handler so
@@ -242,6 +243,7 @@ const server = createServer(async (req, res) => {
           email: "ops@internjobs.ai",
           name: "Ops Person",
           provider: "linkedin",
+          linkedinProfileUrl: "",
           userType: "operator",
         });
         redirect(res, "/ops/drafts");
@@ -253,6 +255,7 @@ const server = createServer(async (req, res) => {
           email: "founder@startup.example",
           name: "Founder Person",
           provider: "google",
+          linkedinProfileUrl: "",
           userType: "startup",
         });
         redirect(res, "/startup/dashboard");
@@ -291,7 +294,8 @@ const server = createServer(async (req, res) => {
       // userType is set via Clerk Backend API (server-side), never trusted
       // from a client-writable column.
       if (!auth.userType && config.clerk.secretKey) {
-        const inferredType = auth.provider === "linkedin" ? "student" : null;
+        const existingStudent = await store.getStudentByClerkId(auth.clerkUserId);
+        const inferredType = auth.provider === "linkedin" && hasPairableLinkedIn(auth, existingStudent) ? "student" : null;
         if (inferredType) {
           await fetch(`${config.clerk.backendApiUrl}/v1/users/${auth.clerkUserId}`, {
             method: "PATCH",
@@ -329,6 +333,10 @@ const server = createServer(async (req, res) => {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const student = await store.upsertStudentFromAuth(auth);
+      if (!hasPairableLinkedIn(auth, student)) {
+        sendLinkedInRequired(res, auth);
+        return;
+      }
       if (student.status === "channel_confirmed") {
         sendHtml(res, 200, renderLayout({ title: "Messages Connected", config, auth, body: renderPairingConfirmed(student) }));
         return;
@@ -342,6 +350,10 @@ const server = createServer(async (req, res) => {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const student = await store.upsertStudentFromAuth(auth);
+      if (!hasPairableLinkedIn(auth, student)) {
+        redirect(res, "/pairing");
+        return;
+      }
       await store.expireAndCreatePairingCode(student.id);
       redirect(res, "/pairing");
       return;
@@ -368,6 +380,10 @@ const server = createServer(async (req, res) => {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const student = await store.upsertStudentFromAuth(auth);
+      if (!hasPairableLinkedIn(auth, student)) {
+        sendLinkedInRequired(res, auth);
+        return;
+      }
       // Cookie used by /onboard/qr + /onboard/mobile + /onboard/status to look
       // up the active pairing code without putting the code in the URL.
       // Short-lived (matches the pairing TTL). HttpOnly so client JS can't
@@ -440,6 +456,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/onboard/qr") {
       const auth = await requireAuth(req, res);
       if (!auth) return;
+      const student = await store.getStudentByClerkId(auth.clerkUserId);
+      if (!hasPairableLinkedIn(auth, student)) {
+        sendLinkedInRequired(res, auth);
+        return;
+      }
       const pairingCode = getPairingCodeCookie(req);
       if (!pairingCode) {
         redirect(res, "/onboard/start");
@@ -463,6 +484,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/onboard/mobile") {
       const auth = await requireAuth(req, res);
       if (!auth) return;
+      const student = await store.getStudentByClerkId(auth.clerkUserId);
+      if (!hasPairableLinkedIn(auth, student)) {
+        sendLinkedInRequired(res, auth);
+        return;
+      }
       const pairingCode = getPairingCodeCookie(req);
       if (!pairingCode) {
         redirect(res, "/onboard/start");
@@ -489,6 +515,11 @@ const server = createServer(async (req, res) => {
       // code can't be probed externally; the cookie carries the code.
       const auth = await requireAuth(req, res);
       if (!auth) return;
+      const student = await store.getStudentByClerkId(auth.clerkUserId);
+      if (!hasPairableLinkedIn(auth, student)) {
+        sendJson(res, 200, { paired: false, reason: "linkedin_profile_required_for_pairing" });
+        return;
+      }
       const pairingCode = getPairingCodeCookie(req);
       if (!pairingCode || !store?.pool) {
         sendJson(res, 200, { paired: false });
@@ -872,8 +903,13 @@ const server = createServer(async (req, res) => {
         }
 
         // Code matched the START-XXXXXX format but the claim failed
-        // (expired or already used). Record the attempt for ops review
-        // but don't fire any workflow.
+        // (expired, already used, or phone already tied to this LinkedIn
+        // profile). Record the attempt for ops review but don't fire any
+        // workflow.
+        const rejectedEventType =
+          claim.reason === "phone_already_bound" || claim.reason === "linkedin_profile_required_for_pairing"
+            ? "pairing_rejected"
+            : "pairing_expired";
         await store.writeMessagingEvent({
           provider: "mac-bridge",
           providerEventId: inbound.providerEventId,
@@ -881,11 +917,11 @@ const server = createServer(async (req, res) => {
           direction: "inbound",
           channelType: inbound.channelType,
           channelAddress: inbound.channelAddress,
-          eventType: "pairing_expired",
+          eventType: rejectedEventType,
           deliveryStatus: "received",
           metadata: { ...inbound.metadata, pairingCode: startCode, reason: claim.reason },
         });
-        sendJson(res, 200, { ok: false, eventType: "pairing_expired", reason: claim.reason });
+        sendJson(res, 200, { ok: false, eventType: rejectedEventType, reason: claim.reason });
         return;
       }
 
@@ -1510,6 +1546,24 @@ async function requireAuth(req, res) {
 
   redirect(res, getSignInUrl(config));
   return null;
+}
+
+function hasPairableLinkedIn(auth, student = null) {
+  return Boolean(String(student?.linkedinProfileUrl || auth?.linkedinProfileUrl || "").trim());
+}
+
+function sendLinkedInRequired(res, auth) {
+  sendHtml(
+    res,
+    403,
+    renderLayout({
+      title: "LinkedIn Required",
+      config,
+      auth,
+      body: renderLinkedInRequired({ signInUrl: getSignInUrl(config) }),
+      embedClerk: false,
+    }),
+  );
 }
 
 // v1.2 Phase 05 — thin closure binding the auth.mjs middleware to local

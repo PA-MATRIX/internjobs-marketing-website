@@ -207,6 +207,19 @@ export function renderOnboarding(student) {
     </section>`;
 }
 
+export function renderLinkedInRequired({ signInUrl = "/waitlist" } = {}) {
+  return `
+    <section class="panel dark narrow">
+      <p class="eyebrow">LinkedIn required</p>
+      <h1>Connect LinkedIn before pairing your phone.</h1>
+      <p class="lede">InternJobs.ai only creates phone QR codes after the student account has a LinkedIn URL. That keeps each phone number tied to one profile identity.</p>
+      <div class="actions">
+        <a class="button light" href="${escapeHtml(signInUrl)}">Continue with LinkedIn</a>
+        <form method="post" action="/sign-out"><button class="button secondary" type="submit">Use a different account</button></form>
+      </div>
+    </section>`;
+}
+
 export async function renderPairing({ student, pairing, config }) {
   const number = config.onboarding?.agentNumber || "+10000000000";
   const body = `Hey internjobs.ai! My verification code is ${pairing.code}. What's next?`;

@@ -34,6 +34,15 @@ try {
   assert(waitlistHtml.includes("Continue with LinkedIn"), "waitlist does not show LinkedIn-first CTA");
   assert(!/password/i.test(waitlistHtml), "waitlist should not present password signup copy");
 
+  const startupSignIn = await fetch(`${baseUrl}/dev/sign-in?role=startup`, { redirect: "manual" });
+  const startupCookie = startupSignIn.headers.get("set-cookie");
+  assert(startupSignIn.status === 302 && startupCookie, "dev startup sign-in did not set session cookie");
+  const blockedPairing = await fetch(`${baseUrl}/pairing`, { headers: { cookie: startupCookie } });
+  const blockedPairingHtml = await blockedPairing.text();
+  assert(blockedPairing.status === 403, "pairing should reject sessions without a LinkedIn URL");
+  assert(blockedPairingHtml.includes("Connect LinkedIn before pairing your phone"), "pairing should explain LinkedIn is required");
+  assert(!/\b[A-F0-9]{8}\b/.test(blockedPairingHtml), "pairing must not create a QR code without LinkedIn");
+
   const signIn = await fetch(`${baseUrl}/dev/sign-in`, { redirect: "manual" });
   const cookie = signIn.headers.get("set-cookie");
   assert(signIn.status === 302 && cookie, "dev sign-in did not set session cookie");

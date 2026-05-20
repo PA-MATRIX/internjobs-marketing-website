@@ -14,7 +14,8 @@
 //         - SELECT ... FOR UPDATE the pairing_sessions row
 //         - Reject if claimed_at IS NOT NULL or expires_at < now()
 //         - UPDATE claimed_at = now(), claimed_phone = phone
-//         - UPDATE students.channel_address = phone (binding the phone)
+//         - UPDATE students.channel_address = phone when that LinkedIn
+//           profile has no confirmed phone yet
 //   6. Returns the studentId so the webhook handler can fire the
 //      FIRST-CONTACT workflow with LinkedIn context.
 //
@@ -53,6 +54,7 @@ const CODE_REGEX = /\bSTART-[A-Z0-9]{6,8}\b/;
 export async function generatePairingCode(pool, studentId, opts = {}) {
   if (!pool) throw new Error("generatePairingCode: pool is required");
   if (!studentId) throw new Error("generatePairingCode: studentId is required");
+  await assertStudentPairingEligible(pool, studentId);
 
   const ttlHours = Number.isFinite(opts.ttlHours) ? opts.ttlHours : 24;
   const source = opts.source || "qr";
@@ -98,7 +100,7 @@ export function parsePairingCode(text) {
  *   - Row must exist and not be expired.
  *   - Row must not already be claimed (claimed_at IS NULL).
  *   - On success: set claimed_at + claimed_phone AND bind students.channel_address
- *     to the phone (so future inbounds route to this student).
+ *     to the phone only if this LinkedIn profile does not already have one.
  *
  * @param {import('pg').Pool} pool
  * @param {string} code   The full pairing code (e.g. 'START-AB12CD').
@@ -138,6 +140,32 @@ export async function claimPairingCode(pool, code, phone, opts = {}) {
       return { ok: false, reason: "code_expired" };
     }
 
+    const studentResult = await client.query(
+      `select id, linkedin_profile_url, channel_address, channel_confirmed_at
+         from students
+        where id = $1
+        for update`,
+      [row.student_id],
+    );
+    const student = studentResult.rows[0];
+    if (!student) {
+      await client.query("rollback");
+      return { ok: false, reason: "student_not_found" };
+    }
+    if (!hasLinkedInProfileUrl(student.linkedin_profile_url)) {
+      await client.query("rollback");
+      return { ok: false, reason: "linkedin_profile_required_for_pairing" };
+    }
+    if (hasDifferentConfirmedPhone(student, phone)) {
+      await client.query(
+        `insert into audit_events (student_id, event_type, actor, metadata)
+         values ($1, 'pairing_phone_rejected', 'provider', $2)`,
+        [row.student_id, { channelType, reason: "phone_already_bound" }],
+      );
+      await client.query("commit");
+      return { ok: false, reason: "phone_already_bound" };
+    }
+
     await client.query(
       `update pairing_sessions
           set claimed_at = now(),
@@ -146,11 +174,8 @@ export async function claimPairingCode(pool, code, phone, opts = {}) {
       [code, phone],
     );
 
-    // Bind phone to the student. We don't blow away an existing phone — if
-    // the student already paired on a different device, we keep the original
-    // binding. The pairing_sessions row still gets marked claimed so the
-    // code can't be reused, and the audit_events row downstream captures
-    // the attempt.
+    // Bind phone to the student. We don't blow away an existing phone for
+    // the same LinkedIn profile; a different phone is rejected above.
     await client.query(
       `update students
           set channel_type = coalesce(nullif(channel_type, ''), $2),
@@ -201,4 +226,30 @@ function randomChars(n) {
     out += CODE_ALPHABET[randomInt(0, CODE_ALPHABET.length)];
   }
   return out;
+}
+
+async function assertStudentPairingEligible(pool, studentId) {
+  const { rows } = await pool.query(
+    `select linkedin_profile_url from students where id = $1 limit 1`,
+    [studentId],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("student_not_found");
+  if (!hasLinkedInProfileUrl(row.linkedin_profile_url)) {
+    throw new Error("linkedin_profile_required_for_pairing");
+  }
+}
+
+function hasLinkedInProfileUrl(value) {
+  return Boolean(String(value || "").trim());
+}
+
+function hasDifferentConfirmedPhone(student, phone) {
+  const existing = normalizePhone(student?.channel_address || "");
+  const incoming = normalizePhone(phone);
+  return Boolean(student?.channel_confirmed_at && existing && incoming && existing !== incoming);
+}
+
+function normalizePhone(value) {
+  return String(value || "").replace(/[^\d+]/g, "");
 }
