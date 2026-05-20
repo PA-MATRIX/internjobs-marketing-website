@@ -90,12 +90,13 @@ export function getConfig(env = process.env) {
     // wired only for old callbacks/tests and should not drive QR numbers.
     smsProviderName: (env.SMS_PROVIDER || "spectrum").toLowerCase(),
     // v1.2 Phase 09 — Standout-style LinkedIn enrichment.
-    // proxycurl.apiToken — bearer token for Proxycurl's Reverse Email
-    //   Lookup. Loaded into the Phase 09 enrichment client
-    //   (apps/app/src/onboarding/proxycurl.mjs). Fail-soft: empty token
-    //   means /onboard/start skips enrichment and the student still
-    //   reaches /onboard/qr — the agent's first message just won't be
-    //   contextualized with LinkedIn fields on that first turn.
+    // Bright Data is the preferred URL→profile provider; Proxycurl remains
+    // as a fail-soft fallback. Empty tokens mean QR still works, but first
+    // contact only has Clerk name + the stored LinkedIn URL.
+    brightdata: {
+      apiToken: env.BRIGHTDATA_API_TOKEN || "",
+      linkedinProfileDatasetId: env.BRIGHTDATA_LINKEDIN_PROFILE_DATASET_ID || "gd_l1viktl72bvl7bjuj0",
+    },
     proxycurl: {
       apiToken: env.PROXYCURL_API_TOKEN || "",
     },

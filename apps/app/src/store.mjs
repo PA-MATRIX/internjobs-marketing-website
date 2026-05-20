@@ -860,13 +860,12 @@ class PostgresStore {
     return result.rows[0];
   }
 
-  // ─── v1.2 Phase 09 — LinkedIn enrichment via Proxycurl ─────────────────────
+  // ─── v1.2 Phase 09 — LinkedIn enrichment via Bright Data / Proxycurl ───────
   //
   // linkUserLinkedInProfile UPSERTs the linkedin_profiles row (1:1 with
-  // students, UNIQUE on student_id). Called by the /onboard/start route's
-  // fire-and-forget enrichment task after Proxycurl resolves the email.
-  // The full provider response is stored as `raw` so the agent can
-  // reach for fields we don't yet normalize without a re-fetch.
+  // students, UNIQUE on student_id). The full provider response is stored
+  // as `raw` so the agent can reach for fields we don't yet normalize
+  // without a re-fetch.
   //
   // getLinkedInProfile is read by the student-inbound workflow on
   // first-contact turns so the prompt carries the LinkedIn block.
