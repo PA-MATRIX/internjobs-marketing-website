@@ -91,6 +91,8 @@ Latest patch: QR / START-code creation now requires a stored LinkedIn profile UR
 
 Follow-up patch: first-contact prompts now always carry `first_name`, `full_name`, and the stored LinkedIn URL. The agent is required to include the first name in the first sentence when available. It only references school/current role/skills when structured `linkedin_profiles` enrichment has actually returned those fields; otherwise it uses the URL as identity context and does not invent profile details.
 
+Proxycurl follow-up: `/onboard/start` and the START-code webhook now call Proxycurl using the stored LinkedIn URL first (`/api/v2/linkedin?url=...&skills=include`), then fall back to reverse-email. The START-code first-contact path waits for this enrichment before writing the inbound row and triggering the workflow, so the first SMS has the best available LinkedIn context.
+
 Verified with:
 - `npm run build` in `apps/app`
 - `npm run test:auth` in `apps/app`

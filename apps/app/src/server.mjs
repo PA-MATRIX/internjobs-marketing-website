@@ -37,7 +37,7 @@ import {
 // v1.2 Phase 09 — LinkedIn enrichment + Standout-style pairing.
 // proxycurl client is loaded lazily inside the /onboard/start handler so
 // boot doesn't depend on PROXYCURL_API_TOKEN being set.
-import { enrichByEmail } from "./onboarding/proxycurl.mjs";
+import { enrichByEmail, enrichByLinkedInUrl } from "./onboarding/proxycurl.mjs";
 import {
   generatePairingCode,
   parsePairingCode,
@@ -414,35 +414,12 @@ const server = createServer(async (req, res) => {
         pairingCode = "START-DEVCODE";
       }
 
-      // Fire-and-forget Proxycurl enrichment. Caller doesn't wait — by the
-      // time the student gets to /onboard/qr and starts texting, the
-      // linkedin_profiles row is likely written. Worst case (slow API): the
-      // first-contact workflow falls back to the non-contextual prompt;
-      // subsequent turns will pick up the enrichment.
-      if (auth.email && config.proxycurl?.apiToken && store?.pool) {
-        enrichByEmail({
-          email: auth.email,
-          apiToken: config.proxycurl.apiToken,
-        })
-          .then(async (profile) => {
-            if (profile) {
-              await store.linkUserLinkedInProfile(student.id, {
-                ...profile,
-                enrichedVia: "proxycurl",
-              });
-            }
-          })
-          .catch((err) => {
-            console.error(
-              JSON.stringify({
-                level: "error",
-                message: "linkedin_enrichment_failed",
-                studentId: student.id,
-                error: err?.message ?? String(err),
-              }),
-            );
-          });
-      }
+      // Proxycurl enrichment is now part of the onboarding contract. We
+      // prefer the LinkedIn URL because the QR code is tied to that exact
+      // identity; reverse-email is only a fallback. Fail-soft: if Proxycurl
+      // cannot return data, QR pairing still proceeds, and the first-contact
+      // prompt uses name + URL without inventing profile details.
+      await ensureLinkedInProfileForFirstContact(student.id);
 
       if (pairingCode) {
         setPairingCodeCookie(res, pairingCode, ttlHours);
@@ -776,6 +753,8 @@ const server = createServer(async (req, res) => {
           channelType: inbound.channelType,
         });
         if (claim.ok) {
+          await ensureLinkedInProfileForFirstContact(claim.studentId);
+
           // Record the inbound for messaging_events observability and
           // write an inbound_messages row so the workflow has something
           // to consume. providerEventId from the bridge is reused so
@@ -1563,6 +1542,67 @@ function sendLinkedInRequired(res, auth) {
       body: renderLinkedInRequired({ signInUrl: getSignInUrl(config) }),
       embedClerk: false,
     }),
+  );
+}
+
+async function ensureLinkedInProfileForFirstContact(studentId) {
+  if (!studentId || !store?.pool || !config.proxycurl?.apiToken) return null;
+  try {
+    const existing = typeof store.getLinkedInProfile === "function"
+      ? await store.getLinkedInProfile(studentId)
+      : null;
+    if (hasStructuredLinkedInProfile(existing)) return existing;
+
+    const { rows } = await store.pool.query(
+      `select email, linkedin_profile_url
+         from students
+        where id = $1
+        limit 1`,
+      [studentId],
+    );
+    const student = rows[0] || {};
+
+    let enrichmentSource = "proxycurl_linkedin_url";
+    let profile = await enrichByLinkedInUrl({
+      linkedinUrl: student.linkedin_profile_url,
+      apiToken: config.proxycurl.apiToken,
+    });
+    if (!profile) {
+      enrichmentSource = "proxycurl_email";
+      profile = await enrichByEmail({
+        email: student.email,
+        apiToken: config.proxycurl.apiToken,
+      });
+    }
+
+    if (!profile) return existing;
+    return store.linkUserLinkedInProfile(studentId, {
+      ...profile,
+      linkedinUrl: profile.linkedinUrl || student.linkedin_profile_url || "",
+      enrichedVia: enrichmentSource,
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "linkedin_enrichment_failed",
+        studentId,
+        error: err?.message ?? String(err),
+      }),
+    );
+    return null;
+  }
+}
+
+function hasStructuredLinkedInProfile(profile) {
+  if (!profile) return false;
+  return Boolean(
+    profile.headline ||
+      profile.current_company ||
+      profile.current_title ||
+      (Array.isArray(profile.schools) && profile.schools.length) ||
+      (Array.isArray(profile.experiences) && profile.experiences.length) ||
+      (Array.isArray(profile.skills) && profile.skills.length),
   );
 }
 

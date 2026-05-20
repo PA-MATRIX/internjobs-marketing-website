@@ -24,8 +24,9 @@
 // 5xx + network errors. 4xx never retries — bad token / missing email is a
 // fast-fail signal.
 
-const PROXYCURL_BASE_URL = "https://nubela.co/proxycurl";
-const REVERSE_EMAIL_PATH = "/api/contact-api/personal-contact";
+const PROXYCURL_BASE_URL = "https://nubela.co";
+const REVERSE_EMAIL_PATH = "/proxycurl/api/contact-api/personal-contact";
+const PERSON_PROFILE_PATH = "/proxycurl/api/v2/linkedin";
 
 /**
  * Resolve a student's email to a normalized LinkedIn profile.
@@ -52,6 +53,31 @@ export async function enrichByEmail({ email, apiToken, type = "personal" }) {
   const raw = await fetchWithRetry(url, apiToken);
   if (!raw) return null;
   return normalizeProfile(raw);
+}
+
+/**
+ * Resolve a student's LinkedIn URL to a normalized person profile.
+ *
+ * This is the preferred path for QR onboarding because the QR identity is
+ * keyed to `students.linkedin_profile_url`. Reverse-email stays as a fallback
+ * for older rows or provider gaps.
+ *
+ * @param {object} opts
+ * @param {string} opts.linkedinUrl  Public LinkedIn profile URL.
+ * @param {string} opts.apiToken     Proxycurl bearer token.
+ * @returns {Promise<object | null>} Normalized profile or null on hard fail.
+ */
+export async function enrichByLinkedInUrl({ linkedinUrl, apiToken }) {
+  if (!linkedinUrl || !apiToken) return null;
+
+  const url = new URL(PERSON_PROFILE_PATH, PROXYCURL_BASE_URL);
+  url.searchParams.set("url", linkedinUrl);
+  url.searchParams.set("skills", "include");
+  url.searchParams.set("use_cache", "if-recent");
+
+  const raw = await fetchWithRetry(url, apiToken);
+  if (!raw) return null;
+  return normalizeProfile({ ...raw, linkedin_profile_url: raw.linkedin_profile_url || linkedinUrl });
 }
 
 // ─── HTTP with retry/backoff ────────────────────────────────────────────────
