@@ -261,4 +261,63 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify(input),
 		}),
+	// — v1.3.1 Agent Lift: /api/inbox/agent/* endpoints.
+	agentTools: () =>
+		request<{ tools: Array<{ name: string; description: string }> }>(
+			"/api/inbox/agent/tools",
+		),
+	agentSummarize: (emailId: string) =>
+		request<{ summary?: string; error?: string; blocked?: boolean }>(
+			"/api/inbox/agent/summarize",
+			{ method: "POST", body: JSON.stringify({ email_id: emailId }) },
+		),
+	agentExtractActions: (emailId: string) =>
+		request<{ actions?: string[]; error?: string; blocked?: boolean }>(
+			"/api/inbox/agent/extract-actions",
+			{ method: "POST", body: JSON.stringify({ email_id: emailId }) },
+		),
+	agentTranslate: (emailId: string, targetLanguage?: string) =>
+		request<{ translation?: string; error?: string }>(
+			"/api/inbox/agent/translate",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					email_id: emailId,
+					target_language: targetLanguage,
+				}),
+			},
+		),
+	agentDraftReply: (
+		emailId: string,
+		instructions?: string,
+		save: boolean = false,
+	) =>
+		request<{
+			draft_text?: string;
+			draft_id?: string;
+			error?: string;
+			blocked?: boolean;
+		}>("/api/inbox/agent/draft-reply", {
+			method: "POST",
+			body: JSON.stringify({
+				email_id: emailId,
+				instructions,
+				save,
+			}),
+		}),
+	agentChat: (
+		messages: Array<{ role: "user" | "assistant"; content: string }>,
+		emailId?: string,
+	) =>
+		request<{ reply?: string; error?: string }>("/api/inbox/agent/chat", {
+			method: "POST",
+			body: JSON.stringify({
+				email_id: emailId,
+				messages,
+			}),
+		}),
+	agentConversation: (emailId: string) =>
+		request<{ suggested_prompts: string[]; error?: string }>(
+			`/api/inbox/agent/conversation/${encodeURIComponent(emailId)}`,
+		),
 };

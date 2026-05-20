@@ -27,7 +27,17 @@ export type ComposeMode = "compose" | "reply" | "forward";
 
 interface ComposePaneProps {
 	mode: ComposeMode;
-	original?: (InboxMessage & { body?: string }) | null;
+	/**
+	 * Original message for reply/forward modes.
+	 *
+	 * v1.3.1 Agent Lift: `agent_draft_body` is an optional shadow field
+	 * injected by InboxPane when the user clicks "Edit in compose" on an
+	 * agent-generated draft. When present, the reply body is pre-filled
+	 * with the agent text followed by the standard quoted block.
+	 */
+	original?:
+		| (InboxMessage & { body?: string; agent_draft_body?: string })
+		| null;
 	onClose: () => void;
 	onSent?: (sentMessageId: string) => void;
 }
@@ -71,7 +81,22 @@ export function ComposePane({
 		if (mode === "reply" && original) {
 			setTo(original.sender ?? "");
 			setSubject(prefixSubject("Re:", original.subject));
-			setBody(buildQuotedHtml(original));
+			// v1.3.1 Agent Lift: when InboxPane injected an agent_draft_body,
+			// pre-fill the editor with it (wrapped in a simple <p> so the
+			// TipTap editor renders the linebreaks) followed by the standard
+			// quoted-original block. Otherwise fall back to just the quoted
+			// block (existing behavior).
+			const agentText = original.agent_draft_body?.trim();
+			if (agentText) {
+				const agentHtml = `<p>${agentText
+					.replace(/&/g, "&amp;")
+					.replace(/</g, "&lt;")
+					.replace(/>/g, "&gt;")
+					.replace(/\n/g, "</p><p>")}</p>`;
+				setBody(`${agentHtml}${buildQuotedHtml(original)}`);
+			} else {
+				setBody(buildQuotedHtml(original));
+			}
 		} else if (mode === "forward" && original) {
 			setTo("");
 			setSubject(prefixSubject("Fwd:", original.subject));
