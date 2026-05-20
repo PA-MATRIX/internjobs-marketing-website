@@ -11,11 +11,21 @@
 // agentic-inbox; the Parrot DO schema mirrors agentic-inbox's threading
 // columns (thread_id, message_id, email_references, in_reply_to) so no
 // adaptation is required beyond import paths.
+//
+// v1.3.1 Agent Lift: backfilled the remaining helpers from agentic-inbox —
+// stripHtmlToText, textToHtml, buildQuotedReplyBlock, getFullEmail,
+// getFullThread, formatEmailDate. These are needed by:
+//   - workers/lib/ai.ts (verifyDraft strips/rewraps HTML)
+//   - workers/lib/agent-tools.ts (draft_reply, send_reply quoted blocks)
+//   - workers/routes/agent.ts (HTTP agent endpoints — summarize / draft / translate)
+// Adaptation: getFullEmail/getFullThread sign `EmployeeMailboxDO` instead
+// of agentic-inbox's MailboxDO; otherwise the semantics are identical.
 
 import type { Env } from "../types";
 import type { EmployeeMailboxDO } from "../durableObject";
 import type { EmailFull } from "./schemas";
 import { Folders } from "../../shared/folders";
+import { formatQuotedDate } from "../../shared/dates";
 
 export class SenderValidationError extends Error {
 	constructor(message: string) {
@@ -143,4 +153,134 @@ export async function resolveOriginalEmail(
 		if (realOriginal) return realOriginal;
 	}
 	return email;
+}
+
+// ── HTML <-> text utilities (v1.3.1 Agent Lift) ────────────────────
+
+/**
+ * Convert plain text to a simple HTML block with preserved whitespace.
+ * Uses both `white-space:pre-wrap` (modern clients) and `<br>` tags
+ * (clients that strip inline styles, e.g. Outlook) as belt-and-suspenders.
+ */
+export function textToHtml(text: string): string {
+	if (!text) return "";
+	const escaped = escapeHtml(text).replace(/\n/g, "<br>");
+	return `<div style="white-space:pre-wrap">${escaped}</div>`;
+}
+
+/**
+ * Strip HTML tags and normalize whitespace to produce plain text.
+ * Removes <style> and <script> blocks first to avoid injecting their
+ * content into the output.
+ */
+export function stripHtmlToText(html: string): string {
+	if (!html) return "";
+	return html
+		.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+		.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+		.replace(/<[^>]+>/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/**
+ * Format a date string for use in quoted reply blocks.
+ * @deprecated Use `formatQuotedDate` from `shared/dates` directly.
+ */
+export const formatEmailDate = formatQuotedDate;
+
+/**
+ * Build a quoted reply block HTML string from original email data.
+ *
+ * The original body is sanitized to plain text before being escaped and
+ * line-broken — raw HTML never survives the round-trip because the
+ * compose editor and outgoing email path don't run a sandbox.
+ */
+export function buildQuotedReplyBlock(original: {
+	date?: string;
+	sender?: string;
+	body?: string;
+}): string {
+	if (!original.body) return "";
+
+	const originalSender = escapeHtml(original.sender || "unknown");
+	const originalDate = escapeHtml(formatEmailDate(original.date || ""));
+
+	const plainBody = stripHtmlToText(original.body);
+	const bodyToQuote = escapeHtml(plainBody).replace(/\n/g, "<br>");
+
+	return `<br><blockquote style="border-left: 2px solid #ccc; margin: 0; padding-left: 1em; color: #666;">On ${originalDate}, ${originalSender} wrote:<br><br>${bodyToQuote}</blockquote>`;
+}
+
+// ── Full email / thread fetchers (v1.3.1 Agent Lift) ───────────────
+
+/**
+ * Fetch a single email and return it with both HTML and plain-text body.
+ * Returns null if the email is not found.
+ *
+ * Adapted from agentic-inbox: the DO stub type is EmployeeMailboxDO,
+ * not MailboxDO, but the surface contract (`getEmail(emailId)` returns
+ * an EmailFull) is identical.
+ */
+export async function getFullEmail(
+	stub: DurableObjectStub<EmployeeMailboxDO>,
+	emailId: string,
+): Promise<(EmailFull & { body_text: string; body_html: string | null | undefined }) | null> {
+	const email = (await stub.getEmail(emailId)) as EmailFull | null;
+	if (!email) return null;
+
+	const textBody = email.body ? stripHtmlToText(email.body) : "";
+	return { ...email, body_text: textBody, body_html: email.body };
+}
+
+/**
+ * Fetch all emails in a thread with full bodies.
+ *
+ * Note: the agentic-inbox version uses a dedicated `getThreadEmails`
+ * RPC on its MailboxDO that runs 2 SQL queries (emails + attachments)
+ * to avoid N+1. EmployeeMailboxDO doesn't expose that RPC yet, so we
+ * fall back to `getEmails({ thread_id })` followed by per-email
+ * `getEmail` for full bodies — a tolerable N+1 because threads are
+ * usually small (< 20 messages) and the call site is interactive.
+ */
+export async function getFullThread(
+	stub: DurableObjectStub<EmployeeMailboxDO>,
+	threadId: string,
+): Promise<{
+	thread_id: string;
+	message_count: number;
+	messages: Array<EmailFull & { body_text: string }>;
+}> {
+	type MailboxThreadReaderStub = {
+		getThreadEmails?: (threadId: string) => Promise<EmailFull[]>;
+	};
+	const threadStub = stub as unknown as MailboxThreadReaderStub;
+
+	let emails: EmailFull[];
+	if (typeof threadStub.getThreadEmails === "function") {
+		emails = await threadStub.getThreadEmails(threadId);
+	} else {
+		const metadata = (await stub.getEmails({ thread_id: threadId })) as EmailFull[];
+		emails = await Promise.all(
+			metadata.map(async (m) => {
+				const full = (await stub.getEmail(m.id)) as EmailFull | null;
+				return full ?? m;
+			}),
+		);
+	}
+
+	const enriched = emails.map((email) => ({
+		...email,
+		body_text: email.body ? stripHtmlToText(email.body) : "",
+	}));
+
+	enriched.sort(
+		(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+	);
+
+	return {
+		thread_id: threadId,
+		message_count: enriched.length,
+		messages: enriched,
+	};
 }

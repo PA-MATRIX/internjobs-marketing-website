@@ -445,6 +445,95 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		return emailAttachments;
 	}
 
+	/**
+	 * v1.3.1 Agent Lift: move an email between folders.
+	 *
+	 * Returns true if the row was updated, false otherwise. The target
+	 * folder is validated against the `folders` table — unknown folder
+	 * IDs return false so the agent can surface a clean error instead of
+	 * silently no-oping.
+	 */
+	async moveEmail(id: string, folderId: string): Promise<boolean> {
+		const folderRow = this.db
+			.select({ id: schema.folders.id })
+			.from(schema.folders)
+			.where(
+				or(eq(schema.folders.id, folderId), eq(schema.folders.name, folderId)),
+			)
+			.limit(1)
+			.all();
+		if (folderRow.length === 0) return false;
+		const resolvedFolderId = folderRow[0].id;
+
+		const existing = this.db
+			.select({ id: schema.emails.id })
+			.from(schema.emails)
+			.where(eq(schema.emails.id, id))
+			.get();
+		if (!existing) return false;
+
+		this.db
+			.update(schema.emails)
+			.set({ folder_id: resolvedFolderId })
+			.where(eq(schema.emails.id, id))
+			.run();
+		return true;
+	}
+
+	/**
+	 * v1.3.1 Agent Lift: search emails by query against subject / sender /
+	 * body. Uses SQL LIKE — no FTS5 yet, but the row count per employee is
+	 * usually small enough that this is fine. Returns metadata only (same
+	 * shape as getEmails).
+	 *
+	 * Limit is capped at 50 so a runaway agent query can't ship a 10k-row
+	 * payload back over the wire.
+	 */
+	async searchEmails(options: {
+		query: string;
+		folder?: string;
+		limit?: number;
+	}) {
+		const limit = Math.min(options.limit ?? 20, 50);
+		const q = `%${options.query.toLowerCase()}%`;
+		const params: unknown[] = [q, q, q];
+		let sqlStr = `
+			SELECT id, folder_id, subject, sender, recipient, date,
+				read, starred, in_reply_to, email_references, thread_id,
+				substr(body, 1, 200) AS snippet
+			FROM emails
+			WHERE (LOWER(subject) LIKE ?1 OR LOWER(sender) LIKE ?2 OR LOWER(body) LIKE ?3)
+		`;
+		if (options.folder) {
+			sqlStr += ` AND folder_id = ?4`;
+			params.push(options.folder);
+		}
+		sqlStr += ` ORDER BY date DESC LIMIT ${limit}`;
+
+		const rows = [
+			...this.ctx.storage.sql.exec(sqlStr, ...params),
+		] as Array<{
+			id: string;
+			folder_id: string;
+			subject: string | null;
+			sender: string | null;
+			recipient: string | null;
+			date: string | null;
+			read: number;
+			starred: number;
+			in_reply_to: string | null;
+			email_references: string | null;
+			thread_id: string | null;
+			snippet: string | null;
+		}>;
+
+		return rows.map((r) => ({
+			...r,
+			read: r.read === 1,
+			starred: r.starred === 1,
+		}));
+	}
+
 	// ── Folders ────────────────────────────────────────────────────
 
 	async getFolders() {

@@ -26,6 +26,8 @@ import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
 // v1.3 Phase 20 SAFETY-VIEW-01: /api/ops/safety
 import { opsSafety } from "./routes/ops-safety";
+// v1.3.1 Agent Lift: /api/inbox/agent/* (summarize / draft / translate / chat / tools)
+import { agentRoutes } from "./routes/agent";
 import {
 	createRoom,
 	deleteRoom,
@@ -374,6 +376,13 @@ app.post(
 	requireEmployeeMailbox,
 	handleForwardEmail,
 );
+
+// v1.3.1 Agent Lift: /api/inbox/agent/* — the React AgentPanel calls these
+// endpoints to summarize, draft replies, translate, extract actions, and
+// freeform chat. All routes are gated by requireEmployeeMailbox so the
+// agent only ever sees the signed-in employee's mailbox.
+app.use("/api/inbox/agent/*", requireEmployeeMailbox);
+app.route("/api/inbox/agent", agentRoutes);
 
 // -- Folders --------------------------------------------------------
 
