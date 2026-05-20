@@ -106,7 +106,43 @@ export default {
 				outHeaders.set(k, rewriteCsp(v, env.ALLOWED_PARENT));
 				continue;
 			}
+			if (lk === "content-length") {
+				// Will be wrong after HTML injection — let the runtime
+				// recompute via chunked encoding.
+				continue;
+			}
 			outHeaders.append(k, v);
+		}
+
+		// White-label: inject CSS into HTML responses to hide the chat
+		// backend's residual branding (edition badge, "Mattermost Inc."
+		// copyright footer, About-dialog vendor links). Team Edition has
+		// no Custom CSS setting — this proxy injection is the only lever.
+		const contentType = upstreamRes.headers.get("content-type") ?? "";
+		if (contentType.includes("text/html")) {
+			let html = await upstreamRes.text();
+			html = html.replace(
+				"</head>",
+				`<style id="parrot-whitelabel">
+/* Hide edition badge ("TEAM EDITION") — the auth-page header uses
+   span.freeBadge; admin/other surfaces use .edition-badge. */
+.freeBadge,.edition-badge,[class*="edition-badge"],[class*="freeBadge"],.AnnouncementBar__purchaseNow{display:none!important;}
+/* Hide "© Mattermost Inc." copyright footer on auth pages */
+.footer,.hfroute-footer,[class*="copyright"]{display:none!important;}
+/* Hide vendor links in the About dialog footer */
+.about-modal__copyright,.about-modal__links{display:none!important;}
+/* Hide the Mattermost wordmark SVG in the auth-page header logo.
+   The adjacent text link still renders "Parrot" so the header
+   isn't left empty. */
+.header-logo-link svg,a.header-logo-link svg,#logo svg{display:none!important;}
+.header-logo-link{min-width:0!important;}
+</style></head>`,
+			);
+			return new Response(html, {
+				status: upstreamRes.status,
+				statusText: upstreamRes.statusText,
+				headers: outHeaders,
+			});
 		}
 
 		return new Response(upstreamRes.body, {
