@@ -9,21 +9,19 @@
 
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
-import { z } from "zod";
 import { Folders } from "../shared/folders";
 import {
 	handleReplyEmail,
 	handleForwardEmail,
+	handleComposeEmail,
 } from "./routes/reply-forward";
 import {
 	requireEmployeeMailbox,
 	type ParrotContext,
 } from "./lib/mailbox";
-import {
-	SenderValidationError,
-	generateMessageId,
-	validateSender,
-} from "./lib/email-helpers";
+// v1.3.1 BACKFILL: SenderValidationError / generateMessageId / validateSender
+// no longer used here — they moved into routes/reply-forward.ts when the
+// /api/inbox/send stub was replaced with the real handleComposeEmail.
 import { adminEmployees } from "./routes/admin-employees";
 import { oidc } from "./routes/oidc";
 // v1.3 Phase 20 SAFETY-VIEW-01: /api/ops/safety
@@ -161,15 +159,12 @@ function reportToSentry(env: Env, err: unknown, context?: string): void {
 }
 
 // -- Request schemas ------------------------------------------------
-
-const SendEmailSchema = z.object({
-	to: z.union([z.string().email(), z.array(z.string().email())]),
-	cc: z.union([z.string().email(), z.array(z.string().email())]).optional(),
-	bcc: z.union([z.string().email(), z.array(z.string().email())]).optional(),
-	subject: z.string().min(1),
-	html: z.string().optional(),
-	text: z.string().optional(),
-});
+//
+// v1.3.1 BACKFILL: the inline SendEmailSchema was removed when the
+// /api/inbox/send route delegated to handleComposeEmail in
+// routes/reply-forward.ts. That handler uses SendEmailRequestSchema
+// from lib/schemas.ts (richer — supports attachments + threading
+// headers + html/text refinement).
 
 // -- App & middleware -----------------------------------------------
 
@@ -357,86 +352,17 @@ app.get(
 	},
 );
 
-app.post(
-	"/api/inbox/send",
-	requireEmployeeMailbox,
-	async (c: AppContext) => {
-		const employee = c.var.employee;
-		const stub = c.var.mailboxStub;
-		const body = SendEmailSchema.parse(await c.req.json());
-		const { to, cc, bcc, subject, html, text } = body;
-
-		// Wave 1: real outbound delivery via the EMAIL service binding is
-		// deferred until Cloudflare Email Routing for *@internjobs.ai apex
-		// is reconfigured. For now we only write to the Sent folder so the
-		// UI's "send" flow can be exercised end-to-end without bouncing
-		// real email at unsuspecting recipients.
-
-		let toStr: string;
-		let fromEmail: string;
-		let fromDomain: string;
-		try {
-			({ toStr, fromEmail, fromDomain } = validateSender(
-				to,
-				employee.email,
-				employee.email,
-			));
-		} catch (e) {
-			if (e instanceof SenderValidationError) {
-				return c.json({ error: e.message }, 400);
-			}
-			throw e;
-		}
-
-		const rateLimit = await stub.checkSendRateLimit();
-		if (rateLimit) return c.json({ error: rateLimit }, 429);
-
-		const { messageId, outgoingMessageId } = generateMessageId(fromDomain);
-
-		const ccStr = cc
-			? (Array.isArray(cc) ? cc.join(", ") : cc).toLowerCase()
-			: null;
-		const bccStr = bcc
-			? (Array.isArray(bcc) ? bcc.join(", ") : bcc).toLowerCase()
-			: null;
-
-		await stub.createEmail(
-			Folders.SENT,
-			{
-				id: messageId,
-				subject,
-				sender: fromEmail,
-				recipient: toStr,
-				cc: ccStr,
-				bcc: bccStr,
-				date: new Date().toISOString(),
-				body: html || text || "",
-				thread_id: messageId,
-				message_id: outgoingMessageId,
-				raw_headers: JSON.stringify([
-					{ key: "from", value: fromEmail },
-					{
-						key: "to",
-						value: Array.isArray(to) ? to.join(", ") : to,
-					},
-					{ key: "subject", value: subject },
-					{ key: "date", value: new Date().toISOString() },
-					{ key: "message-id", value: `<${outgoingMessageId}>` },
-				]),
-			},
-			[],
-		);
-
-		return c.json(
-			{
-				id: messageId,
-				status: "queued_local_only",
-				note: "Wave 1 stub: written to Sent but outbound SMTP delivery is deferred.",
-			},
-			202,
-		);
-	},
-);
+// v1.3.1 BACKFILL: /api/inbox/send is now a real send.
+//
+// Previously a Wave 1 stub that only wrote to the Sent folder. The full
+// handler now lives in routes/reply-forward.ts::handleComposeEmail and:
+//   - validates sender vs authenticated employee
+//   - enforces send-rate limits (20/hr, 100/day per DO)
+//   - stores attachments to R2 (env.BUCKET) and persists metadata
+//   - writes to Sent folder with proper RFC 2822 message-id
+//   - dispatches outbound via env.EMAIL.send() in waitUntil() so the
+//     HTTP response returns immediately (202)
+app.post("/api/inbox/send", requireEmployeeMailbox, handleComposeEmail);
 
 app.post(
 	"/api/inbox/messages/:id/reply",

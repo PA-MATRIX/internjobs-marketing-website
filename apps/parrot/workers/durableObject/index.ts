@@ -405,6 +405,20 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		return this.getEmail(id);
 	}
 
+	/**
+	 * v1.3.1 BACKFILL: mark every unread row in a thread as read.
+	 * Called from the reply route after the sender has clearly engaged
+	 * with the thread — they composed a reply, so by definition they've
+	 * read it. Mirrors apps/agentic-inbox/workers/durableObject/index.ts.
+	 */
+	async markThreadRead(threadId: string) {
+		this.ctx.storage.sql.exec(
+			`UPDATE emails SET read = 1 WHERE thread_id = ? AND read = 0`,
+			threadId,
+		);
+		return { threadId, markedRead: true };
+	}
+
 	async deleteEmail(id: string) {
 		const email = this.db
 			.select({ id: schema.emails.id })
