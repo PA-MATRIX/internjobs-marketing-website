@@ -4,10 +4,20 @@
 // is deferred. This Wave 1 version renders the bare list (subject,
 // sender, snippet) so the API contract can be exercised end-to-end.
 // When InboxPane grows up, lift apps/agentic-inbox/app/components/EmailPanel.tsx.
+//
+// v1.3.1 BACKFILL: Compose / Reply / Forward buttons are now real.
+//   - Compose button (top of the list pane) opens ComposePane in 'compose' mode.
+//   - Reply / Forward buttons on the reader pane open ComposePane in the
+//     matching mode pre-filled from the selected message.
+// The pane closes after a successful send and the inbox list is
+// invalidated so the new message lands in Sent on next pane switch.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Forward, PenSquare, Reply } from "lucide-react";
 import { useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
+import { ComposePane, type ComposeMode } from "./ComposePane";
+import { EmailAttachmentList } from "./EmailAttachmentList";
 import { EmailToChat } from "./crosspane/EmailToChat";
 import { StartMeeting } from "./crosspane/StartMeeting";
 
@@ -20,6 +30,7 @@ function formatDate(iso: string | null) {
 
 export function InboxPane() {
 	const [folder] = useState("inbox");
+	const queryClient = useQueryClient();
 
 	const {
 		data,
@@ -41,6 +52,24 @@ export function InboxPane() {
 		queryFn: () => (selectedId ? api.getMessage(selectedId) : null),
 		enabled: !!selectedId,
 	});
+
+	// v1.3.1 BACKFILL: compose state. `composeMode` non-null means the
+	// modal is open. `composeOriginal` is only set for reply/forward.
+	const [composeMode, setComposeMode] = useState<ComposeMode | null>(null);
+
+	function openCompose(mode: ComposeMode) {
+		setComposeMode(mode);
+	}
+
+	function closeCompose() {
+		setComposeMode(null);
+	}
+
+	function handleSent() {
+		// Invalidate so the Sent folder (and inbox unread counts) refresh on
+		// next pane switch. Compose pane already closes itself.
+		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+	}
 
 	if (isLoading) {
 		return (
@@ -77,6 +106,17 @@ export function InboxPane() {
 	return (
 		<div className="flex h-full min-h-0">
 			<div className="w-full md:w-80 lg:w-96 border-r border-slate-200 overflow-y-auto bg-white">
+				{/* v1.3.1 BACKFILL: Compose button. */}
+				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10">
+					<button
+						type="button"
+						onClick={() => openCompose("compose")}
+						className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+					>
+						<PenSquare size={13} />
+						Compose
+					</button>
+				</div>
 				{messages.length === 0 ? (
 					<div className="p-6 text-sm text-slate-500">
 						<p className="font-medium text-slate-700 mb-1">No messages yet</p>
@@ -137,13 +177,42 @@ export function InboxPane() {
 							<p className="text-sm text-slate-600">
 								From {selected.sender} → {selected.recipient}
 							</p>
-							<div className="mt-3 flex gap-2">
+							<div className="mt-3 flex flex-wrap gap-2">
+								{/* v1.3.1 BACKFILL: Reply + Forward */}
+								<button
+									type="button"
+									onClick={() => openCompose("reply")}
+									className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+								>
+									<Reply size={12} />
+									Reply
+								</button>
+								<button
+									type="button"
+									onClick={() => openCompose("forward")}
+									className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+								>
+									<Forward size={12} />
+									Forward
+								</button>
 								<EmailToChat emailId={selectedId ?? ""} />
 								<StartMeeting />
 							</div>
 						</div>
 						<div className="flex-1 overflow-auto px-6 py-4 text-sm text-slate-800 whitespace-pre-wrap">
 							{selected.body || "(empty body)"}
+							{/* v1.3.1 BACKFILL: attachment metadata display.
+							    Real download endpoint isn't wired yet (see
+							    EmailAttachmentList.tsx) but the metadata renders. */}
+							{selected.attachments && selected.attachments.length > 0 && (
+								<div className="mt-6">
+									<EmailAttachmentList
+										emailId={selectedId}
+										attachments={selected.attachments}
+										showHeading
+									/>
+								</div>
+							)}
 						</div>
 					</>
 				) : (
@@ -152,6 +221,16 @@ export function InboxPane() {
 					</div>
 				)}
 			</div>
+
+			{/* v1.3.1 BACKFILL: ComposePane portal-ish overlay. */}
+			{composeMode && (
+				<ComposePane
+					mode={composeMode}
+					original={composeMode === "compose" ? null : selected ?? null}
+					onClose={closeCompose}
+					onSent={handleSent}
+				/>
+			)}
 		</div>
 	);
 }

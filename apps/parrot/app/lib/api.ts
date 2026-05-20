@@ -75,6 +75,17 @@ export interface InboxMessage {
 	folder_id?: string;
 }
 
+// v1.3.1 BACKFILL: attachment metadata shape returned by getMessage.
+// Mirrors apps/parrot/workers/lib/schemas.ts::AttachmentInfo.
+export interface Attachment {
+	id: string;
+	filename: string;
+	mimetype: string;
+	size: number;
+	content_id?: string | null;
+	disposition?: string | null;
+}
+
 export interface InboxListResponse {
 	emails: InboxMessage[];
 	totalCount: number;
@@ -105,17 +116,59 @@ export const api = {
 			`/api/inbox/messages?folder=${encodeURIComponent(folder)}`,
 		),
 	getMessage: (id: string) =>
-		request<InboxMessage & { body?: string }>(
+		request<InboxMessage & { body?: string; attachments?: Attachment[] }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
 		),
+	// v1.3.1 BACKFILL: sendEmail / replyEmail / forwardEmail.
+	//
+	// All three hit the real reply-forward.ts route handlers (no longer
+	// 501 stubs). The request body shape matches
+	// apps/parrot/workers/lib/schemas.ts::SendEmailRequestSchema. The
+	// server overrides 'from' with the authenticated employee's email,
+	// so the client never sets it.
 	sendEmail: (input: {
-		to: string;
+		to: string | string[];
+		cc?: string | string[];
+		bcc?: string | string[];
 		subject: string;
 		html?: string;
 		text?: string;
 	}) =>
-		request<{ id: string; status: string; note?: string }>(
-			"/api/inbox/send",
+		request<{ id: string; status: string }>("/api/inbox/send", {
+			method: "POST",
+			body: JSON.stringify(input),
+		}),
+	replyEmail: (
+		originalId: string,
+		input: {
+			to: string | string[];
+			cc?: string | string[];
+			bcc?: string | string[];
+			subject: string;
+			html?: string;
+			text?: string;
+		},
+	) =>
+		request<{ id: string; status: string }>(
+			`/api/inbox/messages/${encodeURIComponent(originalId)}/reply`,
+			{
+				method: "POST",
+				body: JSON.stringify(input),
+			},
+		),
+	forwardEmail: (
+		originalId: string,
+		input: {
+			to: string | string[];
+			cc?: string | string[];
+			bcc?: string | string[];
+			subject: string;
+			html?: string;
+			text?: string;
+		},
+	) =>
+		request<{ id: string; status: string }>(
+			`/api/inbox/messages/${encodeURIComponent(originalId)}/forward`,
 			{
 				method: "POST",
 				body: JSON.stringify(input),
