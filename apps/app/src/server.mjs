@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
 import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie, applyHandshakeOrContinue } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
-import { createStore } from "./store.mjs";
+import { createStore, hasLinkedInProfileUrl } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
 import { createSpectrumSmsProvider } from "./sms/spectrum.mjs";
 import { createMacBridgeSmsProvider } from "./sms/mac-bridge.mjs";
@@ -20,7 +20,6 @@ import {
   renderOnboardingQR,
   renderOnboardingMobile,
   renderOnboardingSuccess,
-  renderPairing,
   renderPairingConfirmed,
   renderProfile,
   renderRoleForm,
@@ -33,6 +32,7 @@ import {
   renderDraftDetail,
   renderFeedbackLog,
   renderLinkedInRequired,
+  renderLinkedInUrlCapture,
 } from "./views.mjs";
 import { enrichByBrightDataLinkedInUrl } from "./onboarding/brightdata.mjs";
 import {
@@ -191,7 +191,7 @@ const server = createServer(async (req, res) => {
       // AUTH-PROD: handshake sentinel → forward Clerk's headers + 307.
       if (applyHandshakeOrContinue(res, auth)) return;
       if (auth) {
-        redirect(res, "/pairing");
+        redirect(res, "/onboard/start");
         return;
       }
       sendHtml(res, 200, renderLayout({ title: "Join Early Access", config, auth: null, body: renderWaitlist(config), bgEffect: "clouds", embedClerk: true }));
@@ -260,7 +260,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       setDevSessionCookie(res, config);
-      redirect(res, "/pairing");
+      redirect(res, "/onboard/start");
       return;
     }
 
@@ -291,9 +291,17 @@ const server = createServer(async (req, res) => {
       // where userType='startup' is set after consent. Per PITFALLS #13:
       // userType is set via Clerk Backend API (server-side), never trusted
       // from a client-writable column.
+      const authIntent = url.searchParams.get("intent");
       if (!auth.userType && config.clerk.secretKey) {
         const existingStudent = await store.getStudentByClerkId(auth.clerkUserId);
-        const inferredType = auth.provider === "linkedin" && hasPairableLinkedIn(auth, existingStudent) ? "student" : null;
+        const inferredType =
+          authIntent === "student"
+            ? "student"
+            : authIntent === "startup"
+              ? null
+              : auth.provider === "linkedin" && hasPairableLinkedIn(auth, existingStudent)
+                ? "student"
+                : null;
         if (inferredType) {
           await fetch(`${config.clerk.backendApiUrl}/v1/users/${auth.clerkUserId}`, {
             method: "PATCH",
@@ -310,12 +318,74 @@ const server = createServer(async (req, res) => {
         }
       }
 
-      // Existing students land on /pairing; startups on /startup/dashboard.
+      // Existing students land on the START-code onboarding flow; startups
+      // land on /startup/dashboard.
       if (auth.userType === "startup") {
         redirect(res, "/startup/dashboard");
         return;
       }
-      redirect(res, "/pairing");
+      const student = await store.upsertStudentFromAuth(auth);
+      if (!hasPairableLinkedIn(auth, student)) {
+        redirect(res, "/linkedin/profile-url");
+        return;
+      }
+      redirect(res, "/onboard/start");
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/linkedin/profile-url") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const student = await store.upsertStudentFromAuth(auth);
+      if (hasPairableLinkedIn(auth, student)) {
+        redirect(res, "/onboard/start");
+        return;
+      }
+      sendHtml(
+        res,
+        200,
+        renderLayout({
+          title: "LinkedIn Profile",
+          config,
+          auth,
+          body: renderLinkedInUrlCapture({ value: auth.linkedinProfileUrl || student.linkedinProfileUrl || "" }),
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/linkedin/profile-url") {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const student = await store.upsertStudentFromAuth(auth);
+      const form = await readForm(req);
+      try {
+        const updated = await store.updateStudentLinkedInProfileUrl(
+          student.id,
+          form.linkedinProfileUrl,
+          "student_profile_url_form",
+        );
+        await ensureLinkedInProfileForFirstContact(updated.id);
+        redirect(res, "/onboard/start");
+      } catch (err) {
+        const message =
+          err?.message === "invalid_linkedin_profile_url"
+            ? "Use a public LinkedIn profile URL like https://www.linkedin.com/in/your-name."
+            : "Couldn't save that LinkedIn URL. Try again.";
+        sendHtml(
+          res,
+          400,
+          renderLayout({
+            title: "LinkedIn Profile",
+            config,
+            auth,
+            body: renderLinkedInUrlCapture({
+              value: String(form.linkedinProfileUrl || ""),
+              error: message,
+            }),
+          }),
+        );
+      }
       return;
     }
 
@@ -339,8 +409,7 @@ const server = createServer(async (req, res) => {
         sendHtml(res, 200, renderLayout({ title: "Messages Connected", config, auth, body: renderPairingConfirmed(student) }));
         return;
       }
-      const pairing = await store.createOrRefreshPairingCode(student.id);
-      sendHtml(res, 200, renderLayout({ title: "Pair Messages", config, auth, body: await renderPairing({ student, pairing, config }) }));
+      redirect(res, "/onboard/start");
       return;
     }
 
@@ -352,8 +421,7 @@ const server = createServer(async (req, res) => {
         redirect(res, "/pairing");
         return;
       }
-      await store.expireAndCreatePairingCode(student.id);
-      redirect(res, "/pairing");
+      redirect(res, "/onboard/start");
       return;
     }
 
@@ -380,6 +448,10 @@ const server = createServer(async (req, res) => {
       const student = await store.upsertStudentFromAuth(auth);
       if (!hasPairableLinkedIn(auth, student)) {
         sendLinkedInRequired(res, auth);
+        return;
+      }
+      if (student.status === "channel_confirmed") {
+        redirect(res, "/onboard/success");
         return;
       }
       // Cookie used by /onboard/qr + /onboard/mobile + /onboard/status to look
@@ -905,6 +977,34 @@ const server = createServer(async (req, res) => {
       const confirmation = inbound.code
         ? await store.confirmPairingCode({ ...inbound, provider: "mac-bridge" })
         : await store.recordInboundMessage(inbound);
+
+      if (!confirmation.error && confirmation.eventType === "unmatched_inbound" && !confirmation.duplicate) {
+        const reply = createUnknownSenderText(config, inbound.text);
+        try {
+          const sent = await macBridgeProvider.sendSms(inbound.channelAddress, reply);
+          await store.writeMessagingEvent({
+            provider: "mac-bridge",
+            providerEventId: `${inbound.providerEventId}:unknown-reply`,
+            studentId: null,
+            direction: "outbound",
+            channelType: inbound.channelType,
+            channelAddress: inbound.channelAddress,
+            eventType: "unknown_sender_registration_reply",
+            deliveryStatus: sent?.status || "sent",
+            metadata: {
+              source: "unknown_sender",
+              providerMessageId: sent?.providerMessageId || sent?.metadata?.providerMessageId || null,
+            },
+          });
+        } catch (sendErr) {
+          console.error(JSON.stringify({
+            level: "error",
+            event: "unknown_sender_reply_failed",
+            source: "mac-bridge",
+            error: sendErr?.message ?? String(sendErr),
+          }));
+        }
+      }
 
       if (confirmation.student && confirmation.welcomeNeeded) {
         const welcome = await macBridgeProvider.sendSms(
@@ -1526,10 +1626,11 @@ async function requireAuth(req, res) {
 }
 
 function hasPairableLinkedIn(auth, student = null) {
-  return Boolean(String(student?.linkedinProfileUrl || auth?.linkedinProfileUrl || "").trim());
+  return hasLinkedInProfileUrl(student?.linkedinProfileUrl || auth?.linkedinProfileUrl || "");
 }
 
 function sendLinkedInRequired(res, auth) {
+  const canCaptureUrl = Boolean(auth?.clerkUserId && auth.userType !== "startup");
   sendHtml(
     res,
     403,
@@ -1537,10 +1638,30 @@ function sendLinkedInRequired(res, auth) {
       title: "LinkedIn Required",
       config,
       auth,
-      body: renderLinkedInRequired({ signInUrl: getSignInUrl(config) }),
+      body: canCaptureUrl
+        ? renderLinkedInUrlCapture({ value: auth.linkedinProfileUrl || "" })
+        : renderLinkedInRequired({ signInUrl: getSignInUrl(config) }),
       embedClerk: false,
     }),
   );
+}
+
+function createUnknownSenderText(config, inboundText = "") {
+  const registrationUrl = new URL("/waitlist", config.appUrl || "https://app.internjobs.ai").toString();
+  const text = String(inboundText || "").toLowerCase();
+  if (/\b(stop|unsubscribe|remove me|do not text)\b/.test(text)) {
+    return "got it - no more from this thread unless you register again.";
+  }
+  if (/\b(who is this|what is this|wrong number)\b/.test(text)) {
+    return `this is InternJobs.ai. students join with LinkedIn, then we text when matching is ready. if that was meant for you: ${registrationUrl}`;
+  }
+  if (/\b(register|sign up|signup|apply|internship|job|waitlist|link)\b/.test(text)) {
+    return `right - start here: ${registrationUrl}. connect LinkedIn first, then this number is the thread we use.`;
+  }
+  if (/^(hi|hey|hello|yo)\b/.test(text.trim())) {
+    return `hey - this is InternJobs.ai. if you're joining the student waitlist, start here: ${registrationUrl}`;
+  }
+  return `hey - this is InternJobs.ai. register with LinkedIn first so this number can recognize you: ${registrationUrl}`;
 }
 
 async function ensureLinkedInProfileForFirstContact(studentId) {

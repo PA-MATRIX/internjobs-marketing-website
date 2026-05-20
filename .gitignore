@@ -8,3 +8,10 @@ dist
 
 apps/mac-bridge/.env
 apps/mac-bridge/node_modules
+
+.DS_Store
+.claude/
+.playwright-mcp/
+.planning/.cache/
+.planning/SCOPE_CACHE.md
+.planning/scope-cache.json

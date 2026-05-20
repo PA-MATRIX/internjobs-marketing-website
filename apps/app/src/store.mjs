@@ -17,10 +17,24 @@ export function hasLinkedInProfileUrl(value) {
   return Boolean(canonicalLinkedInProfileUrl(value));
 }
 
-function canonicalLinkedInProfileUrl(value) {
+export function canonicalLinkedInProfileUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  return raw.replace(/\/+$/, "");
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let parsed;
+  try {
+    parsed = new URL(withScheme);
+  } catch (_) {
+    return "";
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "linkedin.com") return "";
+
+  const path = parsed.pathname.replace(/\/+$/, "");
+  if (!/^\/in\/[^/]+$/i.test(path)) return "";
+
+  return `https://www.linkedin.com${path}`;
 }
 
 function hasDifferentConfirmedPhone(student, channelAddress) {
@@ -107,6 +121,56 @@ class MemoryStore {
     return this.students.get(clerkUserId) || null;
   }
 
+  async updateStudentLinkedInProfileUrl(studentId, linkedinProfileUrl, source = "manual_linkedin_url") {
+    const canonicalUrl = canonicalLinkedInProfileUrl(linkedinProfileUrl);
+    if (!canonicalUrl) throw new Error("invalid_linkedin_profile_url");
+    const student = [...this.students.values()].find((item) => item.id === studentId);
+    if (!student) throw new Error("student_not_found");
+
+    const previousLinkedInUrl = canonicalLinkedInProfileUrl(student.linkedinProfileUrl);
+    const linkedinChanged = Boolean(previousLinkedInUrl && previousLinkedInUrl !== canonicalUrl);
+    const shouldExpirePairings = previousLinkedInUrl !== canonicalUrl;
+    const now = new Date().toISOString();
+
+    student.linkedinProfileUrl = canonicalUrl;
+    student.status =
+      linkedinChanged || !previousLinkedInUrl || !student.status || student.status === "started"
+        ? "linkedin_connected"
+        : student.status;
+    student.updatedAt = now;
+    if (linkedinChanged) {
+      student.channelType = "";
+      student.channelAddress = "";
+      student.channelConfirmedAt = "";
+    }
+    if (shouldExpirePairings) {
+      for (const pairing of this.pairingCodes.values()) {
+        if (pairing.studentId === student.id && pairing.status === "active") pairing.status = "expired";
+      }
+    }
+
+    const auth = {
+      provider: "linkedin",
+      clerkUserId: student.clerkUserId,
+      name: student.name,
+      linkedinProfileUrl: canonicalUrl,
+      imageUrl: "",
+      raw: { source },
+      source,
+    };
+    await this.storeProfileSnapshot(student.id, auth);
+    await this.queueProfileEnrichment(student.id, auth);
+    await this.writeConsent(student.id, "linkedin_profile_url", true, source);
+    if (linkedinChanged) {
+      await this.writeAuditEvent(student.id, "linkedin_profile_url_changed_phone_unbound", "system", {
+        previousLinkedInUrl,
+        nextLinkedInUrl: canonicalUrl,
+      });
+    }
+    await this.writeAuditEvent(student.id, "linkedin_profile_url_saved", "student", { source });
+    return student;
+  }
+
   async createOrRefreshPairingCode(studentId) {
     const student = [...this.students.values()].find((item) => item.id === studentId);
     if (!hasLinkedInProfileUrl(student?.linkedinProfileUrl)) {
@@ -191,15 +255,16 @@ class MemoryStore {
   }
 
   async recordInboundMessage({ providerEventId, channelType, channelAddress, text, metadata }) {
-    if (this.messagingEvents.has(providerEventId)) {
+    const provider = metadata?.provider || "photon";
+    if (this.messagingEvents.has(`${provider}:${providerEventId}`) || this.messagingEvents.has(providerEventId)) {
       return { duplicate: true, student: null, welcomeNeeded: false };
     }
-    this.messagingEvents.add(providerEventId);
+    this.messagingEvents.add(`${provider}:${providerEventId}`);
 
     const normalizedAddress = normalizeAddress(channelAddress);
     const student = [...this.students.values()].find((item) => normalizeAddress(item.channelAddress) === normalizedAddress && item.channelConfirmedAt) || null;
     await this.writeMessagingEvent({
-      provider: "photon",
+      provider,
       providerEventId,
       studentId: student?.id || null,
       direction: "inbound",
@@ -583,6 +648,89 @@ class PostgresStore {
     return result.rows[0] ? mapStudent(result.rows[0]) : null;
   }
 
+  async updateStudentLinkedInProfileUrl(studentId, linkedinProfileUrl, source = "manual_linkedin_url") {
+    const canonicalUrl = canonicalLinkedInProfileUrl(linkedinProfileUrl);
+    if (!canonicalUrl) throw new Error("invalid_linkedin_profile_url");
+
+    const existingResult = await this.pool.query("select * from students where id = $1", [studentId]);
+    const existing = existingResult.rows[0];
+    if (!existing) throw new Error("student_not_found");
+
+    const previousLinkedInUrl = canonicalLinkedInProfileUrl(existing.linkedin_profile_url);
+    const linkedinChanged = Boolean(previousLinkedInUrl && previousLinkedInUrl !== canonicalUrl);
+    const shouldExpirePairings = previousLinkedInUrl !== canonicalUrl;
+
+    const client = await this.pool.connect();
+    let updated;
+    try {
+      await client.query("begin");
+      const result = await client.query(
+        `update students
+            set linkedin_profile_url = $2,
+                status = case
+                  when $3 then 'linkedin_connected'
+                  when coalesce(status, '') in ('', 'started') then 'linkedin_connected'
+                  else status
+                end,
+                channel_type = case when $3 then null else channel_type end,
+                channel_address = case when $3 then null else channel_address end,
+                channel_confirmed_at = case when $3 then null else channel_confirmed_at end,
+                updated_at = now()
+          where id = $1
+          returning *`,
+        [studentId, canonicalUrl, linkedinChanged],
+      );
+      updated = mapStudent(result.rows[0]);
+
+      if (shouldExpirePairings) {
+        await client.query(
+          "update channel_pairing_codes set status = 'expired' where student_id = $1 and status = 'active'",
+          [studentId],
+        );
+        await client.query(
+          `update pairing_sessions
+              set expires_at = least(expires_at, now())
+            where student_id = $1 and claimed_at is null and expires_at > now()`,
+          [studentId],
+        );
+      }
+
+      await client.query(
+        `insert into waitlist_status (student_id, status, source)
+         values ($1, 'linkedin_connected', $2)
+         on conflict (student_id) do update set status = excluded.status, source = excluded.source, updated_at = now()`,
+        [studentId, source],
+      );
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const auth = {
+      provider: "linkedin",
+      clerkUserId: updated.clerkUserId,
+      name: updated.name,
+      linkedinProfileUrl: canonicalUrl,
+      imageUrl: "",
+      raw: { source },
+      source,
+    };
+    await this.storeProfileSnapshot(studentId, auth);
+    await this.queueProfileEnrichment(studentId, auth);
+    await this.writeConsent(studentId, "linkedin_profile_url", true, source);
+    if (linkedinChanged) {
+      await this.writeAuditEvent(studentId, "linkedin_profile_url_changed_phone_unbound", "system", {
+        previousLinkedInUrl,
+        nextLinkedInUrl: canonicalUrl,
+      });
+    }
+    await this.writeAuditEvent(studentId, "linkedin_profile_url_saved", "student", { source });
+    return updated;
+  }
+
   async createOrRefreshPairingCode(studentId) {
     await this.assertStudentPairingEligible(studentId);
     const active = await this.pool.query(
@@ -713,7 +861,8 @@ class PostgresStore {
   }
 
   async recordInboundMessage({ providerEventId, channelType, channelAddress, text, metadata }) {
-    const duplicate = await this.pool.query("select id from messaging_events where provider = 'photon' and provider_event_id = $1", [providerEventId]);
+    const provider = metadata?.provider || "photon";
+    const duplicate = await this.pool.query("select id from messaging_events where provider = $1 and provider_event_id = $2", [provider, providerEventId]);
     if (duplicate.rows[0]) return { duplicate: true, student: null, welcomeNeeded: false };
 
     const studentResult = await this.pool.query(
@@ -728,7 +877,7 @@ class PostgresStore {
     const eventType = student ? "student_reply" : "unmatched_inbound";
 
     await this.writeMessagingEvent({
-      provider: "photon",
+      provider,
       providerEventId,
       studentId: student?.id || null,
       direction: "inbound",

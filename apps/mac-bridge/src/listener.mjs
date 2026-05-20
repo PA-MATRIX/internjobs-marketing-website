@@ -7,7 +7,7 @@
 // requires no changes.
 //
 // Native UX hooks (all best-effort, never block):
-//   1. Inbound  → fireAndForget: react("👀") + markRead + sendTyping(on)
+//   1. Inbound  → fireAndForget: markRead + selective tapback + sendTyping(on)
 //   2. Outbound → sendTyping(off) + send(text)
 //
 // Typing-on is held until /v1/send is called (or 45s safety timeout), so the
@@ -27,6 +27,7 @@ const pendingTyping = new Map(); // chatGuid -> { timeoutId, startedAt }
 // Keyed by the normalized address (phone or Apple ID). Process-local; a
 // restart drops the cache and inbound traffic repopulates it.
 const threadCache = new Map();
+const reactedMessages = new Set();
 // threadCache entry shape:
 //   { chatGuid, address, lastMessageGuid, lastInboundAt }
 
@@ -155,6 +156,7 @@ async function handleInbound(message, { client, config, log }) {
   const chatGuid = message.chats?.[0]?.guid ? String(message.chats[0].guid) : "";
   const phone = extractPhone(address) || extractPhone(chatGuid);
   const cacheKey = phone || address || chatGuid;
+  const isFirstSeenThread = cacheKey ? !threadCache.has(cacheKey) : false;
 
   if (cacheKey) {
     threadCache.set(cacheKey, {
@@ -165,21 +167,27 @@ async function handleInbound(message, { client, config, log }) {
     });
   }
 
-  // Native UX hooks — fire all three in parallel. None of these are allowed
+  // Native UX hooks — fire both in parallel. None of these are allowed
   // to throw out of this handler.
   if (chatGuid) {
-    // 1) Tapback ack: react with 👀 so the user gets instant feedback.
-    if (messageGuid) {
-      client.sendReaction(chatGuid, messageGuid, "love").catch(() => {});
-      // NOTE: BlueBubbles' reaction enum uses string names: love, like,
-      // dislike, laugh, emphasize, question. "love" (heart) is the closest
-      // analog to 👀; there's no eye-emoji tapback in iMessage. If we want
-      // a literal eye emoji we'd need to send it as text. Using "love"
-      // here gives the strongest "I see you" signal in the standard set.
-    }
-
-    // 2) Read receipt.
+    // 1) Read receipt.
     client.markRead(chatGuid).catch(() => {});
+
+    // 2) Selective tapback. Heart the START-code onboarding text so the
+    // first pairing action feels native, then keep later reactions sparse.
+    const reaction = selectTapbackForInbound(text, { isFirstSeenThread });
+    const reactionKey = `${chatGuid}:${messageGuid}:${reaction || ""}`;
+    if (reaction && messageGuid && !reactedMessages.has(reactionKey)) {
+      reactedMessages.add(reactionKey);
+      client.sendReaction(chatGuid, messageGuid, reaction).catch((err) => {
+        log("warn", "tapback_failed", {
+          chatGuid,
+          messageGuid,
+          reaction,
+          error: err?.message || String(err),
+        });
+      });
+    }
 
     // 3) Typing indicator — held open until /v1/send is called.
     client.sendTyping(chatGuid, true).catch(() => {});
@@ -227,4 +235,14 @@ function extractPhone(s) {
   if (!s) return null;
   const m = String(s).match(PHONE_RE);
   return m ? m[1] : null;
+}
+
+function selectTapbackForInbound(text, { isFirstSeenThread = false } = {}) {
+  const body = String(text || "").trim();
+  const lower = body.toLowerCase();
+  if (/\bSTART-[A-Z0-9]{6,8}\b/i.test(body)) return "love";
+  if (isFirstSeenThread && /^(hi|hey|hello)\b/i.test(body) && body.length <= 40) return "like";
+  if (/\b(thanks|thank you|got it|sounds good|perfect|awesome|cool)\b/i.test(lower)) return "like";
+  if (/\b(lol|haha|lmao)\b/i.test(lower)) return "laugh";
+  return null;
 }

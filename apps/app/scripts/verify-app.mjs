@@ -43,57 +43,49 @@ try {
   assert(blockedPairingHtml.includes("Connect LinkedIn before pairing your phone"), "pairing should explain LinkedIn is required");
   assert(!/\b[A-F0-9]{8}\b/.test(blockedPairingHtml), "pairing must not create a QR code without LinkedIn");
 
+  const noLinkedInHeaders = {
+    "x-clerk-user-id": "dev_no_linkedin_student",
+    "x-student-name": "No Link Student",
+    "x-student-email": "nolink@student.edu",
+  };
+  const blockedStart = await fetch(`${baseUrl}/onboard/start`, { headers: noLinkedInHeaders });
+  const blockedStartHtml = await blockedStart.text();
+  assert(blockedStart.status === 403, "onboard/start should reject student sessions without a LinkedIn URL");
+  assert(blockedStartHtml.includes("Add your public LinkedIn URL"), "missing LinkedIn URL should show the capture form");
+  assert(!/START-[A-Z0-9]+/.test(blockedStartHtml), "onboard/start must not create START QR codes without LinkedIn");
+  const invalidLinkedIn = await fetch(`${baseUrl}/linkedin/profile-url`, {
+    method: "POST",
+    headers: { ...noLinkedInHeaders, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ linkedinProfileUrl: "https://linkedin.com/company/internjobs" }),
+  });
+  assert(invalidLinkedIn.status === 400, "LinkedIn capture should reject non-profile URLs");
+  const capturedLinkedIn = await fetch(`${baseUrl}/linkedin/profile-url`, {
+    method: "POST",
+    headers: { ...noLinkedInHeaders, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ linkedinProfileUrl: "linkedin.com/in/no-link-student" }),
+    redirect: "manual",
+  });
+  assert(capturedLinkedIn.status === 302 && capturedLinkedIn.headers.get("location") === "/onboard/start", "LinkedIn capture should save valid public profile URLs");
+
   const signIn = await fetch(`${baseUrl}/dev/sign-in`, { redirect: "manual" });
   const cookie = signIn.headers.get("set-cookie");
   assert(signIn.status === 302 && cookie, "dev sign-in did not set session cookie");
-  assert(signIn.headers.get("location") === "/pairing", "dev sign-in should route directly to pairing");
+  assert(signIn.headers.get("location") === "/onboard/start", "dev sign-in should route directly to START-code onboarding");
 
   const authHeaders = { cookie };
   const onboarding = await fetch(`${baseUrl}/onboarding`, { headers: authHeaders });
   assert(onboarding.ok, `onboarding returned ${onboarding.status}`);
   assert((await onboarding.text()).includes("Now connect the channel"), "onboarding screen missing channel prompt");
 
-  const pairing = await fetch(`${baseUrl}/pairing`, { headers: authHeaders });
-  const pairingHtml = await pairing.text();
-  const code = pairingHtml.match(/\b[A-F0-9]{8}\b/)?.[0];
-  assert(pairing.ok && code, "pairing screen did not render a code");
-  assert(pairingHtml.includes(`Hey internjobs.ai! My verification code is ${code}. What&#039;s next?`), "pairing screen did not render the expected SMS copy");
+  const pairing = await fetch(`${baseUrl}/pairing`, { headers: authHeaders, redirect: "manual" });
+  assert(pairing.status === 302 && pairing.headers.get("location") === "/onboard/start", "pairing should hand off to START-code onboarding");
 
   const invalidWebhook = await fetch(`${baseUrl}/webhooks/photon`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: code, from: "+15555550123" }),
+    body: JSON.stringify({ text: "START-DEVCODE", from: "+15555550123" }),
   });
   assert(invalidWebhook.status === 401, "invalid webhook auth should be rejected");
-
-  const webhookPayload = JSON.stringify({ id: "verify-event-1", text: `Hey internjobs.ai! My verification code is ${code}. What's next?`, from: "+15555550123", channel: "sms" });
-  const validWebhook = await fetch(`${baseUrl}/webhooks/photon`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-internjobs-webhook-secret": "verify-webhook-secret" },
-    body: webhookPayload,
-  });
-  assert(validWebhook.ok, `valid webhook returned ${validWebhook.status}`);
-
-  const duplicateWebhook = await fetch(`${baseUrl}/webhooks/photon`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-internjobs-webhook-secret": "verify-webhook-secret" },
-    body: webhookPayload,
-  });
-  assert(duplicateWebhook.ok, `duplicate webhook returned ${duplicateWebhook.status}`);
-  const duplicateBody = await duplicateWebhook.json();
-  assert(duplicateBody.duplicate === true, "duplicate webhook was not idempotent");
-
-  const replyWebhook = await fetch(`${baseUrl}/webhooks/photon`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-internjobs-webhook-secret": "verify-webhook-secret" },
-    body: JSON.stringify({ id: "verify-event-2", text: "Sounds good, what should I do next?", from: "+1 (555) 555-0123", channel: "sms" }),
-  });
-  assert(replyWebhook.ok, `reply webhook returned ${replyWebhook.status}`);
-  const replyBody = await replyWebhook.json();
-  assert(replyBody.eventType === "student_reply", "reply webhook should attach to the verified student by phone number");
-
-  const confirmed = await fetch(`${baseUrl}/pairing`, { headers: authHeaders });
-  assert(confirmed.ok && (await confirmed.text()).includes("Messages connected"), "pairing page should show connected state after verification");
 
   const profile = await fetch(`${baseUrl}/profile`, {
     method: "POST",
@@ -117,6 +109,7 @@ try {
   const qrHtml = await qr.text();
   assert(qrHtml.includes("Scan it"), "onboard/qr should render the QR landing");
   assert(/START-[A-Z0-9]+/.test(qrHtml), "onboard/qr should embed a pairing code");
+  assert(!qrHtml.includes("My verification code is"), "onboard/qr must not render the legacy verification-code SMS copy");
 
   const status = await fetch(`${baseUrl}/onboard/status`, { headers: { cookie: `${cookie}; ${pairCookie}` } });
   const statusBody = await status.json();

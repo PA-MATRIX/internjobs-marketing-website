@@ -1,8 +1,8 @@
 # InternJobs.ai — Session Handoff (for Codex continuation)
 
 **Date:** 2026-05-20
-**Paused at:** Debugging the Chat-tab OIDC iframe bug (see §3.1 — root cause identified, fix not yet applied)
-**Branch:** `main` — all work committed locally, **NOT pushed** to origin (181+ commits ahead)
+**Paused at:** Student onboarding/SMS cleanup completed; Chat-tab OIDC iframe bug remains next blocker (see §3.1).
+**Branch:** `main` — local work ready to commit/push after verification.
 
 ---
 
@@ -87,17 +87,20 @@ Agent features (AgentPanel, MCPPanel, summarize/draft/translate, 11 MCP tools) d
 
 ### 3.6 ✅ Student QR identity invariant fixed
 
-Latest patch: QR / START-code creation now requires a stored LinkedIn profile URL. Phone claims are immutable for that LinkedIn identity: if a student already has a confirmed phone, a different inbound phone is rejected and audited instead of replacing `students.channel_address`. If the LinkedIn URL changes for the same Clerk user, the student is reset to `linkedin_connected`, confirmed channel fields are cleared, and active pairing codes are expired so the new LinkedIn identity can pair cleanly.
+Latest patch: QR / START-code creation now requires a valid public LinkedIn profile URL (`linkedin.com/in/...`). If Clerk LinkedIn OAuth authenticates the student but does not provide the public URL, `/auth/callback?intent=student` routes to `/linkedin/profile-url`; the QR is not created until that URL is saved. Phone claims are immutable for that LinkedIn identity: if a student already has a confirmed phone, a different inbound phone is rejected and audited instead of replacing `students.channel_address`. If the LinkedIn URL changes for the same Clerk user, the student is reset to `linkedin_connected`, confirmed channel fields are cleared, and active pairing codes are expired so the new LinkedIn identity can pair cleanly.
 
 Follow-up patch: first-contact prompts now always carry `first_name`, `full_name`, and the stored LinkedIn URL. The agent is required to include the first name in the first sentence when available. It only references school/current role/skills when structured `linkedin_profiles` enrichment has actually returned those fields; otherwise it uses the URL as identity context and does not invent profile details.
 
 Enrichment follow-up: `/onboard/start` and the START-code webhook now call Bright Data using the stored LinkedIn URL (`datasets/v3/scrape`, profile dataset `gd_l1viktl72bvl7bjuj0`). No email lookup is part of the student enrichment flow. The START-code first-contact path waits for this enrichment before writing the inbound row and triggering the workflow, so the first SMS has the best available LinkedIn context.
+
+SMS/iMessage cleanup: the legacy `renderPairing` view and its "My verification code is..." copy were removed. Unknown senders now get a short intent-aware registration reply instead of falling into the student workflow. BlueBubbles tapbacks are selective: the START-code onboarding text gets a heart, obvious acknowledgements can get a light tapback, and normal messages do not get blanket reactions. The prompt voice was tightened from the provided iMessage PDF: short human acknowledgement, one next step, no fake certainty, no sales-page waitlist copy.
 
 Deployment note: `BRIGHTDATA_API_TOKEN` is set in Infisical and Fly. `/healthz` reports `configured.brightdata`.
 
 Verified with:
 - `npm run build` in `apps/app`
 - `npm run test:auth` in `apps/app`
+- `npm run verify` in `apps/app`
 
 ---
 

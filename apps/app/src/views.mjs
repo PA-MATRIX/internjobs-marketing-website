@@ -31,7 +31,7 @@ export function renderLayout({ title, body, config, auth, bgEffect, embedClerk }
       <a class="brand" href="/waitlist"><span class="logo">∞</span><strong>InternJobs.ai</strong></a>
       ${auth ? `<nav>
         <a href="/onboarding">Onboarding</a>
-        <a href="/pairing">Pairing</a>
+        <a href="/onboard/start">Pairing</a>
         <a href="/profile">Profile</a>
       </nav>` : ""}
     </header>
@@ -64,8 +64,8 @@ export function renderLayout({ title, body, config, auth, bgEffect, embedClerk }
           const el = document.getElementById("clerk-signin");
           if (el) {
             window.Clerk.mountSignIn(el, {
-              afterSignInUrl: "/onboarding",
-              afterSignUpUrl: "/onboarding",
+              afterSignInUrl: "/auth/callback?intent=student",
+              afterSignUpUrl: "/auth/callback?intent=student",
               appearance: {
                 elements: {
                   rootBox: { width: "auto", display: "flex", justifyContent: "center" },
@@ -192,7 +192,7 @@ export function renderOnboarding(student) {
         <p class="eyebrow">You're in</p>
         <h1>Now connect the channel you actually check.</h1>
         <p class="lede">InternJobs.ai has your waitlist profile started. Next, pair your phone or messaging channel so the first text can reach you.</p>
-        <a class="button light" href="/pairing">Connect messages</a>
+        <a class="button light" href="/onboard/start">Connect messages</a>
       </div>
       <div class="panel">
         <p class="eyebrow">Profile started</p>
@@ -220,29 +220,24 @@ export function renderLinkedInRequired({ signInUrl = "/waitlist" } = {}) {
     </section>`;
 }
 
-export async function renderPairing({ student, pairing, config }) {
-  const number = config.onboarding?.agentNumber || "+10000000000";
-  const body = `Hey internjobs.ai! My verification code is ${pairing.code}. What's next?`;
-  const smsUri = `sms:${encodeURIComponent(number)}?&body=${encodeURIComponent(body)}`;
-  const qrDataUrl = await QRCode.toDataURL(smsUri, { margin: 1, width: 220, color: { dark: "#111111", light: "#ffffff" } });
-
+export function renderLinkedInUrlCapture({ value = "", error = "" } = {}) {
+  const safeValue = escapeHtml(value);
+  const errorBlock = error
+    ? `<div class="ops-banner ops-banner-error">${escapeHtml(error)}</div>`
+    : "";
   return `
-    <section class="pair-grid">
-      <div class="panel">
-        <p class="eyebrow">Step 2</p>
-        <h1>Scan it. Send the text.</h1>
-        <p class="lede">Scan this with your phone. It opens a message to InternJobs.ai with your unique code already filled in.</p>
-        <div class="qr-wrap"><img src="${qrDataUrl}" alt="QR code for pairing InternJobs.ai messages" /></div>
-      </div>
-      <div class="panel dark">
-        <p class="eyebrow">Pairing code</p>
-        <div class="pair-code">${escapeHtml(pairing.code)}</div>
-        <p class="lede">Your phone will text <strong>${escapeHtml(number || "the InternJobs.ai number once configured")}</strong>.</p>
-        <div class="message-preview">${escapeHtml(body)}</div>
-        <p class="fine">Expires ${new Date(pairing.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
-        <form method="post" action="/pairing/regenerate"><button class="button light" type="submit">Regenerate code</button></form>
-        <p class="fine">Current channel status: ${escapeHtml(student.status)}</p>
-      </div>
+    <section class="panel narrow">
+      <p class="eyebrow">LinkedIn profile</p>
+      <h1>Add your public LinkedIn URL.</h1>
+      <p class="lede">LinkedIn sign-in is connected. Paste your public profile URL so the QR code can stay tied to the right person.</p>
+      ${errorBlock}
+      <form class="form" method="post" action="/linkedin/profile-url">
+        <label>LinkedIn URL
+          <input name="linkedinProfileUrl" type="url" required inputmode="url" autocomplete="url" value="${safeValue}" placeholder="https://www.linkedin.com/in/your-name" />
+        </label>
+        <button class="button primary" type="submit">Continue to QR</button>
+      </form>
+      <p class="fine">Use the public profile URL from LinkedIn. We won't create a QR code until this is saved.</p>
     </section>`;
 }
 
@@ -281,7 +276,7 @@ export function renderSavedProfile() {
       <p class="eyebrow">Saved</p>
       <h1>Profile context updated.</h1>
       <p class="lede">InternJobs.ai will use this to make internship texts feel more relevant and less random.</p>
-      <a class="button light" href="/pairing">Continue to pairing</a>
+      <a class="button light" href="/onboard/start">Continue to pairing</a>
     </section>`;
 }
 

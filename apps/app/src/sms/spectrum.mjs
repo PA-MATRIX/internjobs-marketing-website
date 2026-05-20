@@ -186,8 +186,8 @@ async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
           //    is exposed in iMessage's actions{}. AdvancedIMessage's
           //    chats.markRead(chatGuid) marks every unread in the chat as read.
           //    Best-effort; never block the reply.
-          // 2. React with 👀 as a tapback ack (extra visual signal even if
-          //    markRead silently fails on hobby/free tier).
+          // 2. Use a tapback only when it fits the text. Blanket reactions
+          //    make the agent feel automated.
           // 3. Wrap the workflow in space.responding() so iMessage shows the
           //    "..." typing bubble while the LLM generates.
           // 4. Floor the indicator visible time at ~1.5s so it actually renders
@@ -206,10 +206,13 @@ async function runSpectrumWaitlistListener({ config, store, smsProvider }) {
               }));
             }
           });
-          try {
-            await message.react("👀");
-          } catch (_ackErr) {
-            // ack is best-effort; never block the reply on it
+          const reaction = selectTapbackEmoji(inbound.text);
+          if (reaction) {
+            try {
+              await message.react(reaction);
+            } catch (_ackErr) {
+              // ack is best-effort; never block the reply on it
+            }
           }
           await space.responding(async () => {
             const minTyping = new Promise((r) => setTimeout(r, 1500));
@@ -310,6 +313,15 @@ function extractPairingCode(text) {
   const modern = String(text || "").match(/\b[A-F0-9]{8}\b/i)?.[0];
   if (modern) return modern.toUpperCase();
   return String(text || "").match(/\bIJ-[A-Z0-9]{6}\b/i)?.[0]?.toUpperCase() || "";
+}
+
+function selectTapbackEmoji(text) {
+  const body = String(text || "").trim();
+  const lower = body.toLowerCase();
+  if (/\bSTART-[A-Z0-9]{6,8}\b/i.test(body)) return "❤️";
+  if (/\b(thanks|thank you|got it|sounds good|perfect|awesome|cool)\b/i.test(lower)) return "👍";
+  if (/\b(lol|haha|lmao)\b/i.test(lower)) return "😂";
+  return "";
 }
 
 function normalizeChannel(value) {

@@ -30,6 +30,7 @@
 // scale and lets the claim path do a single index lookup.
 
 import { randomInt } from "node:crypto";
+import { hasLinkedInProfileUrl } from "../store.mjs";
 
 // Visually distinct alphabet — drops I, L, O, 0, 1.
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -238,10 +239,6 @@ async function assertStudentPairingEligible(pool, studentId) {
   if (!hasLinkedInProfileUrl(row.linkedin_profile_url)) {
     throw new Error("linkedin_profile_required_for_pairing");
   }
-}
-
-function hasLinkedInProfileUrl(value) {
-  return Boolean(String(value || "").trim());
 }
 
 function hasDifferentConfirmedPhone(student, phone) {

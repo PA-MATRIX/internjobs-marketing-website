@@ -5,8 +5,9 @@
 //   1. Load inbound_messages row by messageId.
 //   2. Identify student_id (already on the row, written by writeInboundMessage).
 //   3. Load student profile context (existing store.getProfileContext).
-//   4. Find or create conversations row keyed by (student_id, startup_id, role_id).
-//      The startup/role is determined by the match step (see #5).
+//   4. Find or create conversations row keyed by (student_id, startup_id, role_id)
+//      when a role exists. START-code waitlist confirmations can send without
+//      a conversation because there may be no active role yet.
 //   5. Match step:
 //        - USE_VECTOR_MATCH='true' + student has an embedding row →
 //            cosine-similarity search against role_embeddings, pick top
@@ -14,14 +15,17 @@
 //        - else → keyword heuristic: tokenize profile context (interests,
 //            projects, notes) and role title+description+requirements,
 //            score by overlap, pick top active role.
-//        - no active roles → write audit_event 'no_roles_to_match', exit.
-//          No conversation, no draft, mark inbound processed.
+//        - no active roles on a START-code first-contact turn → send a
+//          waitlist confirmation with LinkedIn context, no conversation.
+//        - no active roles on a normal reply → write audit_event
+//          'no_roles_to_match', exit. No conversation, no draft, mark inbound
+//          processed.
 //   6. Load last 20 thread messages (lastMessages: 20 per PITFALLS #19).
 //      v1.2: this is a no-op stub because we don't yet wire @mastra/memory's
 //      Memory primitive — once Phase 05 needs richer prompts we can plumb it.
 //      The contract surface (conversation row created, draft row written)
 //      is unchanged.
-//   7. Compose prompt: system + profile + history + matched role + new body.
+//   7. Compose prompt: system + profile + history + role/waitlist context + new body.
 //      The system prompt includes baseline safety guardrails (no legal/
 //      financial promises, no PII about other parties, polite refusal of
 //      illegal asks). v1.3 will add Lakera Guard pre-LLM screening.
@@ -170,10 +174,25 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
     );
   }
 
-  // 5. Match — done before conversation creation because conversations are
-  //    keyed by (student_id, startup_id, role_id). No roles → no convo.
+  // 5. Match — done before conversation creation because role conversations
+  //    are keyed by (student_id, startup_id, role_id). A START-code pairing
+  //    first-contact is allowed to send as a waitlist confirmation even when
+  //    no active role exists yet.
   const matchResult = await pickRole(pool, studentId, profile, inbound.body);
   if (!matchResult) {
+    if (isPairingFirstContactInbound(inbound)) {
+      return sendWaitlistFirstContact({
+        pool,
+        llm,
+        inbound,
+        studentId,
+        profile,
+        profileBlob,
+        smsProvider,
+        config,
+        sender,
+      });
+    }
     await writeAudit(pool, studentId, "no_roles_to_match", "system", {
       inboundId: inbound.id,
       matchAttempted: process.env.USE_VECTOR_MATCH === "true" ? "vector_or_keyword" : "keyword",
@@ -198,11 +217,11 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
 
   // 6b. v1.2 Phase 09 — first-contact detection. Zero prior sent drafts on
   //     this conversation = the agent hasn't replied yet, so this turn is
-  //     the FIRST contact. We route the prompt through composeFirstContactPrompt
-  //     which prepends first-message instructions and embeds the structured
-  //     LinkedIn block from linkedin_profiles when available. If enrichment
-  //     has not finished yet, the prompt still carries the stored LinkedIn
-  //     URL and explicitly tells the model not to invent details.
+  //     the FIRST contact. We route the prompt through composeFirstContactPrompt,
+  //     which now frames the turn as waitlist confirmation first and role
+  //     pitching later. It embeds the structured LinkedIn block when available.
+  //     If enrichment has not finished yet, the prompt still carries the stored
+  //     LinkedIn URL and explicitly tells the model not to invent details.
   const priorOutbound = await countPriorOutbound(pool, conversation.id);
   const isFirstContact = priorOutbound === 0;
   const linkedinBlock = composeLinkedInBlock(profile.linkedin);
@@ -407,6 +426,150 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   }
 
   return { draftId, conversationId: conversation.id, matchSource, sent };
+}
+
+async function sendWaitlistFirstContact({
+  pool,
+  llm,
+  inbound,
+  studentId,
+  profile,
+  profileBlob,
+  smsProvider,
+  config,
+  sender,
+}) {
+  const linkedinBlock = composeLinkedInBlock(profile.linkedin);
+  const prompt = composeFirstContactPrompt({
+    profileBlob,
+    linkedinBlock,
+    role: null,
+    inboundBody: inbound.body,
+  });
+  const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
+  const recipientType = "student";
+  const channel = "sms";
+  const channelAddress = inbound.channel_address || "";
+  const agentMetadata = buildDraftAgentMetadata({
+    recipientType,
+    conversationId: null,
+    matchSource: "waitlist",
+    model: generated.model,
+    prompt,
+    roleId: null,
+    startupId: null,
+  });
+  agentMetadata.first_contact = true;
+  agentMetadata.waitlist_first_contact = true;
+  agentMetadata.linkedin_present = Boolean(profile.linkedin);
+
+  const { rows } = await pool.query(
+    `insert into drafts
+       (conversation_id, inbound_message_id, recipient_type, channel,
+        channel_address, body, status, agent_metadata)
+     values (null, $1, $2, $3, $4, $5, 'sending', $6)
+     returning id`,
+    [inbound.id, recipientType, channel, channelAddress, generated.body, agentMetadata],
+  );
+  const draftId = rows[0]?.id || null;
+
+  await writeAudit(pool, studentId, "student_waitlist_first_contact_drafted", "system", {
+    inboundId: inbound.id,
+    draftId,
+    matchSource: "waitlist",
+  });
+
+  let sent = false;
+  try {
+    let providerMessageId = null;
+    if (typeof sender === "function") {
+      providerMessageId = await sender(generated.body, {
+        draftId,
+        channel,
+        channelAddress,
+      });
+    } else {
+      providerMessageId = await routeAndSend(
+        {
+          id: draftId,
+          channel,
+          channel_address: channelAddress,
+          body: generated.body,
+          agent_metadata: agentMetadata,
+        },
+        { smsProvider, config: config || {} },
+      );
+    }
+    await pool.query(
+      `update drafts
+          set status = 'sent',
+              sent_at = now(),
+              provider_message_id = $2,
+              updated_at = now()
+        where id = $1`,
+      [draftId, providerMessageId],
+    );
+    sent = true;
+    await writeAudit(pool, studentId, "student_waitlist_first_contact_sent", "agent", {
+      inboundId: inbound.id,
+      draftId,
+      providerMessageId: providerMessageId || null,
+      channel,
+    });
+  } catch (sendErr) {
+    const errMsg = sendErr?.message || String(sendErr);
+    await pool.query(
+      `update drafts
+          set status = 'failed',
+              updated_at = now(),
+              agent_metadata = coalesce(agent_metadata, '{}'::jsonb)
+                                || jsonb_build_object('send_error', $2::text)
+        where id = $1`,
+      [draftId, errMsg.slice(0, 500)],
+    );
+    await writeAudit(pool, studentId, "auto_send_failed", "agent", {
+      draftId,
+      conversationId: null,
+      channel,
+      error: errMsg.slice(0, 500),
+    });
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "student_waitlist_first_contact_send_failed",
+        draftId,
+        error: errMsg,
+      }),
+    );
+  }
+
+  await markProcessed(pool, inbound.id);
+  if (inbound.body) {
+    recordTurnFacts({
+      studentId,
+      inboundBody: inbound.body,
+      agentReply: generated.body,
+      sourceMessageId: inbound.id,
+      model: DEFAULT_MODEL,
+    }).catch((err) => {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "graph_record_turn_failed",
+          studentId,
+          messageId: inbound.id,
+          error: err?.message ?? String(err),
+        }),
+      );
+    });
+  }
+
+  return { draftId, conversationId: null, matchSource: "waitlist", sent };
+}
+
+function isPairingFirstContactInbound(inbound) {
+  const metadata = inbound?.metadata && typeof inbound.metadata === "object" ? inbound.metadata : {};
+  return metadata.firstContact === true || Boolean(metadata.pairingCode);
 }
 
 // ─── Post-reply fact extraction (MEMORY-01) ─────────────────────────────────
@@ -727,9 +890,9 @@ async function countPriorOutbound(pool, conversationId) {
   return rows[0]?.n || 0;
 }
 
-// Compose the first-contact prompt. Called by composePrompt's first-turn
-// branch. Returns a string slotted into the user-role message of the LLM
-// call (the system message stays AGENT_SYSTEM_PROMPT — voice + safety).
+// Compose the first-contact prompt. Called by the first-turn branch after
+// START-code pairing. Returns a string slotted into the user-role message of
+// the LLM call (the system message stays AGENT_SYSTEM_PROMPT — voice + safety).
 //
 // Exported so unit tests + future startup-side workflows can reuse the
 // shape without duplicating the structure.
@@ -737,14 +900,19 @@ export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, in
   const hasLinkedInDetails = hasDetailedLinkedInBlock(linkedinBlock);
   const parts = [
     "--- First contact ---",
-    "This is the FIRST iMessage from a new student. They just paired their phone via the QR/sms deep-link onboarding flow.",
+    "This is the FIRST outbound text after a new student joined the InternJobs.ai waitlist with LinkedIn and paired their phone via the START-code QR/deep-link flow.",
+    "Goal: confirm they are on the waitlist, confirm their LinkedIn is connected for matching, and ask for one useful missing context item.",
     "The first sentence must include first_name if first_name is present in the student profile.",
     hasLinkedInDetails
-      ? "Open warmly and reference something SPECIFIC from their LinkedIn (school, a past role, a skill)."
+      ? "You may reference ONE real LinkedIn detail (school, past role, current role, or skill) as the kind of signal InternJobs.ai will use for matching."
       : "LinkedIn enrichment has not returned structured details yet. Do NOT invent a school, employer, role, or skill from the URL alone.",
     hasLinkedInDetails
-      ? "Do NOT ask what they're studying or where they work — you already know. Do NOT ask for their resume."
-      : "Use the stored LinkedIn URL only as identity context. Ask one concrete next question tied to the matched role, not a generic profile question.",
+      ? "Do NOT ask what they're studying or where they work if that detail is already present. Do NOT ask for their resume."
+      : "Use the stored LinkedIn URL only as identity context. Ask what important context is missing from their LinkedIn.",
+    "Do NOT pitch a specific internship role, claim a live match, or imply a startup is waiting in this first waitlist confirmation.",
+    role
+      ? "The role block below is internal ranking context only for later matching. Do not mention it in this first waitlist confirmation."
+      : "No active role is required for this message. This is a waitlist confirmation, not a match notification.",
     "",
   ];
   if (linkedinBlock) {
@@ -754,17 +922,23 @@ export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, in
     "--- Student profile (self-reported, may be empty on first contact) ---",
     profileBlob || "(no profile context yet)",
     "",
-    "--- Matched role ---",
-    `Title: ${role.title || ""}`,
-    `Description: ${role.description || ""}`,
-    `Requirements: ${role.requirements || ""}`,
-    "",
+  );
+  if (role) {
+    parts.push(
+      "--- Internal role ranking context (do not pitch in first waitlist message) ---",
+      `Title: ${role.title || ""}`,
+      `Description: ${role.description || ""}`,
+      `Requirements: ${role.requirements || ""}`,
+      "",
+    );
+  }
+  parts.push(
     "--- New inbound from student ---",
     inboundBody || "(empty)",
     "",
     hasLinkedInDetails
-      ? "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available and name a school, role, or skill from their LinkedIn. Warm openers like \"fair.\", \"ok.\", \"ah, got it.\" are fine — but do not use banned chatbot tells (\"sure!\", \"absolutely!\", \"great question!\", etc.). Output only the SMS body."
-      : "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available. Do not claim LinkedIn details you do not have yet. Output only the SMS body.",
+      ? "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available and may mention one real LinkedIn detail. Keep it as a waitlist confirmation and ask for one missing-context detail. Output only the SMS body."
+      : "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available. Say their LinkedIn is connected for matching, but do not claim details you do not have yet. Ask what important context is missing from it. Output only the SMS body.",
   );
   return parts.join("\n");
 }
@@ -898,14 +1072,15 @@ async function upsertConversation(pool, { studentId, startupId, roleId }) {
 // is what the candidate experiences directly.
 //
 // Style rules in one line: lowercase except proper nouns, short bursts,
-// hyphen-break " - " for adjacent clauses, no emojis, direct, push back when
-// the candidate is wrong, first-person, never call self an AI/bot/assistant.
+// hyphen-break " - " for adjacent clauses, sparse emotion only when earned,
+// direct, push back when the candidate is wrong, first-person, never call self
+// an AI/bot/assistant.
 export const AGENT_VOICE = [
   "VOICE & STYLE:",
   "- All lowercase except proper nouns (people, companies, products, schools). Never start a sentence with a capital unless it's a proper noun.",
   "- Match length to depth. A casual one-liner gets a one-liner. A technical or layered question gets a properly structured answer — break into mental sections (\"ok, here's how i'd think about it:\" or \"layer 1: ... layer 2: ...\") when that helps. The 320-char SMS cap is enforced separately and only applies to SMS.",
   "- Break adjacent clauses with \" - \" (space-hyphen-space) instead of em-dashes or periods.",
-  "- No emojis. No exclamation points except sparingly for genuine emphasis (\"crush the interview\").",
+  "- Emojis are rare. Use one only when it feels like a normal iMessage acknowledgement, never as decoration. No exclamation points except sparingly for genuine emphasis (\"crush the interview\").",
   "- Direct, confident. Push back politely when the candidate misremembers or contradicts you (\"right - I never said you'd get an email from me\").",
   "- First person (\"I\"). You have a personality and memory. NEVER refer to yourself as an AI, model, assistant, bot, chatbot, or any synonym.",
   "- Use the candidate's first name sparingly (max once per turn).",
@@ -919,6 +1094,21 @@ export const AGENT_VOICE = [
   "- When the user has clearly invested effort or asked a sharp question, name it specifically before continuing. \"you walked through X\" or \"you nailed Y\" — concrete, not generic.",
 ].join("\n");
 
+export const HUMAN_TEXTING_RULES = [
+  "HUMAN TEXTING:",
+  "- Read the user's last message for intent before replying. Intent beats template.",
+  "- Reply like a person in an active text thread: acknowledge the actual thing they said, then move one step forward.",
+  "- The best replies often start with a small human beat: \"fair.\", \"ah, got it.\", \"right.\", \"ok -\". Use it only when it matches the message.",
+  "- Use fragments when natural. One clean sentence is often better than a complete paragraph.",
+  "- Don't over-explain the product unless they ask what it is. If they ask a simple operational question, answer that question first.",
+  "- Don't mirror every detail back. Pick the one detail that matters and respond to that.",
+  "- iMessage reactions are channel behavior, not copy. Do not write \"liked\" or \"loved\" in the text. If a reaction happened, still send a useful next message when needed.",
+  "- If a student only acknowledges you (\"thanks\", \"got it\", \"sounds good\"), a short acknowledgement can be enough. Don't force a question.",
+  "- If the context is waitlist onboarding, do not sound like a sales page. Sound like someone confirming the setup worked.",
+  "- Ask only one question at a time. Make it answerable in a text message.",
+  "- Use the registration/link only when the person is unknown, not when they are already a known student thread.",
+].join("\n");
+
 // 3-5 of the strongest exemplars from the competitor reference, formatted as
 // User / Agent pairs. These steer the model toward the desired register
 // more reliably than rules alone — especially the pushback exemplar (the
@@ -929,8 +1119,8 @@ export const AGENT_VOICE_EXEMPLARS = [
   "User: \"You confirmed in one chat so that's ok\"",
   "Agent: \"ha, caught me. fair. doesn't change the rule going forward but yeah, I named it.\"",
   "",
-  "User: \"Hi are you able to send email to me\"",
-  "Agent: \"yeah, I've got your email on file. what do you want me to send over?\"",
+  "User: \"what happens after I join\"",
+  "Agent: \"maya, you're on the waitlist. i've got your LinkedIn connected for matching - what's one thing there that undersells you?\"",
   "",
   "User: \"details about the role\"",
   "Agent: \"straight answer: I can't fire off emails from this thread. I work over text. what I can do right now is drop the full brief in here - role, team, why it's open, comp, process. want me to lay it out?\"",
@@ -978,9 +1168,11 @@ export const AGENT_SAFETY_GUARDRAILS = [
 // runLLM and any future call site (e.g. a future startup-email-drafting
 // workflow) share the same prompt frame.
 export const AGENT_SYSTEM_PROMPT = [
-  "You're a recruiting agent at InternJobs.ai. You text students about specific internship roles you have for them. You have a strong, distinct voice.",
+  "You're a recruiting agent at InternJobs.ai. You text students about waitlist onboarding, LinkedIn profile context, and specific internship roles when a real match is ready. You have a strong, distinct voice.",
   "",
   AGENT_VOICE,
+  "",
+  HUMAN_TEXTING_RULES,
   "",
   AGENT_VOICE_EXEMPLARS,
   "",

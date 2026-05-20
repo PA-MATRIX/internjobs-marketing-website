@@ -249,7 +249,9 @@ export function applyHandshakeOrContinue(res, auth) {
 export function getSignInUrl(config) {
   if (config.clerk.signInUrl) {
     const url = new URL(config.clerk.signInUrl, config.appUrl);
-    url.searchParams.set("redirect_url", `${config.appUrl}/auth/callback`);
+    const callback = new URL("/auth/callback", config.appUrl);
+    callback.searchParams.set("intent", "student");
+    url.searchParams.set("redirect_url", callback.toString());
     return url.toString();
   }
 
@@ -362,7 +364,9 @@ export const defaultClerkClient = {
 export function getStartupSignInUrl(config) {
   if (config.clerk.signInUrl) {
     const url = new URL(config.clerk.signInUrl, config.appUrl);
-    url.searchParams.set("redirect_url", `${config.appUrl}/auth/callback`);
+    const callback = new URL("/auth/callback", config.appUrl);
+    callback.searchParams.set("intent", "startup");
+    url.searchParams.set("redirect_url", callback.toString());
     url.searchParams.set("after_sign_in_url", `${config.appUrl}/startup/onboarding`);
     return url.toString();
   }
@@ -377,7 +381,7 @@ function normalizeClaims(claims, source) {
     name: claims.name || [claims.given_name, claims.family_name].filter(Boolean).join(" ") || "",
     imageUrl: claims.picture || claims.image_url || "",
     linkedinProfileUrl: claims.linkedinProfileUrl || claims.linkedin_profile_url || claims.profile || "",
-    provider: claims.provider || "linkedin",
+    provider: claims.provider || "",
     userType: claims.publicMetadata?.userType || claims.public_metadata?.userType || claims.userType || "",
     source,
     raw: redactClaims(claims),
@@ -391,4 +395,3 @@ function redactClaims(claims) {
   delete clone.azp;
   return clone;
 }
-
