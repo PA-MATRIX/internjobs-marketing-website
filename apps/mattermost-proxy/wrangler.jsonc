@@ -1,0 +1,25 @@
+// v1.3.1 patch: Mattermost embed proxy.
+// Forwards chat.internjobs.ai/* → internjobs-mattermost.fly.dev/* and
+// rewrites x-frame-options + CSP frame-ancestors so the Mattermost UI
+// can be iframed from workspace.internjobs.ai.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "internjobs-mattermost-proxy",
+	"main": "workers/index.ts",
+	"compatibility_date": "2026-05-19",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"MATTERMOST_ORIGIN": "https://internjobs-mattermost.fly.dev",
+		"ALLOWED_PARENT": "https://workspace.internjobs.ai"
+	},
+	"routes": [
+		{
+			"pattern": "chat.internjobs.ai",
+			"custom_domain": true
+		}
+	]
+}

@@ -54,11 +54,16 @@
 		// from Infisical at /internjobs-ai/parrot/*) — never pinned here.
 		"DOMAINS": "internjobs.ai",
 		"EMAIL_ADDRESSES": [],
-		// Wave 2: public URL of the self-hosted Mattermost instance
-		// (apps/parrot-mattermost). The Fly-managed default is fine for
-		// v1.2; flip to https://mattermost.internjobs.ai when/if we add
-		// the Cloudflare CNAME + Fly cert.
-		"MATTERMOST_URL": "https://internjobs-mattermost.fly.dev",
+		// v1.3.1: point at the chat.internjobs.ai CSP-rewriting proxy
+		// (apps/mattermost-proxy/) instead of the fly.dev URL directly.
+		// Why: Mattermost ships `x-frame-options: SAMEORIGIN` +
+		// `CSP frame-ancestors 'self'` hardcoded in v11.6.2 — iframe
+		// embedding from workspace.internjobs.ai was previously blocked.
+		// The proxy strips X-Frame-Options + rewrites CSP to include
+		// workspace.internjobs.ai. Also: chat.internjobs.ai shares root
+		// domain with workspace.internjobs.ai so session cookies are
+		// SAME-SITE and aren't blocked by third-party cookie policies.
+		"MATTERMOST_URL": "https://chat.internjobs.ai",
 		// v1.2 Phase 12 Wave 1: Workers AI model for the Dashboard
 		// Mothership Agent (todo extraction). Routed through Cloudflare
 		// AI Gateway in workers/lib/ai.ts so per-employee daily caps +

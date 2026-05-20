@@ -1,0 +1,13 @@
+{
+	"name": "internjobs-mattermost-proxy",
+	"version": "0.1.0",
+	"private": true,
+	"description": "CSP-rewriting CF Worker that proxies chat.internjobs.ai → Mattermost on Fly, allowing iframe embed from workspace.internjobs.ai.",
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"tail": "wrangler tail"
+	},
+	"devDependencies": {
+		"wrangler": "^4.92.0"
+	}
+}
