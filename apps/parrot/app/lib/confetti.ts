@@ -80,7 +80,12 @@ export async function fireConfetti(event: ConfettiEvent): Promise<void> {
 	if (typeof window === "undefined") return; // SSR no-op
 	try {
 		const mod = await import("canvas-confetti");
-		const confetti = (mod.default ?? mod) as typeof import("canvas-confetti").default;
+		type ConfettiFn = (options?: Partial<Options>) => void;
+		const confetti = (
+			("default" in mod
+				? (mod as unknown as { default?: ConfettiFn }).default
+				: undefined) ?? (mod as unknown as ConfettiFn)
+		) as ConfettiFn;
 		const opts = event === "birthday" ? BIRTHDAY_OPTS : CELEBRATION_OPTS;
 		// Three quick bursts for the celebration pattern. For birthday, one big
 		// burst is enough.

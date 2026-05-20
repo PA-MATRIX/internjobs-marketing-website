@@ -1,8 +1,8 @@
 # InternJobs.ai — Session Handoff (for Codex continuation)
 
 **Date:** 2026-05-20
-**Paused at:** Student onboarding/SMS cleanup completed; Chat-tab OIDC iframe bug remains next blocker (see §3.1).
-**Branch:** `main` — local work ready to commit/push after verification.
+**Paused at:** Workspace Chat + Email converted back to Parrot-native surfaces and deployed; authenticated browser UAT still needs a fresh Clerk session/OTP.
+**Branch:** `main` — local work ready to commit/push after final verification.
 
 ---
 
@@ -19,7 +19,7 @@
 - Lifted agentic-inbox agent features into Parrot — AgentPanel, MCPPanel, EmailPanel, ai.ts, agent-tools.ts, agent routes
 - `chat.internjobs.ai` CSP-rewriting proxy — embeds Mattermost in an iframe
 - Mattermost white-labeled — SiteName "Parrot", custom brand text, hidden edition badge/logo/footer via proxy CSS injection
-- Seamless Clerk SSO for Chat — auto-trigger OIDC (⚠️ **BROKEN — see §3.1**)
+- Workspace Chat + Email are now Parrot-native again — visible `/chat` calls `/api/chat/*`; visible `/inbox` calls `/api/inbox/*`; external app-frame component removed.
 
 ---
 
@@ -28,7 +28,7 @@
 | Surface | URL | Notes |
 |---------|-----|-------|
 | Student app | `app.internjobs.ai` | Fly `internjobs-ai-student-app`. `/healthz` 200. |
-| Parrot Workspace | `workspace.internjobs.ai` | CF Worker `internjobs-parrot`. Latest version `656375a2`. Clerk phone-OTP auth. |
+| Parrot Workspace | `workspace.internjobs.ai` | CF Worker `internjobs-parrot`. Latest version `b28ffdcf-b20b-4f51-aa99-2f0e10c9bbe6`. Clerk phone-OTP auth. |
 | Graph proxy | `internjobs-graph-api.fly.dev` | Fly `internjobs-graph-api` (NEW in v1.3). Fronts FalkorDB. `/health` 200. |
 | FalkorDB | `internjobs-graph.internal:6379` | Fly `internjobs-graph`. Internal-only. |
 | Mattermost | `internjobs-mattermost.fly.dev` | Fly `internjobs-mattermost`, machine `6e820d55b13648`. v11.6.2. |
@@ -42,30 +42,23 @@
 
 ## 3. OPEN BUGS / NEXT STEPS
 
-### 3.1 🔴 BLOCKER — Chat tab renders Parrot dashboard inside the iframe (not Mattermost)
+### 3.1 ✅ RESOLVED — Chat/Email are native Parrot surfaces again
 
-**Symptom:** Open `workspace.internjobs.ai` → click Chat. The iframe shows a *nested copy of the Parrot Workspace dashboard* (double sidebar) instead of the Mattermost chat UI.
+The old blocker was caused by trying to run the Mattermost OIDC hop inside a cross-site sub-frame. The visible Workspace tabs no longer do that.
 
-**Root cause (confirmed via browser_evaluate):**
-- iframe `src` attribute = `https://chat.internjobs.ai/oauth/gitlab/login` (correct)
-- iframe's *actual current URL* = `https://workspace.internjobs.ai/dashboard` (WRONG)
+Current behavior:
+- `/chat` renders `ChatPane` inside `WorkspaceShell`; the browser calls Parrot `/api/chat/*`; the Worker uses the Mattermost bot token internally.
+- `/inbox` renders `InboxPane` inside `WorkspaceShell`; the browser calls Parrot `/api/inbox/*` and `/api/inbox/agent/*`; the external Agentic Inbox worker is not mounted.
+- `WorkspaceAppFrame.tsx` was deleted so new workspace tabs do not accidentally reintroduce an external app iframe.
 
-So the OIDC flow runs: iframe → `chat.internjobs.ai/oauth/gitlab/login` → Mattermost 302 → `workspace.internjobs.ai/oidc/authorize?...` → and then instead of `/oidc/authorize` issuing an OAuth code and 302-ing back to `chat.internjobs.ai/signup/gitlab/complete`, the iframe ends up at `workspace.internjobs.ai/dashboard`.
-
-**Hypotheses to investigate (in `apps/parrot/workers/routes/oidc.ts`):**
-1. The `/oidc/authorize` handler, when it finds a valid Clerk session, may be falling through to the SPA catch-all (`app.all("*")` in `workers/app.ts`) instead of returning the 302-with-code. Check whether `/oidc/authorize` actually returns a `Response` with the code redirect, or whether it `next()`s and React Router renders `/dashboard`.
-2. The Clerk session cookie may not be *readable* by `/oidc/authorize` when the request originates inside the iframe (third-party-cookie context). If `extractClerkSessionToken` returns null, the handler redirects to `/sign-in` → which (already signed in) bounces to `/dashboard` → and that renders in the iframe.
-3. Possible cookie `SameSite` issue: the iframe is `workspace.internjobs.ai` embedding `chat.internjobs.ai` → when the OIDC hop lands back on `workspace.internjobs.ai/oidc/authorize`, the request is a *sub-frame navigation*; `SameSite=Lax` Clerk cookies are NOT sent on cross-site sub-frame navigations. This is the most likely culprit.
-
-**Recommended first move:** Reproduce in a browser with devtools → Network tab → watch the redirect chain from `chat.internjobs.ai/oauth/gitlab/login`. See exactly which hop drops the session. If it's the SameSite cookie issue, options:
-- Have `/oidc/authorize` accept the Clerk session via a mechanism that survives sub-frame context (e.g., the Clerk handshake, or a short-lived token minted by the parent frame and passed via postMessage / URL param)
-- OR open Chat in a way that's not a cross-site iframe sub-frame for the OIDC hop (e.g., the OIDC `/authorize` hop happens top-level via a popup, then the iframe just loads the authenticated Mattermost)
-
-**Files in play:**
-- `apps/parrot/workers/routes/oidc.ts` — the OIDC bridge (`/authorize`, `/token`, `/userinfo`)
-- `apps/parrot/workers/app.ts` — middleware + `app.all("*")` SPA catch-all (lines ~156–288)
-- `apps/parrot/app/routes/chat.tsx` — sets iframe src to `${MATTERMOST_URL}/oauth/gitlab/login`
-- `apps/parrot/app/components/ChatPane.tsx` — renders the iframe (sandbox attrs here)
+Verification:
+- `npm run build` in `apps/parrot` passed.
+- `npm run typecheck` in `apps/parrot` passed.
+- `npm run deploy` deployed Worker version `b28ffdcf-b20b-4f51-aa99-2f0e10c9bbe6`.
+- `https://workspace.internjobs.ai/healthz` returns `ok:true` with Mattermost/AI/graph readiness true.
+- Deployed `chat-*.js` bundle has 0 matches for `oauth/gitlab/login`, `WorkspaceAppFrame`, `chat.internjobs.ai`, or iframe construction.
+- Deployed `inbox-*.js` bundle has 0 matches for `AGENTIC_INBOX`, `agentic-inbox`, `workers.dev`, or `WorkspaceAppFrame`.
+- Browser UAT note: GSD, Chrome, and Safari all landed on `/sign-in?redirect_url=%2Fchat` because no active Parrot Clerk session was available after deploy. Authenticated click-through still needs a fresh OTP session.
 
 ### 3.2 🟡 Phase 20 Lakera — verification tests not run
 
@@ -75,9 +68,9 @@ So the OIDC flow runs: iframe → `chat.internjobs.ai/oauth/gitlab/login` → Ma
 
 Cron `*/5 * * * *` runs but nothing writes `:Todo.valid_to`, so it finds nothing. Needs a `closeTodoFact(thread_id, resolution_text)` helper (~50 LOC) invoked from the Mastra workflow when the agent acknowledges resolution. Tracked in `.planning/ROADMAP.md` v1.3.1 Candidates.
 
-### 3.4 🟡 v1.3.1 agent-lift — deployed but UNTESTED
+### 3.4 🟡 v1.3.1 agent-lift — deployed but still needs authenticated UAT
 
-Agent features (AgentPanel, MCPPanel, summarize/draft/translate, 11 MCP tools) deployed in Parrot version `656375a2` but not exercised in-browser. Test plan in `.planning/milestones/v1.3-pilot-hardening/phases/19-todo-auto-resolution/V1_3_1-AGENT-LIFT-REPORT.md` (steps 1–14).
+Agent features (AgentPanel, MCPPanel, summarize/draft/translate, 11 MCP tools) are deployed in the native Parrot inbox. Test plan in `.planning/milestones/v1.3-pilot-hardening/phases/19-todo-auto-resolution/V1_3_1-AGENT-LIFT-REPORT.md` (steps 1–14). Blocker is only access to an authenticated Parrot browser session, not code/build state.
 
 ### 3.5 🟢 Minor — not blocking
 - Attachment download endpoint (`GET /api/inbox/messages/:id/attachments/:id`) not lifted — metadata renders, download 404s (~15 LOC).
@@ -153,4 +146,8 @@ be38369 feat(18-01): scaffold internjobs-graph-api Fly proxy
 
 ## 6. Immediate next step for Codex
 
-**Fix §3.1 first** — it's the only thing blocking Chat from working at all. Start by reproducing the redirect chain in browser devtools (Network tab, "Preserve log", click Chat) and identifying which hop loses the Clerk session. Strongly suspect `SameSite` cookie behavior on the cross-site sub-frame OIDC hop. Once Chat loads Mattermost, run §3.4 (agent features) and §3.2 (Lakera tests).
+**First next step:** once a Parrot Clerk OTP session is active, do authenticated UAT for `/chat` and `/inbox`:
+- `/chat` should show the Parrot-native channel list/messages/composer and should call `/api/chat/*`, not `chat.internjobs.ai`.
+- `/inbox` should show the Parrot-native folder list/reader/compose/agent UI and should call `/api/inbox/*`, not the Agentic Inbox worker.
+
+Then run §3.4 (agent features), §3.2 (Lakera tests), and §3.3 (auto-clear writer).

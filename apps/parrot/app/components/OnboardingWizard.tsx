@@ -43,10 +43,10 @@ type Step = 1 | 2 | 3;
 type PushStatus = "idle" | "requesting" | "granted" | "denied" | "unavailable";
 
 /**
- * Convert a base64url-encoded VAPID public key to the Uint8Array
- * `applicationServerKey` shape that PushManager.subscribe() expects.
+ * Convert a base64url-encoded VAPID public key to the ArrayBuffer
+ * `applicationServerKey` shape that PushManager.subscribe() accepts.
  */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
 	const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
 	const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
 	const rawData = atob(base64);
@@ -54,7 +54,9 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 	for (let i = 0; i < rawData.length; i += 1) {
 		out[i] = rawData.charCodeAt(i);
 	}
-	return out;
+	const buffer = new ArrayBuffer(out.byteLength);
+	new Uint8Array(buffer).set(out);
+	return buffer;
 }
 
 export function OnboardingWizard({
@@ -141,7 +143,7 @@ export function OnboardingWizard({
 			const registration = await navigator.serviceWorker.ready;
 			const subscription = await registration.pushManager.subscribe({
 				userVisibleOnly: true,
-				applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+				applicationServerKey: urlBase64ToArrayBuffer(vapidPublicKey),
 			});
 			await api.subscribePush(subscription);
 			setPushEnabled(true);

@@ -117,3 +117,35 @@ Email status:
 - Live `/inbox` mounts an iframe with `src=https://internjobs-agentic-inbox.rentalaraj.workers.dev/mailbox/maya%40agent.internjobs.ai/emails/inbox`.
 - Cloudflare Access redirects that iframe to `https://gpprotect.cloudflareaccess.com/...`; Chrome blocks the Access response in a sub-frame with `net::ERR_BLOCKED_BY_RESPONSE`.
 - Therefore full Agentic Inbox cannot be embedded from the raw `workers.dev` origin. The next safe architecture is a Parrot-owned email proxy/custom domain or a proper shared package/import of the Agentic Inbox app under the Parrot session boundary.
+
+## Native Parrot Finalization
+
+User direction changed again after seeing the full-app-frame approach: Chat
+and Email should both be native to Parrot, with backing systems hidden behind
+the Workspace session boundary.
+
+Patch:
+
+- `/chat` now renders `ChatPane` directly inside `WorkspaceShell`.
+- `/inbox` now renders `InboxPane` directly inside `WorkspaceShell`.
+- `WorkspaceAppFrame.tsx` was removed to prevent accidental reintroduction of
+  full external app frames.
+- Email route restored a native folder secondary nav and threads `?folder=`
+  plus `?message=` into `InboxPane`.
+- `InboxPane` now supports small-screen list/reader transitions and a mobile
+  AgentPanel overlay.
+
+Verification:
+
+- `npm run build` in `apps/parrot` passed.
+- `npm run typecheck` in `apps/parrot` passed.
+- Deployed Parrot Worker version `b28ffdcf-b20b-4f51-aa99-2f0e10c9bbe6`.
+- `https://workspace.internjobs.ai/healthz` returned `ok:true` with
+  Mattermost, AI Gateway, graph, and graph proxy ready.
+- Deployed chat bundle had 0 matches for external-frame/OIDC strings:
+  `oauth/gitlab/login`, `WorkspaceAppFrame`, `chat.internjobs.ai`, iframe
+  construction.
+- Deployed inbox bundle had 0 matches for external Agentic Inbox app strings:
+  `AGENTIC_INBOX`, `agentic-inbox`, `workers.dev`, `WorkspaceAppFrame`.
+- Authenticated browser UAT was not completed because GSD, Chrome, and Safari
+  all reached Parrot sign-in after deploy and no fresh Clerk OTP was available.

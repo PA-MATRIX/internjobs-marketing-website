@@ -10,6 +10,7 @@ PARROT_CLERK_JWKS_URL=https://example.clerk.accounts.dev/.well-known/jwks.json
 # Optional explicit issuer override; if unset we derive it from the JWKS URL.
 PARROT_CLERK_ISSUER=
 
-# Phase 10 Wave 2: public URL of the self-hosted Mattermost (apps/parrot-mattermost)
-# rendered inside the ChatPane iframe. Production default is set in wrangler.jsonc.
+# Phase 10 Wave 2: public URL of the self-hosted Mattermost
+# (apps/parrot-mattermost). Parrot calls this server-side through /api/chat/*.
+# Production default is set in wrangler.jsonc.
 MATTERMOST_URL=https://internjobs-mattermost.fly.dev

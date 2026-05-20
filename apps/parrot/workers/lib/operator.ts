@@ -67,7 +67,7 @@ export async function isOperator(
 	employee: Pick<Employee, "employeeId" | "email" | "publicMetadata">,
 ): Promise<boolean> {
 	const role = roleFromMetadata(employee.publicMetadata);
-	if (OPERATOR_ROLES.has(role)) return true;
+	if (role && OPERATOR_ROLES.has(role)) return true;
 	const allowlist = (env.PARROT_OPERATOR_EMAILS || "")
 		.split(",")
 		.map((e) => e.trim().toLowerCase())
@@ -76,7 +76,7 @@ export async function isOperator(
 	if (allowlist.includes(email)) return true;
 	if (BOOTSTRAP_OPERATOR_EMAILS.has(email)) return true;
 	const clerkRole = await lookupClerkRole(env, employee.employeeId);
-	if (OPERATOR_ROLES.has(clerkRole)) return true;
+	if (clerkRole && OPERATOR_ROLES.has(clerkRole)) return true;
 	return false;
 }
 

@@ -1,8 +1,8 @@
 // v1.2 Phase 13 Wave 2: EmailToChat — moves an email thread into a
 // Mattermost channel seeded with the email body.
 //
-// On success: stashes the channel URL in sessionStorage (so ChatPane
-// can deep-link the iframe) and navigates to /chat.
+// On success: stashes the channel URL for future native deep-link support
+// and navigates to /chat.
 //
 // Skills referenced:
 //   cloudflare/skills: agents-sdk

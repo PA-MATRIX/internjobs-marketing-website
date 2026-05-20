@@ -6,7 +6,7 @@
 // connects the React UI to GET /api/dashboard/todos?view= and renders
 // each row as a <TodoCard>. Clicking an email-source card navigates to
 // /inbox?message={source_id}; clicking a chat-source card navigates to
-// /chat (Mattermost iframe — deep-link is a future enhancement, see
+// /chat. Native post deep-linking is a future enhancement (see
 // 12-RESEARCH.md).
 //
 // v1.3 Phase 19 additions:
@@ -205,10 +205,20 @@ export default function DashboardRoute() {
 	useEffect(() => {
 		let cancelled = false;
 		apiFetch("/api/me")
-			.then((r) => (r.ok ? r.json() : null))
-			.then((data: { profile?: { employeeId?: string } } | null) => {
+			.then((r): Promise<{
+				employee_id?: string;
+				profile?: { employeeId?: string };
+			} | null> =>
+				r.ok
+					? (r.json() as Promise<{
+							employee_id?: string;
+							profile?: { employeeId?: string };
+						}>)
+					: Promise.resolve(null),
+			)
+			.then((data) => {
 				if (cancelled) return;
-				const id = data?.profile?.employeeId ?? null;
+				const id = data?.employee_id ?? data?.profile?.employeeId ?? null;
 				if (id) setEmployeeId(id);
 			})
 			.catch(() => {
@@ -328,8 +338,7 @@ export default function DashboardRoute() {
 			return;
 		}
 		if (todo.source_channel === "chat") {
-			// Mattermost iframe — deep-linking to a specific post is a future
-			// enhancement once the SSO bridge accepts a `?post=` param.
+			// Native post deep-linking is a future enhancement.
 			navigate("/chat");
 			return;
 		}

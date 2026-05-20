@@ -15,8 +15,8 @@
 // invalidated so the new message lands in Sent on next pane switch.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PenSquare, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, PenSquare, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
 import { AgentPanel, type AgentInitialAction } from "./AgentPanel";
 import { ComposePane, type ComposeMode } from "./ComposePane";
@@ -29,8 +29,30 @@ function formatDate(iso: string | null) {
 	return d.toLocaleString();
 }
 
-export function InboxPane() {
-	const [folder] = useState("inbox");
+interface InboxPaneProps {
+	folder?: string;
+	initialMessageId?: string | null;
+}
+
+function folderTitle(folder: string): string {
+	switch (folder) {
+		case "sent":
+			return "Sent";
+		case "draft":
+			return "Drafts";
+		case "archive":
+			return "Archive";
+		case "trash":
+			return "Trash";
+		default:
+			return "Inbox";
+	}
+}
+
+export function InboxPane({
+	folder = "inbox",
+	initialMessageId = null,
+}: InboxPaneProps) {
 	const queryClient = useQueryClient();
 
 	const {
@@ -46,7 +68,13 @@ export function InboxPane() {
 		},
 	});
 
-	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const [selectedId, setSelectedId] = useState<string | null>(
+		initialMessageId,
+	);
+
+	useEffect(() => {
+		setSelectedId(initialMessageId);
+	}, [folder, initialMessageId]);
 
 	// EmailPanel pulls the full message via React Query itself — we still
 	// fetch a copy here so the ComposePane (reply/forward) gets the same
@@ -87,6 +115,17 @@ export function InboxPane() {
 		setAgentOpen(true);
 	}
 
+	function handleDraftSavedToCompose(body: string) {
+		if (!selectedId) return;
+		queryClient.setQueryData(
+			["parrot", "inbox", "message", selectedId],
+			(prev: InboxMessage & { agent_draft_body?: string } | undefined) =>
+				prev ? { ...prev, agent_draft_body: body } : prev,
+		);
+		setAgentOpen(false);
+		openCompose("reply");
+	}
+
 	if (isLoading) {
 		return (
 			<div className="p-6 text-sm text-slate-500">Loading inbox…</div>
@@ -118,33 +157,46 @@ export function InboxPane() {
 	}
 
 	const messages: InboxMessage[] = data?.emails ?? [];
+	const title = folderTitle(folder);
 
 	return (
-		<div className="flex h-full min-h-0">
-			<div className="w-full md:w-80 lg:w-96 border-r border-slate-200 overflow-y-auto bg-white shrink-0">
+		<div className="relative flex h-full min-h-0">
+			<div
+				className={`w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:block md:w-80 lg:w-96 ${
+					selectedId ? "hidden" : "block"
+				}`}
+			>
 				{/* v1.3.1 BACKFILL: Compose button + Agent toggle. */}
 				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between gap-2">
-					<button
-						type="button"
-						onClick={() => openCompose("compose")}
-						className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-					>
-						<PenSquare size={13} />
-						Compose
-					</button>
-					<button
-						type="button"
-						onClick={() => setAgentOpen((v) => !v)}
-						className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
-							agentOpen
-								? "border-indigo-300 bg-indigo-50 text-indigo-700"
-								: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-						}`}
-						title="Toggle Parrot Agent"
-					>
-						<Sparkles size={12} />
-						Agent
-					</button>
+					<div className="min-w-0">
+						<p className="truncate text-sm font-semibold text-slate-900">
+							{title}
+						</p>
+						<p className="text-xs text-slate-400">{messages.length} messages</p>
+					</div>
+					<div className="flex shrink-0 items-center gap-2">
+						<button
+							type="button"
+							onClick={() => openCompose("compose")}
+							className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+						>
+							<PenSquare size={13} />
+							Compose
+						</button>
+						<button
+							type="button"
+							onClick={() => setAgentOpen((v) => !v)}
+							className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
+								agentOpen
+									? "border-indigo-300 bg-indigo-50 text-indigo-700"
+									: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+							}`}
+							title="Toggle Parrot Agent"
+						>
+							<Sparkles size={12} />
+							Agent
+						</button>
+					</div>
 				</div>
 				{messages.length === 0 ? (
 					<div className="p-6 text-sm text-slate-500">
@@ -198,14 +250,35 @@ export function InboxPane() {
 
 			{/* Email viewer pane — uses EmailPanel which itself uses
 			    EmailIframe for sandboxed HTML body rendering. */}
-			<div className="hidden md:flex flex-1 min-w-0 flex-col bg-slate-50">
+			<div
+				className={`min-w-0 flex-1 flex-col bg-slate-50 ${
+					selectedId ? "flex" : "hidden md:flex"
+				}`}
+			>
+				{selectedId && (
+					<div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 md:hidden">
+						<button
+							type="button"
+							onClick={() => setSelectedId(null)}
+							className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+							aria-label="Back to messages"
+						>
+							<ArrowLeft size={17} />
+						</button>
+						<p className="min-w-0 truncate text-sm font-semibold text-slate-900">
+							{title}
+						</p>
+					</div>
+				)}
 				{selectedId ? (
-					<EmailPanel
-						emailId={selectedId}
-						onReply={() => openCompose("reply")}
-						onForward={() => openCompose("forward")}
-						onAgentAction={(action) => openAgent(action)}
-					/>
+					<div className="min-h-0 flex-1">
+						<EmailPanel
+							emailId={selectedId}
+							onReply={() => openCompose("reply")}
+							onForward={() => openCompose("forward")}
+							onAgentAction={(action) => openAgent(action)}
+						/>
+					</div>
 				) : (
 					<div className="flex-1 flex items-center justify-center text-sm text-slate-400">
 						Select a message to read it.
@@ -222,21 +295,27 @@ export function InboxPane() {
 						emailId={selectedId}
 						initialAction={agentInitialAction}
 						onClose={() => setAgentOpen(false)}
-						onDraftSavedToCompose={(body) => {
-							// Open ComposePane in reply mode with the draft body
-							// pre-filled. The compose pane reads the body from
-							// the original-email payload, so we store it on the
-							// selected message via React Query cache.
-							queryClient.setQueryData(
-								["parrot", "inbox", "message", selectedId],
-								(prev: InboxMessage & { agent_draft_body?: string } | undefined) =>
-									prev
-										? { ...prev, agent_draft_body: body }
-										: prev,
-							);
-							openCompose("reply");
-						}}
+						onDraftSavedToCompose={handleDraftSavedToCompose}
 					/>
+				</div>
+			)}
+
+			{agentOpen && selectedId && (
+				<div className="fixed inset-0 z-30 flex bg-slate-900/30 lg:hidden">
+					<button
+						type="button"
+						aria-label="Close Parrot Agent"
+						className="flex-1"
+						onClick={() => setAgentOpen(false)}
+					/>
+					<aside className="flex h-full w-full max-w-md shrink-0 flex-col border-l border-slate-200 bg-white shadow-2xl">
+						<AgentPanel
+							emailId={selectedId}
+							initialAction={agentInitialAction}
+							onClose={() => setAgentOpen(false)}
+							onDraftSavedToCompose={handleDraftSavedToCompose}
+						/>
+					</aside>
 				</div>
 			)}
 
