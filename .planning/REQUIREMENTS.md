@@ -43,7 +43,7 @@ Requirements shipped and verified. These are immutable — they represent what w
 - [x] **DASHBOARD-AGENT**: kimi-k2.6 cross-channel todo extraction via CF AI Gateway with per-employee daily caps + prompt caching — *verified 2026-05-19*
 - [x] **IMESSAGE-BRIDGE**: BlueBubbles on HostMyApple Mac mini + Cloudflare Tunnel — *verified 2026-05-19*
 - [x] **AGENTIC-INBOX**: Maya MCP Worker at agent.internjobs.ai + R2 attachments + CF Access SSO — *verified 2026-05-19*
-- [x] **LINK-ENRICH-QR**: Proxycurl enrichment + Standout-style QR onboarding — *verified 2026-05-19*
+- [x] **LINK-ENRICH-QR**: Bright Data LinkedIn enrichment + Standout-style QR onboarding — *verified 2026-05-19*
 - [x] **DAILY-CO**: Per-employee always-on personal rooms + ephemeral StartMeeting CTA — *verified 2026-05-19*
 - [x] **MATTERMOST-OIDC**: Mattermost OIDC SSO bridge via Parrot `/oidc/*` — *verified 2026-05-19*
 - [x] **ADMIN-INVITE**: Admin invite UX with capability toggles + phone-OTP + warm welcome email — *verified 2026-05-19*

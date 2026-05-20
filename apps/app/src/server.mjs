@@ -34,10 +34,6 @@ import {
   renderFeedbackLog,
   renderLinkedInRequired,
 } from "./views.mjs";
-// v1.2 Phase 09 — LinkedIn enrichment + Standout-style pairing.
-// proxycurl client is loaded lazily inside the /onboard/start handler so
-// boot doesn't depend on PROXYCURL_API_TOKEN being set.
-import { enrichByEmail, enrichByLinkedInUrl } from "./onboarding/proxycurl.mjs";
 import { enrichByBrightDataLinkedInUrl } from "./onboarding/brightdata.mjs";
 import {
   generatePairingCode,
@@ -146,7 +142,6 @@ const server = createServer(async (req, res) => {
             config.cloudflareEmailAccountId && config.cloudflareEmailApiToken,
           ),
           brightdata: Boolean(config.brightdata?.apiToken),
-          proxycurl: Boolean(config.proxycurl?.apiToken),
         },
         // v1.2 Phase 04 (AGENT-01..03): Mastra readiness surface.
         // mastraReady     — Mastra in-process instance constructed.
@@ -367,7 +362,7 @@ const server = createServer(async (req, res) => {
     // Flow:
     //   /auth/callback (Clerk LinkedIn OAuth) → /onboard/start
     //     ↓ server-side
-    //   Proxycurl email→profile enrichment (fire-and-forget) → linkedin_profiles
+    //   LinkedIn URL → Bright Data profile enrichment → linkedin_profiles
     //     ↓
     //   generatePairingCode(student.id) → pairing_sessions row
     //     ↓
@@ -418,11 +413,10 @@ const server = createServer(async (req, res) => {
       }
 
       // LinkedIn enrichment is now part of the onboarding contract. Bright
-      // Data is the preferred URL→profile provider because the QR code is
-      // tied to that exact LinkedIn identity; Proxycurl is fallback.
-      // Fail-soft: if providers cannot return data, QR pairing still
-      // proceeds, and the first-contact prompt uses name + URL without
-      // inventing profile details.
+      // Data is the only URL→profile provider because the QR code is tied to
+      // that exact LinkedIn identity. Fail-soft: if Bright Data cannot
+      // return data, QR pairing still proceeds, and the first-contact prompt
+      // uses name + URL without inventing profile details.
       await ensureLinkedInProfileForFirstContact(student.id);
 
       if (pairingCode) {
@@ -1552,8 +1546,7 @@ function sendLinkedInRequired(res, auth) {
 async function ensureLinkedInProfileForFirstContact(studentId) {
   if (!studentId || !store?.pool) return null;
   const hasBrightData = Boolean(config.brightdata?.apiToken);
-  const hasProxycurl = Boolean(config.proxycurl?.apiToken);
-  if (!hasBrightData && !hasProxycurl) return null;
+  if (!hasBrightData) return null;
   try {
     const existing = typeof store.getLinkedInProfile === "function"
       ? await store.getLinkedInProfile(studentId)
@@ -1561,7 +1554,7 @@ async function ensureLinkedInProfileForFirstContact(studentId) {
     if (hasStructuredLinkedInProfile(existing)) return existing;
 
     const { rows } = await store.pool.query(
-      `select email, linkedin_profile_url
+      `select linkedin_profile_url
          from students
         where id = $1
         limit 1`,
@@ -1575,21 +1568,6 @@ async function ensureLinkedInProfileForFirstContact(studentId) {
       apiToken: config.brightdata?.apiToken,
       datasetId: config.brightdata?.linkedinProfileDatasetId,
     });
-    if (!profile) {
-      enrichmentSource = "proxycurl_linkedin_url";
-      profile = await enrichByLinkedInUrl({
-        linkedinUrl: student.linkedin_profile_url,
-        apiToken: config.proxycurl?.apiToken,
-      });
-    }
-    if (!profile) {
-      enrichmentSource = "proxycurl_email";
-      profile = await enrichByEmail({
-        email: student.email,
-        apiToken: config.proxycurl?.apiToken,
-      });
-    }
-
     if (!profile) return existing;
     return store.linkUserLinkedInProfile(studentId, {
       ...profile,

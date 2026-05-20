@@ -51,7 +51,7 @@ v1.2 expanded from the original 6-phase plan (Two-Sided Agent MVP on Spectrum/Ph
 - **Phase 01–06** (code-complete by 2026-05-16): the originally-scoped startup-identity + Mastra-agent + operator-approval surface for the **student-startup messaging product** at app.internjobs.ai.
 - **2026-05-16 swap commits:** Resend → Cloudflare Email Service for outbound; OpenAI → Workers AI direct REST (proxy Worker torn out same day).
 - **2026-05-17 autonomy pivot:** operator approval gate REMOVED — agent now sends autonomously. Phase 05 reframed as read-only audit log.
-- **2026-05-17–18 SCOPE-EXPAND:** added Phases 07 (Mac-bridge iMessage), 07b (BlueBubbles native UX), 08 (agentic-inbox at agent.internjobs.ai), 09 (Proxycurl LinkedIn + QR onboarding).
+- **2026-05-17–18 SCOPE-EXPAND:** added Phases 07 (Mac-bridge iMessage), 07b (BlueBubbles native UX), 08 (agentic-inbox at agent.internjobs.ai), 09 (Bright Data LinkedIn + QR onboarding).
 - **2026-05-19 Parrot:** Phase 10 (workspace.internjobs.ai for ~50 employees) + Phase 11/12/13 (Daily.co + Dashboard agent + cross-pane polish), with a **same-day Daily.co reversal** (deferred → reinstated within hours per user direction).
 - **2026-05-19 LLM transport pivot:** Parrot moves from Workers AI direct REST → Cloudflare AI Gateway (per-employee daily caps + caching). Student app stays on direct REST (intentional split).
 
@@ -74,7 +74,7 @@ Final state: **143 commits since v1.1, net +64,890 LOC, 15.7% fix-to-feature rat
 | 07 | Self-Hosted iMessage Bridge | scope-add 2026-05-17 | ✓ shipped | — | Mac mini + CF Tunnel, $250→$73/mo |
 | 07b | BlueBubbles + SIP-off | scope-add 2026-05-18 | ✓ shipped | — | Native iMessage UX, 4.1s round-trip |
 | 08 | Agentic Inbox + MCP | scope-add 2026-05-17 | ✓ shipped | — | maya@agent.internjobs.ai live |
-| 09 | LinkedIn Enrichment + QR | scope-add 2026-05-18 | ✓ shipped | — | Proxycurl + Standout-style onboarding |
+| 09 | LinkedIn Enrichment + QR | scope-add 2026-05-18 | ✓ shipped | — | Bright Data + Standout-style onboarding |
 | 10 | Parrot Internal Workspace | scope-add 2026-05-19 | ✓ shipped | — | Two Clerk apps, Mattermost, Vanta UI |
 | 11 | Daily.co Integration | reinstated 2026-05-19 PM | ✓ shipped | ✓ this session | `human_needed` (DAILY_API_KEY) |
 | 12 | Dashboard Mothership Agent | scope-add 2026-05-19 | ✓ shipped | ✓ this session | `human_needed` |

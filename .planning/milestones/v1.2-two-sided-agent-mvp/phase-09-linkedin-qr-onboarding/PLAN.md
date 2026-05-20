@@ -15,7 +15,7 @@ files_modified:
   - apps/app/package.json                                         # +@photon-ai/uri
   - apps/marketing/                                               # CTA + landing copy changes (TBD)
 new_files:
-  - apps/app/src/onboarding/proxycurl.mjs                        # enrichment client
+  - apps/app/src/onboarding/brightdata.mjs                        # enrichment client
 autonomous: false
 verification:
   surface: backend_and_frontend
@@ -23,11 +23,11 @@ verification:
   required_steps:
     - manual_end_to_end_smoke
     - linkedin_oauth_already_configured
-    - proxycurl_api_token_provisioned
+    - brightdata_api_token_provisioned
 must_haves:
   truths:
     - "Student lands on internjobs.ai, clicks Get on the Waitlist → LinkedIn OAuth → redirected to /onboard/qr"
-    - "Server-side: LinkedIn URL extracted from OIDC claim → Proxycurl enrichment → linkedin_profiles row written"
+    - "Server-side: LinkedIn URL extracted from OIDC claim → Bright Data enrichment → linkedin_profiles row written"
     - "Pairing code generated (e.g. START-AB12CD) + stored in pairing_sessions with student_id link"
     - "QR code renders an sms:// URI built via @photon-ai/uri encoding (sms:+14063210019&body=START-AB12CD)"
     - "Student scans QR with iPhone camera → iOS prompts to open Messages.app prefilled with our number + code → student taps send"
@@ -39,15 +39,15 @@ must_haves:
       provides: "linkedin_profiles table — headline, summary, schools, experience, skills (jsonb), enriched_at, enriched_via"
     - path: "apps/app/db/migrations/0008_v1_2_pairing_sessions.sql"
       provides: "pairing_sessions table — code, student_id, expires_at, claimed_at, source (qr|mobile-deeplink|manual)"
-    - path: "apps/app/src/onboarding/proxycurl.mjs"
-      provides: "Proxycurl REST client (or Apollo as fallback) — takes LinkedIn URL → returns structured profile"
+    - path: "apps/app/src/onboarding/brightdata.mjs"
+      provides: "Bright Data REST client (or Apollo as fallback) — takes LinkedIn URL → returns structured profile"
     - path: "apps/app/src/onboarding/pairing.mjs"
       provides: "generatePairingCode, claimPairingCode, validatePairingCode"
     - path: "apps/app/src/views.mjs (additions)"
       provides: "renderOnboardingQR (desktop) + renderOnboardingMobile (sms:// deep-link button)"
   key_links:
     - from: "LinkedIn OAuth callback (Clerk)"
-      to: "Proxycurl enrichment → linkedin_profiles row"
+      to: "Bright Data enrichment → linkedin_profiles row"
       via: "/auth/callback → onboarding/linkedin-enrich.runEnrichment(studentId)"
     - from: "Pairing code in iMessage body"
       to: "Student record"
@@ -74,7 +74,7 @@ End-state: a student lands on internjobs.ai, signs in with LinkedIn, scans a QR,
 @apps/app/src/auth.mjs                                # Clerk OIDC handshake already lives here
 @apps/app/src/workflows/student-inbound.mjs           # where we'll inject LinkedIn context into the system prompt
 External:
-  https://nubela.co/proxycurl/                        # Proxycurl Person Profile API (~$0.04/profile)
+  https://docs.brightdata.com/datasets/scrapers/linkedin/send-first-request/                        # Bright Data Person Profile API (~$0.04/profile)
   https://docs.apollo.io/reference/people-enrichment  # Apollo as cheaper alternative if we already have credits
   https://github.com/photon-hq/uri                    # @photon-ai/uri for sms:// URI building
   https://qr-code-styling.github.io/qr-code-styling/  # QR generation (lightweight, client-side)
@@ -84,7 +84,7 @@ External:
 
 ## Decision: enrichment provider
 
-Proxycurl is the de-facto standard for LinkedIn enrichment (~$0.04/profile, generous free tier for prototyping). Apollo is a real alternative we already have an MCP for. **Recommend Proxycurl** for v1 — cheaper per-profile and purpose-built for LinkedIn. Apollo's strength is outbound sales data; we want profile depth.
+Bright Data is the de-facto standard for LinkedIn enrichment (~$0.04/profile, generous free tier for prototyping). Apollo is a real alternative we already have an MCP for. **Recommend Bright Data** for v1 — cheaper per-profile and purpose-built for LinkedIn. Apollo's strength is outbound sales data; we want profile depth.
 
 Decision deferred until execution; check current per-profile pricing at execution time.
 
@@ -94,16 +94,16 @@ Decision deferred until execution; check current per-profile pricing at executio
 - `0007_v1_2_linkedin_profiles.sql` — table for enriched profile (1:1 with students)
 - `0008_v1_2_pairing_sessions.sql` — short-lived pairing code rows
 
-### Step 2: Proxycurl client + enrichment flow
-- `apps/app/src/onboarding/proxycurl.mjs` — REST client with retry/backoff
-- New env: `PROXYCURL_API_TOKEN` (Infisical)
+### Step 2: Bright Data client + enrichment flow
+- `apps/app/src/onboarding/brightdata.mjs` — REST client with retry/backoff
+- New env: `BRIGHTDATA_API_TOKEN` (Infisical)
 - Fail-soft: if enrichment fails, student still proceeds; profile lookup retries on next agent message
 
 ### Step 3: LinkedIn URL extraction from OIDC claim
 - Clerk's LinkedIn-via-OIDC returns `sub`, `email`, `name`, `picture`. The LinkedIn URL is NOT in standard OIDC claims.
-- Approach A: use the `email` + Proxycurl's email→profile API → returns LinkedIn URL + full profile
+- Approach A: use the `email` + Bright Data's email→profile API → returns LinkedIn URL + full profile
 - Approach B: ask user for LinkedIn URL during onboarding (one extra step)
-- Decision: **A first** (no extra UX friction); fall back to B if Proxycurl can't resolve.
+- Decision: **A first** (no extra UX friction); fall back to B if Bright Data can't resolve.
 
 ## Wave 2 — QR + pairing flow
 
@@ -153,8 +153,8 @@ Decision deferred until execution; check current per-profile pricing at executio
 
 ## Risks
 
-- **Proxycurl rate limits + cost** at scale (~$0.04 × 300 students = $12 one-time during onboarding; bounded)
-- **LinkedIn TOS on enrichment** — Proxycurl operates in a legal gray zone re: LinkedIn scraping. Acceptable for v1.2 launch; revisit if LinkedIn enforces.
+- **Bright Data rate limits + cost** at scale (~$0.04 × 300 students = $12 one-time during onboarding; bounded)
+- **LinkedIn TOS on enrichment** — Bright Data operates in a legal gray zone re: LinkedIn scraping. Acceptable for v1.2 launch; revisit if LinkedIn enforces.
 - **QR-code mobile UX edge cases** — iOS sometimes opens Camera vs Messages; deep-link button is the fallback.
 - **Pairing code collision / abuse** — 6 chars base32 = 1 billion codes, 24h expiry, claim-once. Negligible risk at our scale.
 

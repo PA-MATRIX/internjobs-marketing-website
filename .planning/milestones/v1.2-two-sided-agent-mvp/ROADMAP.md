@@ -31,7 +31,7 @@ Final state: **178 commits since v1.1, net +71,340 LOC, 15.7% fix-to-feature rat
 | 07 | Self-Hosted iMessage Bridge | ✅ shipped | Mac mini + CF Tunnel, $250→$73/mo |
 | 07b | BlueBubbles + SIP-off Mac Bridge | ✅ shipped | Native iMessage UX, 4.1s round-trip |
 | 08 | Agentic Inbox + MCP | ✅ shipped | agent.internjobs.ai live |
-| 09 | LinkedIn Enrichment + QR Onboarding | ✅ shipped | Proxycurl + Standout-style flow |
+| 09 | LinkedIn Enrichment + QR Onboarding | ✅ shipped | Bright Data + Standout-style flow |
 | 10 | Parrot — Internal Employee Workspace | ✅ shipped | workspace.internjobs.ai, two Clerk apps |
 | 11 | Daily.co Integration | ✅ shipped | Meetings pane + ephemeral StartMeeting |
 | 12 | Dashboard Mothership Agent | ✅ shipped | kimi-k2.6 via AI Gateway, live email extraction |

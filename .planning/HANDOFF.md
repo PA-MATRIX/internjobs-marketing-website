@@ -91,9 +91,9 @@ Latest patch: QR / START-code creation now requires a stored LinkedIn profile UR
 
 Follow-up patch: first-contact prompts now always carry `first_name`, `full_name`, and the stored LinkedIn URL. The agent is required to include the first name in the first sentence when available. It only references school/current role/skills when structured `linkedin_profiles` enrichment has actually returned those fields; otherwise it uses the URL as identity context and does not invent profile details.
 
-Enrichment follow-up: `/onboard/start` and the START-code webhook now call Bright Data first using the stored LinkedIn URL (`datasets/v3/scrape`, profile dataset `gd_l1viktl72bvl7bjuj0`), then fall back to Proxycurl URL and Proxycurl reverse-email. The START-code first-contact path waits for this enrichment before writing the inbound row and triggering the workflow, so the first SMS has the best available LinkedIn context.
+Enrichment follow-up: `/onboard/start` and the START-code webhook now call Bright Data using the stored LinkedIn URL (`datasets/v3/scrape`, profile dataset `gd_l1viktl72bvl7bjuj0`). No email lookup is part of the student enrichment flow. The START-code first-contact path waits for this enrichment before writing the inbound row and triggering the workflow, so the first SMS has the best available LinkedIn context.
 
-Deployment note: production Fly secrets did NOT include `BRIGHTDATA_API_TOKEN` when checked. `/healthz` now reports `configured.brightdata` and `configured.proxycurl` so provider readiness is visible after the token is added.
+Deployment note: `BRIGHTDATA_API_TOKEN` is set in Infisical and Fly. `/healthz` reports `configured.brightdata`.
 
 Verified with:
 - `npm run build` in `apps/app`

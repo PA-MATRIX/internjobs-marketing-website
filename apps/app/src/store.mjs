@@ -253,13 +253,13 @@ class MemoryStore {
     if (!auth.linkedinProfileUrl) return null;
     const job = {
       studentId,
-      provider: "sprite_brightdata",
+      provider: "brightdata",
       profileUrl: auth.linkedinProfileUrl,
       status: "pending_provider_setup",
       metadata: { source: auth.source },
       updatedAt: new Date().toISOString(),
     };
-    this.profileEnrichmentJobs.set(`${studentId}:sprite_brightdata`, job);
+    this.profileEnrichmentJobs.set(`${studentId}:brightdata`, job);
     await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: job.provider, status: job.status });
     return job;
   }
@@ -282,7 +282,7 @@ class MemoryStore {
       experiences: profile.experiences || [],
       skills: profile.skills || [],
       enriched_at: new Date().toISOString(),
-      enriched_via: profile.enrichedVia || "proxycurl",
+      enriched_via: profile.enrichedVia || "brightdata_linkedin_url",
       raw: profile.raw || null,
     };
     this.linkedinProfiles.set(studentId, row);
@@ -847,7 +847,7 @@ class PostgresStore {
     if (!auth.linkedinProfileUrl) return null;
     const result = await this.pool.query(
       `insert into profile_enrichment_jobs (student_id, provider, profile_url, status, metadata)
-       values ($1, 'sprite_brightdata', $2, 'pending_provider_setup', $3)
+       values ($1, 'brightdata', $2, 'pending_provider_setup', $3)
        on conflict (student_id, provider) do update set
          profile_url = excluded.profile_url,
          status = excluded.status,
@@ -856,11 +856,11 @@ class PostgresStore {
        returning *`,
       [studentId, auth.linkedinProfileUrl, { source: auth.source }],
     );
-    await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: "sprite_brightdata", status: "pending_provider_setup" });
+    await this.writeAuditEvent(studentId, "profile_enrichment_job_noted", "system", { provider: "brightdata", status: "pending_provider_setup" });
     return result.rows[0];
   }
 
-  // ─── v1.2 Phase 09 — LinkedIn enrichment via Bright Data / Proxycurl ───────
+  // ─── v1.2 Phase 09 — LinkedIn enrichment via Bright Data ───────────────────
   //
   // linkUserLinkedInProfile UPSERTs the linkedin_profiles row (1:1 with
   // students, UNIQUE on student_id). The full provider response is stored
@@ -903,12 +903,12 @@ class PostgresStore {
         JSON.stringify(profile.schools || []),
         JSON.stringify(profile.experiences || []),
         JSON.stringify(profile.skills || []),
-        profile.enrichedVia || "proxycurl",
+        profile.enrichedVia || "brightdata_linkedin_url",
         profile.raw ? JSON.stringify(profile.raw) : null,
       ],
     );
     await this.writeAuditEvent(studentId, "linkedin_profile_enriched", "system", {
-      via: profile.enrichedVia || "proxycurl",
+      via: profile.enrichedVia || "brightdata_linkedin_url",
       hasUrl: Boolean(profile.linkedinUrl),
       schoolCount: (profile.schools || []).length,
       experienceCount: (profile.experiences || []).length,

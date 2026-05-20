@@ -578,10 +578,9 @@ async function loadStudentProfile(pool, studentId) {
   const firstName = deriveFirstName(fullName);
   const linkedinProfileUrl = String(nameRow.student_linkedin_url || "").trim();
 
-  // v1.2 Phase 09: Proxycurl-enriched LinkedIn fields. May be null on a
-  // brand-new student whose /onboard/start enrichment hasn't completed yet
-  // (fire-and-forget) or on enrichment failure. composeProfileBlob handles
-  // null gracefully — the prompt just omits the LinkedIn block.
+  // v1.2 Phase 09: Bright Data-enriched LinkedIn fields. May be null on
+  // enrichment failure. composeProfileBlob handles null gracefully — the
+  // prompt just omits structured LinkedIn fields.
   let linkedin = null;
   try {
     const { rows: liRows } = await pool.query(

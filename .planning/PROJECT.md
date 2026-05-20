@@ -89,7 +89,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - ✓ DASHBOARD-AGENT: kimi-k2.6 cross-channel todo extraction via Cloudflare AI Gateway with per-employee daily caps + prompt caching — v1.2
 - ✓ IMESSAGE-BRIDGE: Self-hosted BlueBubbles on HostMyApple Mac mini + Cloudflare Tunnel (replaces Photon $250→$73/mo) — v1.2
 - ✓ AGENTIC-INBOX: Maya identity mailbox MCP Worker at agent.internjobs.ai with R2 attachments + CF Access SSO — v1.2
-- ✓ LINK-ENRICH-QR: LinkedIn Enrichment (Proxycurl) + Standout-style QR onboarding flow — v1.2
+- ✓ LINK-ENRICH-QR: Bright Data LinkedIn enrichment + Standout-style QR onboarding flow — v1.2
 - ✓ DAILY-CO: Per-employee always-on personal rooms + ephemeral StartMeeting CTA — v1.2
 - ✓ MATTERMOST-OIDC: Mattermost OIDC SSO bridge via Parrot `/oidc/*` endpoints — v1.2
 - ✓ ADMIN-INVITE: Admin invite UX with capability toggles + phone-OTP + warm welcome email (Phase 16) — v1.2

@@ -23,18 +23,16 @@ This matters because all students text the same Spectrum number. The sender phon
 
 InternJobs.ai stores a `profile_enrichment_jobs` row when Clerk/OAuth provides a LinkedIn profile URL.
 
-Legacy profile-enrichment job provider value:
+Profile-enrichment job provider value:
 
 ```text
-sprite_brightdata
+brightdata
 ```
 
 The live onboarding path now attempts enrichment directly before first contact:
 
 1. Bright Data LinkedIn Profiles API by URL (`BRIGHTDATA_API_TOKEN`)
-2. Proxycurl person profile by URL (`PROXYCURL_API_TOKEN`)
-3. Proxycurl reverse-email fallback
 
-All providers write to the same `linkedin_profiles` table. The first SMS prompt can use structured LinkedIn context only when that table has headline/current role/school/skills data; otherwise it uses the student's name and stored LinkedIn URL without inventing details.
+The provider writes to the `linkedin_profiles` table. The first SMS prompt can use structured LinkedIn context only when that table has headline/current role/school/skills data; otherwise it uses the student's name and stored LinkedIn URL without inventing details.
 
 The app must not collect LinkedIn credentials or scrape private LinkedIn surfaces.

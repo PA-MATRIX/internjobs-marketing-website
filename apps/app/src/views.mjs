@@ -288,7 +288,7 @@ export function renderSavedProfile() {
 // ─── v1.2 Phase 09 — Standout-style onboarding (QR + sms deep-link) ─────────
 //
 // renderOnboardingQR is the desktop landing rendered after Clerk LinkedIn
-// OAuth + Proxycurl enrichment. The QR encodes an sms:// URI that, when
+// OAuth + Bright Data enrichment. The QR encodes an sms:// URI that, when
 // scanned by an iPhone camera, prompts the user to open Messages.app
 // prefilled with the agent's number + the pairing code as the body. The
 // student taps send; the Mac bridge picks up the iMessage and POSTs to

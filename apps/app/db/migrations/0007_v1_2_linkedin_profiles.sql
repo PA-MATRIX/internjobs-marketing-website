@@ -1,11 +1,10 @@
 -- migration: 0007_v1_2_linkedin_profiles
 -- description: v1.2 Phase 09 — Standout-style LinkedIn enrichment.
 --
--- One row per student capturing the fields we pull from an enrichment
--- provider (Proxycurl in v1.2, Apollo or PDL as fallbacks; the column
--- `enriched_via` records which one wrote the row). Composite/array fields
--- live in JSONB so we don't have to drag along a forest of side tables for
--- schools/experiences/skills — the agent reads them as opaque arrays.
+-- One row per student capturing the fields we pull from Bright Data by
+-- LinkedIn URL. Composite/array fields live in JSONB so we don't have to
+-- drag along a forest of side tables for schools/experiences/skills — the
+-- agent reads them as opaque arrays.
 --
 -- 1:1 with students. The student_id is UNIQUE so an UPSERT on
 -- (student_id) is the canonical write pattern (see store.linkUserLinkedInProfile).
@@ -17,9 +16,8 @@
 -- the agent prompt asks for a field we haven't normalized yet; v1.3 may
 -- add columns for certifications, languages, publications, etc.
 --
--- enriched_via is a free-form text rather than an enum so we don't have to
--- ship a follow-up migration if we add a new provider seam. Recognized
--- values today: 'proxycurl', 'apollo', 'pdl'.
+-- enriched_via is a free-form text rather than an enum so we can record
+-- provider variants. Recognized value today: 'brightdata_linkedin_url'.
 
 create table if not exists linkedin_profiles (
   id              uuid primary key default gen_random_uuid(),
@@ -34,7 +32,7 @@ create table if not exists linkedin_profiles (
   experiences     jsonb not null default '[]'::jsonb,
   skills          jsonb not null default '[]'::jsonb,
   enriched_at     timestamptz not null default now(),
-  enriched_via    text not null default 'proxycurl',
+  enriched_via    text not null default 'brightdata_linkedin_url',
   raw             jsonb,
   metadata        jsonb not null default '{}'::jsonb
 );

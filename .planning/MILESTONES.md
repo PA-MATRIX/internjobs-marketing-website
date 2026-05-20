@@ -12,7 +12,7 @@
 - **Dashboard Mothership Agent** extracts cross-channel todos from inbound email + Mattermost chat using kimi-k2.6 via Cloudflare AI Gateway with per-employee daily caps + prompt caching (live-verified: $0.002237 per email, 520 tokens output).
 - **Self-hosted iMessage Bridge** (Phase 07/07b) on HostMyApple Mac mini + BlueBubbles + Cloudflare Tunnel — drops Photon cost $250→$73/mo with native iMessage UX.
 - **agentic-inbox MCP Worker** at agent.internjobs.ai serves Maya's identity mailbox with MCP server + R2 attachments + CF Access SSO.
-- **LinkedIn Enrichment + QR Onboarding** with Proxycurl + Standout-style flow.
+- **LinkedIn Enrichment + QR Onboarding** with Bright Data + Standout-style flow.
 - **Daily.co Integration** with per-employee always-on personal rooms + ephemeral StartMeeting CTA.
 - **Mattermost OIDC SSO** bridge via Parrot's `/oidc/*` endpoints.
 - **Admin invite UX** (Phase 16) for Ridhi with capability toggles + phone-OTP + warm welcome email.

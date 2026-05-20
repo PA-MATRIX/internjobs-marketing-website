@@ -252,7 +252,7 @@ Dedup strategy for alarm re-polls confirmed in Phase 13 insertTodos() (line 571â
 **LinkedIn profile capture:**
 - Phase 09 QR onboarding or direct LinkedIn OAuth in Clerk (app.internjobs.ai)
 - Profile stored in `profile_snapshots` table with `{ provider, provider_user_id, display_name, profile_url, photo_url, raw_metadata }`
-- Proxycurl enrichment job created asynchronously (stored as placeholder; provider activation deferred per ROADMAP.md)
+- Bright Data enrichment job created asynchronously (stored as placeholder; provider activation deferred per ROADMAP.md)
 
 **Agent context injection** (apps/app/src/workflows/student-inbound.mjs):
 
@@ -290,7 +290,7 @@ const studentSummary = await getStudentSummary(studentId);
 - `getStudentSummary` calls FalkorDB Cypher API to recall cross-conversation patterns
 - Profile fields (name, linkedinProfileUrl, display_name) are all bound into the prompt
 
-**Risk:** None identified. LinkedIn profile enrichment is optional (gracefully skipped if Proxycurl job is not yet complete); graph memory fails soft if FalkorDB is unavailable.
+**Risk:** None identified. LinkedIn profile enrichment is optional (gracefully skipped if Bright Data job is not yet complete); graph memory fails soft if FalkorDB is unavailable.
 
 ---
 
