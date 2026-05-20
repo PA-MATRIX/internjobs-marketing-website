@@ -1,63 +1,43 @@
-// v1.2 Phase 10 Wave 2: /chat route — embedded Mattermost.
+// v1.3.1: /chat route — embedded chat backend with Clerk-driven auto-SSO.
+//
+// The iframe URL is `/oauth/gitlab/login` (not the chat root) so the
+// embedded chat backend triggers OIDC immediately on load:
+//
+//   1. iframe → chat.internjobs.ai/oauth/gitlab/login
+//   2. backend redirects → workspace.internjobs.ai/oidc/authorize (Parrot's OIDC bridge)
+//   3. /oidc/authorize sees the existing Clerk session cookie
+//   4. issues OIDC authorization code, redirects back to chat backend
+//   5. chat backend exchanges code for token, creates session, lands at /
+//
+// User never sees a login form, never clicks a button. Clerk session
+// at workspace.internjobs.ai single-sign-ons across every sub-capability
+// (email, chat, meetings, phone) — chat just needs this auto-trigger URL
+// because its hosted UI defaults to its own login page when hit at root.
 
-import { Hash, MessageCircle } from "lucide-react";
 import type { Route } from "./+types/chat";
 import { ChatPane } from "~/components/ChatPane";
-import { SecondaryNavItem, WorkspaceShell } from "~/components/WorkspaceShell";
+import { WorkspaceShell } from "~/components/WorkspaceShell";
 
-const DEFAULT_MATTERMOST_URL = "https://internjobs-mattermost.fly.dev";
+const DEFAULT_CHAT_URL = "https://chat.internjobs.ai";
 
 export async function loader({ context }: Route.LoaderArgs) {
 	const env = context.cloudflare?.env as
 		| { MATTERMOST_URL?: string }
 		| undefined;
-	return {
-		mattermostUrl: env?.MATTERMOST_URL ?? DEFAULT_MATTERMOST_URL,
-	};
-}
-
-function ChatSecondaryNav() {
-	return (
-		<nav className="py-3">
-			<p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-				Channels
-			</p>
-			<SecondaryNavItem
-				href="/chat"
-				active
-				label="general"
-				icon={<Hash size={15} />}
-			/>
-			<SecondaryNavItem
-				href="/chat"
-				label="engineering"
-				icon={<Hash size={15} />}
-			/>
-			<SecondaryNavItem
-				href="/chat"
-				label="ops"
-				icon={<Hash size={15} />}
-			/>
-			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-				Direct messages
-			</p>
-			<p className="px-5 py-2 text-xs text-slate-500 leading-relaxed">
-				Mattermost is mounted to the right — its own channel list lives
-				inside the iframe. The list here mirrors it for quick switching
-				once we wire Mattermost's REST API in Wave 4.
-			</p>
-			<div className="px-5 py-2 flex items-center gap-2 text-slate-400 text-xs">
-				<MessageCircle size={13} />
-				Live DM list coming in Wave 4
-			</div>
-		</nav>
-	);
+	const baseUrl = (env?.MATTERMOST_URL ?? DEFAULT_CHAT_URL).replace(/\/$/, "");
+	// Auto-trigger OIDC by landing on /oauth/gitlab/login. The chat
+	// backend uses its GitLab OAuth slot for our generic OIDC issuer
+	// (Parrot Worker's /oidc/* endpoints) — Team Edition doesn't
+	// expose a generic OIDC slot in v11.x, so we use the GitLab one.
+	// User never sees the label.
+	const chatUrl = `${baseUrl}/oauth/gitlab/login`;
+	return { chatUrl };
 }
 
 export default function ChatRoute({ loaderData }: Route.ComponentProps) {
 	return (
-		<WorkspaceShell title="Chat" secondaryNav={<ChatSecondaryNav />}>
-			<ChatPane mattermostUrl={loaderData.mattermostUrl} />
+		<WorkspaceShell title="Chat">
+			<ChatPane mattermostUrl={loaderData.chatUrl} />
 		</WorkspaceShell>
 	);
 }
