@@ -3,8 +3,8 @@
 // Three-pane structure (Inbox / Chat / Meetings) chosen for the
 // employee workspace per PLAN.md Decision D. Each pane is its own
 // child route under "/" so the WorkspaceShell can stay mounted as
-// the user switches panes (avoids tearing down the Mattermost iframe
-// every navigation, once Wave 2 wires it up).
+// the user switches panes. Chat/email/meetings remain Parrot-native
+// surfaces even when their backing engines are separate services.
 
 import { index, type RouteConfig, route } from "@react-router/dev/routes";
 

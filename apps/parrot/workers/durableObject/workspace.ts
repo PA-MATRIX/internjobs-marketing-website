@@ -116,6 +116,10 @@ function applyWorkspaceMigrations(sql: SqlStorage) {
 	}
 }
 
+function normalizeRedirectUri(uri: string): string {
+	return uri.trim().replace(/\/$/, "");
+}
+
 export class WorkspaceDO extends DurableObject<Env> {
 	declare __DURABLE_OBJECT_BRAND: never;
 
@@ -231,7 +235,7 @@ export class WorkspaceDO extends DurableObject<Env> {
 			input.name,
 			input.picture,
 			input.clientId,
-			input.redirectUri,
+			normalizeRedirectUri(input.redirectUri),
 			input.scope,
 			expiresAt,
 		);
@@ -251,9 +255,12 @@ export class WorkspaceDO extends DurableObject<Env> {
 		][0] as unknown as OidcCodeRecord | undefined;
 		if (!row) return null;
 		const now = Math.floor(Date.now() / 1000);
-		if (row.used !== 0 || row.expires_at < now) return null;
+		if (row.used !== 0) return null;
+		if (row.expires_at < now) return null;
 		if (row.client_id !== clientId) return null;
-		if (row.redirect_uri !== redirectUri) return null;
+		if (normalizeRedirectUri(row.redirect_uri) !== normalizeRedirectUri(redirectUri)) {
+			return null;
+		}
 		this.ctx.storage.sql.exec(
 			`UPDATE oidc_codes SET used = 1 WHERE code = ?`,
 			code,

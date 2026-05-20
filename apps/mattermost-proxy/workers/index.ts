@@ -61,10 +61,53 @@ function rewriteCsp(original: string, allowedParent: string): string {
 	return rewritten.join("; ");
 }
 
+function rewritePublicUrl(value: string, upstreamOrigin: string, publicOrigin: string): string {
+	const upstream = new URL(upstreamOrigin);
+	const publicUrl = new URL(publicOrigin);
+	const upstreamHttps = upstream.origin;
+	const upstreamHttp = `http://${upstream.host}`;
+	const upstreamProtocolRelative = `//${upstream.host}`;
+	const publicHttps = publicUrl.origin;
+	const publicProtocolRelative = `//${publicUrl.host}`;
+	return value
+		.replaceAll(upstreamHttps, publicHttps)
+		.replaceAll(upstreamHttp, publicHttps)
+		.replaceAll(upstreamProtocolRelative, publicProtocolRelative)
+		.replaceAll(encodeURIComponent(upstreamHttps), encodeURIComponent(publicHttps))
+		.replaceAll(encodeURIComponent(upstreamHttp), encodeURIComponent(publicHttps));
+}
+
+function corsHeaders(request: Request, env: Env): Headers {
+	const headers = new Headers();
+	const origin = request.headers.get("origin");
+	if (origin === env.ALLOWED_PARENT) {
+		headers.set("access-control-allow-origin", origin);
+		headers.set("access-control-allow-credentials", "true");
+		headers.set("vary", "Origin");
+	}
+	headers.set(
+		"access-control-allow-methods",
+		"GET,POST,PUT,PATCH,DELETE,OPTIONS",
+	);
+	headers.set(
+		"access-control-allow-headers",
+		request.headers.get("access-control-request-headers") ||
+			"authorization,content-type,x-requested-with",
+	);
+	headers.set("access-control-max-age", "86400");
+	return headers;
+}
+
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const incoming = new URL(request.url);
+		const publicOrigin = incoming.origin;
 		const upstreamUrl = new URL(incoming.pathname + incoming.search, env.MATTERMOST_ORIGIN);
+		const upstreamOrigin = new URL(env.MATTERMOST_ORIGIN).origin;
+
+		if (request.method === "OPTIONS") {
+			return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+		}
 
 		// Forward as-is, preserving method + body + most headers.
 		// Drop hop-by-hop headers and any host-coupled headers.
@@ -96,6 +139,9 @@ export default {
 
 		// Mirror the response, but rewrite iframe-blocking headers.
 		const outHeaders = new Headers();
+		for (const [k, v] of corsHeaders(request, env).entries()) {
+			outHeaders.set(k, v);
+		}
 		for (const [k, v] of upstreamRes.headers.entries()) {
 			const lk = k.toLowerCase();
 			if (lk === "x-frame-options") {
@@ -103,7 +149,17 @@ export default {
 				continue;
 			}
 			if (lk === "content-security-policy") {
-				outHeaders.set(k, rewriteCsp(v, env.ALLOWED_PARENT));
+				outHeaders.set(
+					k,
+					rewriteCsp(
+						rewritePublicUrl(v, upstreamOrigin, publicOrigin),
+						env.ALLOWED_PARENT,
+					),
+				);
+				continue;
+			}
+			if (lk === "location") {
+				outHeaders.set(k, rewritePublicUrl(v, upstreamOrigin, publicOrigin));
 				continue;
 			}
 			if (lk === "content-length") {
@@ -121,6 +177,7 @@ export default {
 		const contentType = upstreamRes.headers.get("content-type") ?? "";
 		if (contentType.includes("text/html")) {
 			let html = await upstreamRes.text();
+			html = rewritePublicUrl(html, upstreamOrigin, publicOrigin);
 			html = html.replace(
 				"</head>",
 				`<style id="parrot-whitelabel">

@@ -36,6 +36,17 @@ import {
 	getRoom,
 } from "./lib/daily";
 import { pingParrotGraph } from "./lib/graph";
+import { isOperator as hasOperatorAccess } from "./lib/operator";
+import {
+	createMmParrotPost,
+	ensureMmWorkspaceMembership,
+	getMmChannelPosts,
+	getMmTeamChannels,
+	getMmTeamChannelsForUser,
+	getMmTeamsForUser,
+	getMmUserByEmail,
+	getMmUsersByIds,
+} from "./lib/mattermost";
 import type { Env } from "./types";
 
 // — Phase 14 Wave 3: graphReady cache (30s) ────────────────────────
@@ -309,20 +320,7 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 	// Compute whether this employee is an operator. Mirrors
 	// workers/lib/operator.ts.isOperator() so the front-end can render
 	// the Admin nav without an extra round-trip.
-	const allowlist = (c.env.PARROT_OPERATOR_EMAILS || "")
-		.split(",")
-		.map((e) => e.trim().toLowerCase())
-		.filter(Boolean);
-	const meta = employee.publicMetadata as
-		| { role?: unknown }
-		| null
-		| undefined;
-	const role = String(meta?.role || "").toLowerCase();
-	const isOperator =
-		role === "operator" ||
-		role === "admin" ||
-		role === "ceo" ||
-		allowlist.includes(String(employee.email).toLowerCase());
+	const isOperator = await hasOperatorAccess(c.env, employee);
 	return c.json({
 		employee_id: profile.employeeId,
 		email: profile.email,
@@ -770,7 +768,86 @@ app.post(
 	},
 );
 
-// -- Mattermost (Wave 2 stub) ---------------------------------------
+// -- Native Chat support --------------------------------------------
+
+async function loadChatContext(c: AppContext):
+	Promise<
+		| {
+				ok: true;
+				botToken: string;
+				user: NonNullable<Awaited<ReturnType<typeof getMmUserByEmail>>>;
+				team: Awaited<ReturnType<typeof getMmTeamsForUser>>[number];
+				channels: Awaited<ReturnType<typeof getMmTeamChannelsForUser>>;
+		  }
+		| {
+				ok: false;
+				status: 404 | 502 | 503;
+				reason:
+					| "mattermost_bot_not_configured"
+					| "user_not_found"
+					| "team_unavailable"
+					| "membership_failed"
+					| "channel_unavailable";
+		  }
+	> {
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	if (!botToken) {
+		return {
+			ok: false,
+			status: 503,
+			reason: "mattermost_bot_not_configured",
+		};
+	}
+
+	const employee = c.var.employee;
+	const membership = await ensureMmWorkspaceMembership(
+		c.env.MATTERMOST_URL,
+		botToken,
+		employee.email,
+	);
+	if (!membership.ok) {
+		return {
+			ok: false,
+			status: membership.reason === "user_not_found" ? 404 : 502,
+			reason: membership.reason,
+		};
+	}
+
+	const user = await getMmUserByEmail(
+		c.env.MATTERMOST_URL,
+		botToken,
+		employee.email,
+	);
+	const teams = await getMmTeamsForUser(
+		c.env.MATTERMOST_URL,
+		botToken,
+		membership.userId,
+	);
+	const team = teams[0] ?? membership.team;
+	let channels = team
+		? await getMmTeamChannelsForUser(
+				c.env.MATTERMOST_URL,
+				botToken,
+				membership.userId,
+				team.id,
+			)
+		: [];
+	if (!channels.length && team) {
+		channels = await getMmTeamChannels(c.env.MATTERMOST_URL, botToken, team.id);
+	}
+	if (!channels.length && membership.channel) {
+		channels = [membership.channel];
+	}
+
+	if (!user || !team) {
+		return { ok: false, status: 502, reason: "team_unavailable" };
+	}
+	if (!channels.length) {
+		return { ok: false, status: 502, reason: "channel_unavailable" };
+	}
+
+	return { ok: true, botToken, user, team, channels };
+}
 
 app.get(
 	"/api/chat/config",
@@ -783,6 +860,130 @@ app.get(
 				"Mattermost Team Edition is deployed in Wave 2 and exposes its iframe URL + SSO bridge here.",
 		}),
 );
+
+app.get("/api/chat/bootstrap", requireEmployeeMailbox, async (c: AppContext) => {
+	const chat = await loadChatContext(c);
+	if (!chat.ok) {
+		return c.json(
+			{ ok: false, reason: chat.reason },
+			chat.status as 404 | 502 | 503,
+		);
+	}
+	return c.json({
+		me: chat.user,
+		team: chat.team,
+		channels: chat.channels,
+	});
+});
+
+app.post(
+	"/api/chat/ensure-membership",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const botToken = c.env.MATTERMOST_BOT_TOKEN;
+		if (!botToken) {
+			return c.json(
+				{ ok: false, reason: "mattermost_bot_not_configured" },
+				503,
+			);
+		}
+		const employee = c.var.employee;
+		const result = await ensureMmWorkspaceMembership(
+			c.env.MATTERMOST_URL,
+			botToken,
+			employee.email,
+		);
+		if (!result.ok) {
+			const status = result.reason === "user_not_found" ? 404 : 502;
+			return c.json({ ok: false, reason: result.reason }, status);
+		}
+		return c.json({
+			ok: true,
+			user_id: result.userId,
+			team: result.team,
+			channel: result.channel,
+		});
+	},
+);
+
+app.post("/api/chat/users", requireEmployeeMailbox, async (c: AppContext) => {
+	const chat = await loadChatContext(c);
+	if (!chat.ok) {
+		return c.json(
+			{ ok: false, reason: chat.reason },
+			chat.status as 404 | 502 | 503,
+		);
+	}
+	const body = (await c.req.json().catch(() => null)) as string[] | null;
+	if (!Array.isArray(body)) return c.json({ error: "Expected user id list" }, 400);
+	const users = await getMmUsersByIds(c.env.MATTERMOST_URL, chat.botToken, body);
+	return c.json(users);
+});
+
+app.get(
+	"/api/chat/channels/:channelId/posts",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const channelId = c.req.param("channelId");
+		if (!channelId) return c.json({ error: "Missing channel id" }, 400);
+
+		const chat = await loadChatContext(c);
+		if (!chat.ok) {
+			return c.json(
+				{ ok: false, reason: chat.reason },
+				chat.status as 404 | 502 | 503,
+			);
+		}
+		if (!chat.channels.some((channel) => channel.id === channelId)) {
+			return c.json({ error: "Channel not available" }, 403);
+		}
+
+		const page = Number.parseInt(c.req.query("page") ?? "0", 10);
+		const perPage = Number.parseInt(c.req.query("per_page") ?? "50", 10);
+		const posts = await getMmChannelPosts(
+			c.env.MATTERMOST_URL,
+			chat.botToken,
+			channelId,
+			Number.isFinite(page) && page >= 0 ? page : 0,
+			Number.isFinite(perPage) ? Math.min(Math.max(perPage, 1), 100) : 50,
+		);
+		if (!posts) return c.json({ error: "Messages unavailable" }, 502);
+		return c.json(posts);
+	},
+);
+
+app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { channel_id?: string; message?: string }
+		| null;
+	const channelId = body?.channel_id?.trim();
+	const message = body?.message?.trim();
+	if (!channelId || !message) {
+		return c.json({ error: "Missing channel_id or message" }, 400);
+	}
+
+	const chat = await loadChatContext(c);
+	if (!chat.ok) {
+		return c.json(
+			{ ok: false, reason: chat.reason },
+			chat.status as 404 | 502 | 503,
+		);
+	}
+	if (!chat.channels.some((channel) => channel.id === channelId)) {
+		return c.json({ error: "Channel not available" }, 403);
+	}
+
+	const employee = c.var.employee;
+	const post = await createMmParrotPost(c.env.MATTERMOST_URL, chat.botToken, {
+		channelId,
+		message,
+		authorUserId: chat.user.id,
+		authorName: employee.displayName || chat.user.username || employee.email,
+		authorEmail: employee.email,
+	});
+	if (!post) return c.json({ error: "Message send failed" }, 502);
+	return c.json(post);
+});
 
 // -- Wave 2b: employee admin + OIDC bridge --------------------------
 // Both subtrees are mounted on the same Hono app so they inherit the

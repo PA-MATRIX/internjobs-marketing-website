@@ -1,9 +1,10 @@
 // v1.2 Phase 10 Wave 2b: UserMenu — avatar + dropdown.
 //
 // Renders the small circular avatar in the bottom-left of the icon rail.
-// On click, opens a popover with the employee's identity (name + email
-// or phone + role), plus a Sign out action that hits Clerk and bounces
-// back to /sign-in.
+// On click, opens a popover with the employee's identity (name + workspace
+// email when available), plus a Sign out action that hits Clerk and bounces
+// back to /sign-in. Phone identifiers stay attached in Clerk but are not
+// displayed in this workspace chrome.
 
 import { useClerk } from "@clerk/clerk-react";
 import { useEffect, useRef, useState } from "react";
@@ -23,7 +24,8 @@ export function UserMenu() {
 
 	const identifier = me?.email || "";
 	const isPhone = identifier.startsWith("+");
-	const displayName = me?.display_name || (isPhone ? identifier : identifier.split("@")[0]);
+	const visibleIdentifier = isPhone ? "Workspace account" : identifier;
+	const displayName = me?.display_name || (isPhone ? "Workspace user" : identifier.split("@")[0]);
 	const role = me?.role === "operator" ? "Operator" : "Employee";
 
 	useEffect(() => {
@@ -60,7 +62,7 @@ export function UserMenu() {
 						<p className="text-sm font-semibold text-slate-900 truncate">
 							{displayName}
 						</p>
-						<p className="text-xs text-slate-500 truncate">{identifier}</p>
+						<p className="text-xs text-slate-500 truncate">{visibleIdentifier}</p>
 						<span className="inline-block mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">
 							{role}
 						</span>

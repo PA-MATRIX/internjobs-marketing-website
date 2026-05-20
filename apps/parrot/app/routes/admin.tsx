@@ -19,6 +19,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { apiFetch } from "~/lib/api";
 
 interface EmployeeRow {
 	id: string;
@@ -88,10 +89,7 @@ const DEFAULT_FLAGS: CapabilityFlags = {
 };
 
 async function fetchEmployees(): Promise<EmployeeRow[]> {
-	const res = await fetch("/api/admin/employees", {
-		credentials: "include",
-		headers: { Accept: "application/json" },
-	});
+	const res = await apiFetch("/api/admin/employees");
 	const body = (await res.json().catch(() => null)) as
 		| ListResponse
 		| ApiError
@@ -105,9 +103,8 @@ async function fetchEmployees(): Promise<EmployeeRow[]> {
 }
 
 async function fetchFlags(employeeId: string): Promise<CapabilityFlags> {
-	const res = await fetch(
+	const res = await apiFetch(
 		`/api/admin/employees/${encodeURIComponent(employeeId)}/flags`,
-		{ credentials: "include", headers: { Accept: "application/json" } },
 	);
 	const body = (await res.json().catch(() => null)) as
 		| FlagsResponse
@@ -130,15 +127,10 @@ async function patchFlags(
 	employeeId: string,
 	flags: CapabilityFlags,
 ): Promise<CapabilityFlags> {
-	const res = await fetch(
+	const res = await apiFetch(
 		`/api/admin/employees/${encodeURIComponent(employeeId)}/flags`,
 		{
 			method: "PATCH",
-			credentials: "include",
-			headers: {
-				"Content-Type": "application/json",
-				Accept: "application/json",
-			},
 			body: JSON.stringify({ featureFlags: flags }),
 		},
 	);
@@ -158,13 +150,9 @@ async function patchFlags(
 }
 
 async function disableEmployee(employeeId: string): Promise<void> {
-	const res = await fetch(
+	const res = await apiFetch(
 		`/api/admin/employees/${encodeURIComponent(employeeId)}`,
-		{
-			method: "DELETE",
-			credentials: "include",
-			headers: { Accept: "application/json" },
-		},
+		{ method: "DELETE" },
 	);
 	const body = (await res.json().catch(() => null)) as ApiError | null;
 	if (!res.ok) {
@@ -261,9 +249,9 @@ export default function AdminRoute() {
 
 	return (
 		<WorkspaceShell title="Admin">
-			<div className="max-w-5xl mx-auto p-6">
-				<div className="flex items-center justify-between mb-4">
-					<div>
+			<div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+				<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+					<div className="min-w-0">
 						<h2 className="text-lg font-semibold text-slate-900">
 							Employee directory
 						</h2>
@@ -275,9 +263,9 @@ export default function AdminRoute() {
 					</div>
 					<Link
 						to="/admin/invite"
-						className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 no-underline"
+						className="inline-flex w-full justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-slate-800 sm:w-auto"
 					>
-						Invite new employee
+						Add employee
 					</Link>
 				</div>
 
@@ -287,7 +275,7 @@ export default function AdminRoute() {
 					</div>
 				)}
 
-				<div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+				<div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
 					{loading ? (
 						<div className="p-6 text-sm text-slate-500">Loading…</div>
 					) : employees.length === 0 ? (
@@ -301,18 +289,19 @@ export default function AdminRoute() {
 							</Link>
 						</div>
 					) : (
-						<table className="w-full text-sm">
-							<thead className="bg-slate-50 border-b border-slate-200">
-								<tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-									<th className="px-4 py-3">Display name</th>
-									<th className="px-4 py-3">Workspace email</th>
-									<th className="px-4 py-3">Status</th>
-									<th className="px-4 py-3">Capabilities</th>
-									<th className="px-4 py-3 text-right">Actions</th>
-								</tr>
-							</thead>
-							<tbody className="divide-y divide-slate-100">
-								{employees.map((row) => {
+						<div className="overflow-x-auto">
+							<table className="w-full min-w-[760px] text-sm">
+								<thead className="border-b border-slate-200 bg-slate-50">
+									<tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+										<th className="px-3 py-3 sm:px-4">Display name</th>
+										<th className="px-3 py-3 sm:px-4">Workspace email</th>
+										<th className="px-3 py-3 sm:px-4">Status</th>
+										<th className="px-3 py-3 sm:px-4">Capabilities</th>
+										<th className="px-3 py-3 text-right sm:px-4">Actions</th>
+									</tr>
+								</thead>
+								<tbody className="divide-y divide-slate-100">
+									{employees.map((row) => {
 									const rowFlags = flags[row.id] ?? DEFAULT_FLAGS;
 									const isEditing = editingId === row.id;
 									const isDisabled = row.status === "disabled";
@@ -323,7 +312,7 @@ export default function AdminRoute() {
 												key={row.id}
 												className={isDisabled ? "text-slate-400" : ""}
 											>
-												<td className="px-4 py-3 font-medium text-slate-900">
+												<td className="px-3 py-3 font-medium text-slate-900 sm:px-4">
 													{isDisabled ? (
 														<span className="text-slate-400">
 															{row.display_name}
@@ -332,17 +321,17 @@ export default function AdminRoute() {
 														row.display_name
 													)}
 												</td>
-												<td className="px-4 py-3 font-mono text-xs text-slate-600">
+												<td className="px-3 py-3 font-mono text-xs text-slate-600 sm:px-4">
 													{row.workspace_email}
 												</td>
-												<td className="px-4 py-3">
+												<td className="px-3 py-3 sm:px-4">
 													<StatusBadge status={row.status} />
 												</td>
-												<td className="px-4 py-3">
+												<td className="px-3 py-3 sm:px-4">
 													<CapabilityPills flags={rowFlags} />
 												</td>
-												<td className="px-4 py-3 text-right">
-													<div className="flex justify-end gap-2">
+												<td className="px-3 py-3 text-right sm:px-4">
+													<div className="flex flex-wrap justify-end gap-2">
 														<button
 															type="button"
 															onClick={() => startEdit(row)}
@@ -368,7 +357,7 @@ export default function AdminRoute() {
 												<tr key={`${row.id}-edit`}>
 													<td
 														colSpan={5}
-														className="bg-slate-50 px-4 py-4 border-t border-slate-100"
+														className="border-t border-slate-100 bg-slate-50 px-3 py-4 sm:px-4"
 													>
 														<div>
 															<p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
@@ -392,12 +381,12 @@ export default function AdminRoute() {
 																	</label>
 																))}
 															</div>
-															<div className="mt-4 flex gap-2">
+															<div className="mt-4 flex flex-col gap-2 sm:flex-row">
 																<button
 																	type="button"
 																	onClick={() => submitCapabilityEdit(row)}
 																	disabled={isBusy}
-																	className="rounded-md bg-slate-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+																	className="rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 sm:py-1.5"
 																>
 																	{isBusy ? "Saving…" : "Save capabilities"}
 																</button>
@@ -405,7 +394,7 @@ export default function AdminRoute() {
 																	type="button"
 																	onClick={cancelEdit}
 																	disabled={isBusy}
-																	className="rounded-md border border-slate-200 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+																	className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:py-1.5"
 																>
 																	Cancel
 																</button>
@@ -416,9 +405,10 @@ export default function AdminRoute() {
 											)}
 										</>
 									);
-								})}
-							</tbody>
-						</table>
+									})}
+								</tbody>
+							</table>
+						</div>
 					)}
 				</div>
 			</div>

@@ -9,9 +9,8 @@
 //     3. On success, GET /api/meetings/room-token (best-effort; token
 //        is optional — Daily.co allows entry to private rooms via the
 //        room URL alone when the key isn't provisioned).
-//     4. Mount the Daily.co iframe via <DailyProvider url=... token=...>
-//        wrapping a DailyEmbed child that uses useCallFrame() against a
-//        parent div ref.
+//     4. Render a prejoin card. The Daily.co iframe is only mounted
+//        after the employee explicitly clicks Join room.
 //     5. If any step fails (DAILY_API_KEY absent / ensure-room 503),
 //        render a non-crashing placeholder card — never a red error
 //        screen.
@@ -29,10 +28,9 @@
 //   cloudflare/skills: durable-objects — personal room scoped to the
 //     signed-in employee's EmployeeMailboxDO.
 
-import { DailyProvider } from "@daily-co/daily-react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Loader2, Users, Video } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Clock, ExternalLink, Loader2, Users, Video } from "lucide-react";
+import { useState } from "react";
 import { api, ApiError } from "~/lib/api";
 
 export type MeetingsTab = "your-room" | "active" | "history";
@@ -50,6 +48,8 @@ export function MeetingsPane({ activeTab }: Props) {
 // ── Your room ─────────────────────────────────────────────────────
 
 function YourRoomTab() {
+	const [joined, setJoined] = useState(false);
+
 	// 1. Read the stored room URL. On 404 the catch path POSTs ensure-room.
 	const roomQuery = useQuery({
 		queryKey: ["meetings", "my-room"],
@@ -120,6 +120,7 @@ function YourRoomTab() {
 		tokenQuery.data && tokenQuery.data.ok && tokenQuery.data.token
 			? tokenQuery.data.token
 			: undefined;
+	const iframeSrc = buildDailyIframeSrc(roomUrl, token);
 
 	return (
 		<div className="p-6">
@@ -130,99 +131,89 @@ function YourRoomTab() {
 					{roomQuery.data.name}
 				</span>
 			</div>
-			<DailyProvider url={roomUrl} token={token}>
-				<DailyEmbed />
-			</DailyProvider>
+			{joined ? (
+				<DailyEmbed iframeSrc={iframeSrc} onLeave={() => setJoined(false)} />
+			) : (
+				<div className="max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+					<div className="flex items-start justify-between gap-4">
+						<div>
+							<p className="text-sm font-medium text-slate-900">
+								Ready when you are
+							</p>
+							<p className="mt-1 text-sm text-slate-500">
+								Your personal room is set up. Joining opens the camera and
+								microphone prompts.
+							</p>
+						</div>
+						<Video size={18} className="mt-0.5 shrink-0 text-slate-400" />
+					</div>
+					<div className="mt-5 flex flex-wrap items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setJoined(true)}
+							className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+						>
+							<Video size={15} />
+							Join room
+						</button>
+						<a
+							href={iframeSrc}
+							target="_blank"
+							rel="noreferrer"
+							className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 no-underline hover:bg-slate-50"
+						>
+							<ExternalLink size={15} />
+							Open in new tab
+						</a>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
 
-/**
- * Mounts the actual Daily.co iframe inside a parent div ref. The
- * `useCallFrame()` hook (from @daily-co/daily-react) creates an iframe
- * Call object inside parentElRef when DailyProvider has provided the
- * `url` + `token` factory options.
- *
- * Style: full-width, 600px tall, rounded — same visual envelope as the
- * placeholder card in Phase 10. The iframe itself comes from daily.co
- * and is opaque to us beyond url/token; we only own the parent box.
- */
-function DailyEmbed() {
-	const parentRef = useRef<HTMLDivElement | null>(null);
-
-	// We intentionally do NOT call useCallFrame here. The DailyProvider
-	// at our parent already accepts `url`/`token` and creates a callObject
-	// internally — but for iframe-mode rendering we still need a parent
-	// element. The simplest cross-version-safe path is to render the
-	// iframe ourselves directly to roomUrl (Daily.co prebuilt UI is
-	// hosted at the room URL — visiting it loads the same UI the SDK
-	// would embed). This keeps Wave 2 SDK-light and avoids tight
-	// coupling to daily-react's evolving createFrame API.
-	useEffect(() => {
-		// Intentional no-op; iframe src is bound via JSX below.
-	}, []);
-
-	return (
-		<div
-			ref={parentRef}
-			className="rounded-lg overflow-hidden border border-slate-200 bg-black"
-			style={{ width: "100%", height: "600px" }}
-			data-daily-embed-parent
-		>
-			{/*
-			 * Daily.co prebuilt UI is served directly from the room URL,
-			 * so an <iframe src={roomUrl}> renders the full embedded
-			 * meeting UI (camera/mic/chat/screenshare). We let DailyProvider
-			 * own the React-side state (participants, devices) for any
-			 * future panes that want to call useDaily() hooks — the URL
-			 * already wires the iframe to the same call.
-			 */}
-			<DailyIframeFromProvider />
-		</div>
-	);
+function buildDailyIframeSrc(roomUrl: string, token?: string): string {
+	if (!token) return roomUrl;
+	try {
+		const url = new URL(roomUrl);
+		url.searchParams.set("t", token);
+		return url.toString();
+	} catch {
+		return `${roomUrl}${roomUrl.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
+	}
 }
 
-/**
- * Renders a Daily.co prebuilt-UI iframe sized to its parent. The src
- * comes from the DailyProvider's room URL via a ref-based read so we
- * stay decoupled from internal daily-react APIs.
- *
- * Token is appended as a `t=` query param when present (the prebuilt UI
- * picks it up automatically).
- */
-function DailyIframeFromProvider() {
-	// Read the URL+token via the top-level query result. We can't use
-	// useDaily() to read these directly without depending on internal
-	// daily-react state shapes, so we re-read from React Query cache.
-	const roomQuery = useQuery({
-		queryKey: ["meetings", "my-room"],
-		queryFn: () => api.getMyRoom(),
-		enabled: false, // already populated by parent
-	});
-	const tokenQuery = useQuery({
-		queryKey: ["meetings", "room-token", roomQuery.data?.url ?? null],
-		queryFn: () => api.getRoomToken(),
-		enabled: false,
-	});
-
-	const roomUrl = roomQuery.data?.url;
-	if (!roomUrl) return null;
-
-	const tokenStr =
-		tokenQuery.data && tokenQuery.data.ok && tokenQuery.data.token
-			? tokenQuery.data.token
-			: undefined;
-	const iframeSrc = tokenStr
-		? `${roomUrl}${roomUrl.includes("?") ? "&" : "?"}t=${encodeURIComponent(tokenStr)}`
-		: roomUrl;
-
+function DailyEmbed({
+	iframeSrc,
+	onLeave,
+}: {
+	iframeSrc: string;
+	onLeave: () => void;
+}) {
 	return (
-		<iframe
-			title="Daily.co meeting"
-			src={iframeSrc}
-			allow="camera; microphone; fullscreen; speaker; display-capture; autoplay"
-			style={{ width: "100%", height: "100%", border: "none" }}
-		/>
+		<div>
+			<div className="mb-3 flex justify-end">
+				<button
+					type="button"
+					onClick={onLeave}
+					className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+				>
+					Close room
+				</button>
+			</div>
+			<div
+				className="overflow-hidden rounded-lg border border-slate-200 bg-black"
+				style={{ width: "100%", height: "600px" }}
+				data-daily-embed-parent
+			>
+				<iframe
+					title="Daily.co meeting"
+					src={iframeSrc}
+					allow="camera; microphone; fullscreen; speaker; display-capture"
+					style={{ width: "100%", height: "100%", border: "none" }}
+				/>
+			</div>
+		</div>
 	);
 }
 

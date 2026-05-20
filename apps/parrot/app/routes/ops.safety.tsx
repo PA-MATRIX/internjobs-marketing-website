@@ -11,6 +11,7 @@
 import { Shield } from "lucide-react";
 import { useState, useEffect } from "react";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { apiFetch } from "~/lib/api";
 
 interface SafetyEvent {
 	id: string;
@@ -51,7 +52,7 @@ export default function OpsSafetyRoute() {
 	const [marking, setMarking] = useState(false);
 
 	useEffect(() => {
-		fetch("/api/ops/safety")
+		apiFetch("/api/ops/safety")
 			.then((r) => r.json() as Promise<{ events: SafetyEvent[] }>)
 			.then((data) => setEvents(data.events ?? []))
 			.catch(() => setEvents([]))
@@ -60,9 +61,8 @@ export default function OpsSafetyRoute() {
 
 	async function markAllReviewed() {
 		setMarking(true);
-		await fetch("/api/ops/safety/mark-reviewed", {
+		await apiFetch("/api/ops/safety/mark-reviewed", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({}),
 		}).catch(() => null);
 		setEvents((ev) => ev.map((e) => ({ ...e, reviewed: true })));

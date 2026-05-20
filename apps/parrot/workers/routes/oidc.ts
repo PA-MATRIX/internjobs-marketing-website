@@ -16,8 +16,9 @@
 //   - The Worker's Clerk middleware (workers/app.ts) lets every /oidc/*
 //     path through without authentication. Each route enforces its own
 //     auth:
-//       * /authorize: looks for a Clerk __session cookie; if absent,
-//         redirects to /sign-in with redirect_url back to /authorize.
+//       * /authorize: looks for a Clerk __session cookie, resolves the
+//         employee's workspace email from WorkspaceDO, and redirects to
+//         /sign-in with redirect_url back to /authorize if absent.
 //       * /token: validates client_id + client_secret against the
 //         Mattermost-registered pair (env.MATTERMOST_OIDC_CLIENT_*).
 //       * /userinfo: validates Authorization: Bearer <access_token>
@@ -33,7 +34,10 @@ import { SignJWT, importPKCS8, jwtVerify, createRemoteJWKSet } from "jose";
 import type { JWTPayload } from "jose";
 import type { ParrotContext } from "../lib/mailbox";
 import type { Env } from "../types";
-import { getWorkspaceStub } from "../durableObject/workspace";
+import {
+	getWorkspaceStub,
+	type EmployeeRecord,
+} from "../durableObject/workspace";
 
 const oidc = new Hono<ParrotContext>();
 
@@ -46,6 +50,28 @@ const ID_TOKEN_TTL_SECONDS = 60 * 60;
 function baseUrl(req: Request): string {
 	const u = new URL(req.url);
 	return `${u.protocol}//${u.host}`;
+}
+
+function normalizeRedirectUri(uri: string): string {
+	return uri.trim().replace(/\/$/, "");
+}
+
+function canonicalizeTokenRedirectUri(uri: string, env: Env): string {
+	const expected = env.MATTERMOST_OIDC_REDIRECT_URI;
+	if (!expected) return normalizeRedirectUri(uri);
+	try {
+		const receivedUrl = new URL(uri);
+		const expectedUrl = new URL(expected);
+		if (
+			receivedUrl.hostname === "internjobs-mattermost.fly.dev" &&
+			receivedUrl.pathname === expectedUrl.pathname
+		) {
+			return normalizeRedirectUri(expected);
+		}
+	} catch {
+		return normalizeRedirectUri(uri);
+	}
+	return normalizeRedirectUri(uri);
 }
 
 oidc.get("/.well-known/openid-configuration", (c) => {
@@ -138,9 +164,32 @@ interface ClerkIdentity {
 	picture: string | null;
 }
 
+function claimString(
+	claims: Record<string, unknown>,
+	...keys: string[]
+): string | null {
+	for (const key of keys) {
+		const value = claims[key];
+		if (typeof value === "string" && value.trim()) return value.trim();
+	}
+	return null;
+}
+
+function gitLabNumericId(input: string): number {
+	// Mattermost's GitLab adapter unmarshals `id` into int64. Clerk ids
+	// are strings, so expose a stable positive numeric surrogate.
+	let hash = 2166136261;
+	for (let i = 0; i < input.length; i += 1) {
+		hash ^= input.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0) || 1;
+}
+
 async function verifyClerkSession(
 	req: Request,
 	env: Env,
+	workspace: ReturnType<typeof getWorkspaceStub>,
 ): Promise<ClerkIdentity | null> {
 	const token = extractClerkSessionToken(req);
 	if (!token || !env.PARROT_CLERK_JWKS_URL) return null;
@@ -160,20 +209,39 @@ async function verifyClerkSession(
 	}
 	const c = payload as Record<string, unknown>;
 	const sub = typeof payload.sub === "string" ? payload.sub : null;
-	const email =
-		(typeof c.email === "string" && (c.email as string)) ||
-		(typeof c.primary_email_address === "string" &&
-			(c.primary_email_address as string)) ||
-		(typeof c.email_address === "string" && (c.email_address as string)) ||
-		null;
-	if (!sub || !email) return null;
-	const givenName = typeof c.given_name === "string" ? (c.given_name as string) : null;
-	const familyName = typeof c.family_name === "string" ? (c.family_name as string) : null;
+	if (!sub) return null;
+
+	let employee: EmployeeRecord | null = null;
+	try {
+		employee = await workspace.getEmployeeByClerkId(sub);
+	} catch (e) {
+		console.warn(
+			"oidc_authorize_employee_lookup_failed",
+			(e as Error).message,
+		);
+	}
+	if (employee?.status === "disabled") return null;
+
+	const claimEmail = claimString(
+		c,
+		"email",
+		"primary_email_address",
+		"email_address",
+	);
+	const email = (employee?.workspace_email || claimEmail || "")
+		.trim()
+		.toLowerCase();
+	if (!email) return null;
+
+	const givenName = claimString(c, "given_name");
+	const familyName = claimString(c, "family_name");
 	const name =
-		(typeof c.name === "string" && (c.name as string)) ||
+		employee?.display_name ||
+		claimString(c, "name") ||
 		[givenName ?? "", familyName ?? ""].filter(Boolean).join(" ").trim() ||
 		email.split("@")[0];
-	const picture = typeof c.picture === "string" ? (c.picture as string) : null;
+	const picture =
+		claimString(c, "picture", "image_url", "avatar_url") || null;
 	return { sub, email, name, givenName, familyName, picture };
 }
 
@@ -203,15 +271,19 @@ oidc.get("/authorize", async (c) => {
 	}
 	// Mattermost sometimes appends a trailing slash or normalises the
 	// query string; do an exact match but trim trailing slashes.
-	if (redirectUri.replace(/\/$/, "") !== expectedRedirect.replace(/\/$/, "")) {
+	if (normalizeRedirectUri(redirectUri) !== normalizeRedirectUri(expectedRedirect)) {
 		return c.text(
 			`invalid_redirect_uri: '${redirectUri}' does not match registered URI.`,
 			400,
 		);
 	}
 
-	// Check Clerk session.
-	const identity = await verifyClerkSession(c.req.raw, c.env);
+	const workspace = getWorkspaceStub(c.env);
+
+	// Check Clerk session. Phone-OTP users usually have no email claim in
+	// Clerk's default session JWT, so we resolve their workspace email
+	// from the employee directory keyed by Clerk user id.
+	const identity = await verifyClerkSession(c.req.raw, c.env, workspace);
 	if (!identity) {
 		// Redirect to Clerk-hosted sign-in with a redirect_url that
 		// brings the user back to /oidc/authorize with the original
@@ -222,7 +294,6 @@ oidc.get("/authorize", async (c) => {
 	}
 
 	// Mint a short-lived auth code.
-	const workspace = getWorkspaceStub(c.env);
 	const code = await workspace.createAuthCode({
 		clerkUserId: identity.sub,
 		email: identity.email,
@@ -361,7 +432,11 @@ oidc.post("/token", async (c) => {
 	}
 
 	const workspace = getWorkspaceStub(c.env);
-	const record = await workspace.consumeAuthCode(code, clientId, redirectUri);
+	const record = await workspace.consumeAuthCode(
+		code,
+		clientId,
+		canonicalizeTokenRedirectUri(redirectUri, c.env),
+	);
 	if (!record) {
 		return c.json({ error: "invalid_grant" }, 400);
 	}
@@ -444,6 +519,7 @@ oidc.get("/userinfo", async (c) => {
 	const parts = (record.name || "").trim().split(/\s+/);
 	const givenName = parts[0] || record.email.split("@")[0];
 	const familyName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+	const username = record.email.split("@")[0];
 
 	return c.json({
 		sub: record.clerk_user_id,
@@ -453,11 +529,11 @@ oidc.get("/userinfo", async (c) => {
 		given_name: givenName,
 		family_name: familyName,
 		picture: record.picture ?? undefined,
-		preferred_username: record.email.split("@")[0],
-		username: record.email.split("@")[0],
-		// Mattermost's GitLab adapter reads `id` (the GitLab user id).
-		// We map to Clerk's user id which is stable.
-		id: record.clerk_user_id,
+		avatar_url: record.picture ?? undefined,
+		preferred_username: username,
+		username,
+		login: username,
+		id: gitLabNumericId(record.clerk_user_id),
 	});
 });
 

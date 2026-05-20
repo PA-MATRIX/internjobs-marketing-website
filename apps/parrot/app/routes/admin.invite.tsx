@@ -21,6 +21,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
+import { apiFetch } from "~/lib/api";
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
@@ -98,13 +99,8 @@ async function submitInvite(input: {
 	featureFlags: CapabilityFlags;
 }): Promise<InviteResponse> {
 	const name = `${input.firstName} ${input.lastName}`.trim();
-	const res = await fetch("/api/admin/employees", {
+	const res = await apiFetch("/api/admin/employees", {
 		method: "POST",
-		credentials: "include",
-		headers: {
-			"Content-Type": "application/json",
-			Accept: "application/json",
-		},
 		body: JSON.stringify({
 			name, // still required by backend for slug derivation
 			firstName: input.firstName,
@@ -185,8 +181,8 @@ export default function AdminInviteRoute() {
 		!busy && firstName && lastName && personalEmail && phoneNumber;
 
 	return (
-		<WorkspaceShell title="Invite employee">
-			<div className="max-w-2xl mx-auto p-6">
+		<WorkspaceShell title="Add employee">
+			<div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
 				<div className="mb-3">
 					<Link
 						to="/admin"
@@ -195,8 +191,8 @@ export default function AdminInviteRoute() {
 						← Back to admin
 					</Link>
 				</div>
-				<div className="rounded-xl border border-slate-200 bg-white p-6">
-					<h2 className="text-lg font-semibold">Invite a new employee</h2>
+				<div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+					<h2 className="text-lg font-semibold">Add employee</h2>
 					<p className="mt-1 text-sm text-slate-600">
 						Creates a Clerk user with a derived{" "}
 						<code>@internjobs.ai</code> address, adds an Email Routing rule
@@ -331,7 +327,7 @@ export default function AdminInviteRoute() {
 							<button
 								type="submit"
 								disabled={!canSubmit}
-								className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+								className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 							>
 								{busy ? "Inviting…" : "Send invite"}
 							</button>
@@ -347,7 +343,7 @@ export default function AdminInviteRoute() {
 					{result && (
 						<div className="mt-6 rounded-md bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-900">
 							<p className="font-medium">Invite sent.</p>
-							<dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
+							<dl className="mt-2 grid grid-cols-1 gap-y-1 text-xs sm:grid-cols-[max-content_1fr] sm:gap-x-3">
 								<dt className="text-emerald-700">Workspace email</dt>
 								<dd className="font-mono">
 									{result.employee.workspace_email}

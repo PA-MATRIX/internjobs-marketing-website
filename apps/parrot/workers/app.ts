@@ -29,6 +29,7 @@ import { createRequestHandler } from "react-router";
 import { app as apiApp } from "./index";
 import type { Employee, Env } from "./types";
 import type { ParrotContext } from "./lib/mailbox";
+import { getWorkspaceStub } from "./durableObject/workspace";
 
 export { EmployeeMailboxDO } from "./durableObject";
 export { WorkspaceDO } from "./durableObject/workspace";
@@ -138,6 +139,30 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		picture,
 		publicMetadata,
 	};
+}
+
+async function enrichEmployeeFromDirectory(
+	env: Env,
+	employee: Employee,
+): Promise<Employee | null> {
+	try {
+		const row = await getWorkspaceStub(env).getEmployeeByClerkId(
+			employee.employeeId,
+		);
+		if (!row) return employee;
+		if (row.status === "disabled") return null;
+		return {
+			...employee,
+			email: row.workspace_email,
+			displayName: row.display_name || employee.displayName,
+		};
+	} catch (e) {
+		console.warn(
+			"employee_directory_lookup_failed",
+			(e as Error).message,
+		);
+		return employee;
+	}
 }
 
 /** Send unauth users to Parrot's own embedded sign-in form (a
@@ -257,9 +282,14 @@ app.use("*", async (c, next) => {
 		return c.redirect(buildSignInRedirect(path), 302);
 	}
 
-	const employee = deriveEmployeeFromClaims(claims);
-	if (!employee) {
+	const employeeFromClaims = deriveEmployeeFromClaims(claims);
+	if (!employeeFromClaims) {
 		if (isApi) return c.json({ error: "missing_required_claims" }, 401);
+		return c.redirect(buildSignInRedirect(path), 302);
+	}
+	const employee = await enrichEmployeeFromDirectory(c.env, employeeFromClaims);
+	if (!employee) {
+		if (isApi) return c.json({ error: "employee_disabled" }, 403);
 		return c.redirect(buildSignInRedirect(path), 302);
 	}
 

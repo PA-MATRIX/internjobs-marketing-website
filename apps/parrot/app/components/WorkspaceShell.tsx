@@ -18,14 +18,14 @@ import {
 	Video,
 	Phone,
 	MessageCircle,
-	UserPlus,
 	Shield,
+	Settings,
 	Bell,
 	X,
 } from "lucide-react";
 import { UserMenu } from "./UserMenu";
 import { useCurrentEmployee } from "~/lib/auth";
-import { api, type NotificationItem } from "~/lib/api";
+import { api, apiFetch, type NotificationItem } from "~/lib/api";
 
 interface NavItem {
 	href: string;
@@ -46,7 +46,7 @@ const NAV: NavItem[] = [
 ];
 
 const ADMIN_NAV: NavItem[] = [
-	{ href: "/admin/invite", label: "Invite", Icon: UserPlus },
+	{ href: "/admin", label: "Admin", Icon: Settings },
 	// v1.3 SAFETY-BADGE-01: Safety screening log + red-dot badge for unreviewed flags.
 	{ href: "/ops/safety", label: "Safety", Icon: Shield },
 ];
@@ -97,7 +97,7 @@ export function WorkspaceShell({
 	const { data: safetyData } = useQuery({
 		queryKey: ["safety-unreviewed"],
 		queryFn: () =>
-			fetch("/api/ops/safety/unreviewed-count").then(
+			apiFetch("/api/ops/safety/unreviewed-count").then(
 				(r) => r.json() as Promise<{ count: number }>,
 			),
 		refetchInterval: 60_000,

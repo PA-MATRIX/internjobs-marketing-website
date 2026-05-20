@@ -1,9 +1,20 @@
 // v1.2 Phase 10 Wave 1: Parrot client-side API helpers.
 //
-// Thin fetch wrapper that always sends credentials (Clerk's __session
-// cookie) and serializes JSON. Returns parsed JSON on success and
-// throws an ApiError on non-2xx so React Query can route it to the
-// retry/onError path.
+// Thin fetch wrapper that sends credentials and, when Clerk has finished
+// loading, a fresh Bearer token. Cookies are still included for direct
+// navigations, but API calls should not depend on Clerk's short-lived
+// __session cookie being present at exactly the right moment.
+
+declare global {
+	interface Window {
+		Clerk?: {
+			loaded?: boolean;
+			session?: {
+				getToken: () => Promise<string | null>;
+			} | null;
+		};
+	}
+}
 
 export class ApiError extends Error {
 	status: number;
@@ -16,21 +27,49 @@ export class ApiError extends Error {
 	}
 }
 
-async function request<T>(
+function wait(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getClerkBearerToken(): Promise<string | null> {
+	if (typeof window === "undefined") return null;
+
+	for (let i = 0; i < 20; i += 1) {
+		const session = window.Clerk?.session;
+		if (session?.getToken) {
+			return await session.getToken().catch(() => null);
+		}
+		if (window.Clerk?.loaded) return null;
+		await wait(100);
+	}
+
+	return null;
+}
+
+export async function apiFetch(
 	path: string,
 	init: RequestInit = {},
-): Promise<T> {
-	const res = await fetch(path, {
+): Promise<Response> {
+	const token = await getClerkBearerToken();
+	return fetch(path, {
 		credentials: "include",
 		...init,
 		headers: {
 			Accept: "application/json",
+			...(token ? { Authorization: `Bearer ${token}` } : {}),
 			...(init.body && !(init.body instanceof FormData)
 				? { "Content-Type": "application/json" }
 				: {}),
 			...(init.headers || {}),
 		},
 	});
+}
+
+async function request<T>(
+	path: string,
+	init: RequestInit = {},
+): Promise<T> {
+	const res = await apiFetch(path, init);
 
 	const contentType = res.headers.get("content-type") || "";
 	let body: unknown = null;

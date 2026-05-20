@@ -45,6 +45,7 @@ import {
 	SecondaryNavItem,
 	WorkspaceShell,
 } from "../components/WorkspaceShell";
+import { apiFetch } from "~/lib/api";
 
 type LoadState =
 	| { status: "loading" }
@@ -203,7 +204,7 @@ export default function DashboardRoute() {
 	// request on dashboard load (acceptable per plan); we never refetch.
 	useEffect(() => {
 		let cancelled = false;
-		fetch("/api/me", { credentials: "include" })
+		apiFetch("/api/me")
 			.then((r) => (r.ok ? r.json() : null))
 			.then((data: { profile?: { employeeId?: string } } | null) => {
 				if (cancelled) return;
@@ -249,10 +250,7 @@ export default function DashboardRoute() {
 		const url = `/api/dashboard/todos?view=${encodeURIComponent(activeView)}`;
 
 		const doFetch = () => {
-			fetch(url, {
-				credentials: "include",
-				headers: { Accept: "application/json" },
-			})
+			apiFetch(url)
 				.then(async (res) => {
 					if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 					return res.json() as Promise<{ todos: TodoItem[] }>;
@@ -343,12 +341,9 @@ export default function DashboardRoute() {
 	// back to the active list will see the row again (resolved_at is now NULL).
 	async function handleUndo(todo: TodoItem) {
 		try {
-			await fetch(
+			await apiFetch(
 				`/api/dashboard/todos/${encodeURIComponent(todo.id)}/unresolve`,
-				{
-					method: "POST",
-					credentials: "include",
-				},
+				{ method: "POST" },
 			);
 		} catch {
 			// Best-effort — if the request fails the UI just stays in Resolved
