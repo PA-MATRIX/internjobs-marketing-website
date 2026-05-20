@@ -7,7 +7,9 @@ primary_region = "ord"
 [env]
   NODE_ENV = "production"
   PORT = "3000"
-  ENABLE_SPECTRUM_LISTENER = "true"
+  ENABLE_SPECTRUM_LISTENER = "false"
+  SMS_PROVIDER = "mac-bridge"
+  AGENT_NUMBER = "+14063210019"
 
 [http_service]
   internal_port = 3000

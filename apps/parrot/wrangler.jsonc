@@ -64,6 +64,10 @@
 		// domain with workspace.internjobs.ai so session cookies are
 		// SAME-SITE and aren't blocked by third-party cookie policies.
 		"MATTERMOST_URL": "https://chat.internjobs.ai",
+		// v1.3.1: full upstream Agentic Inbox surface for the Email tab.
+		// Parrot mounts this as an app frame while the deeper one-boundary
+		// migration is planned.
+		"AGENTIC_INBOX_URL": "https://internjobs-agentic-inbox.rentalaraj.workers.dev",
 		// v1.2 Phase 12 Wave 1: Workers AI model for the Dashboard
 		// Mothership Agent (todo extraction). Routed through Cloudflare
 		// AI Gateway in workers/lib/ai.ts so per-employee daily caps +

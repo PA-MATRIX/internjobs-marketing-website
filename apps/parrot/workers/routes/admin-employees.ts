@@ -327,14 +327,15 @@ adminEmployees.patch("/:id/flags", async (c) => {
 	return c.json({ ok: true, employee_id: id, feature_flags: merged });
 });
 
-// — Disable ————————————————————————————————————————————————
+// — Disable / Remove —————————————————————————————————————————
 
 adminEmployees.delete("/:id", async (c) => {
 	const id = c.req.param("id");
+	const hardDelete = c.req.query("hard") === "1";
 	const workspace = getWorkspaceStub(c.env);
 	const row = await workspace.getEmployeeById(id);
 	if (!row) return c.json({ error: "not_found" }, 404);
-	if (row.status === "disabled") {
+	if (!hardDelete && row.status === "disabled") {
 		return c.json({ ok: true, status: "already_disabled" });
 	}
 
@@ -351,6 +352,26 @@ adminEmployees.delete("/:id", async (c) => {
 	// disable it from the CF dashboard. This is the documented v1.3
 	// extension point.
 	void disableEmailRoutingRule;
+
+	if (hardDelete) {
+		if (c.env.PARROT_FEATURE_FLAGS) {
+			try {
+				await c.env.PARROT_FEATURE_FLAGS.delete(
+					`employee:${row.clerk_user_id}:flags`,
+				);
+			} catch (e) {
+				errors.push({ step: "flags_delete", message: (e as Error).message });
+			}
+		}
+		const deleted = await workspace.deleteEmployee(id);
+		return c.json({
+			ok: deleted.deleted,
+			status: deleted.deleted ? "deleted" : "not_found",
+			employee_id: id,
+			workspace_email: row.workspace_email,
+			partial_errors: errors,
+		});
+	}
 
 	const updated = await workspace.setEmployeeStatus(id, "disabled");
 	return c.json({ ok: true, employee: updated, partial_errors: errors });

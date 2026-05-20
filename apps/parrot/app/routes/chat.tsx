@@ -1,16 +1,25 @@
-// v1.3.1: /chat route — native Parrot chat backed by Mattermost.
-//
-// Parrot owns the interface and session boundary. Mattermost is an internal
-// chat engine reached through /api/chat/*, so the browser never depends on a
-// separate Mattermost cookie to render the Workspace chat tab.
+// v1.3.1: /chat route — full Mattermost surface inside Parrot.
 
-import { ChatPane } from "~/components/ChatPane";
+import { useLoaderData, type LoaderFunctionArgs } from "react-router";
+import { WorkspaceAppFrame } from "~/components/WorkspaceAppFrame";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
 
+export async function loader({ context }: LoaderFunctionArgs) {
+	const env =
+		(context as { cloudflare?: { env?: Record<string, string> } }).cloudflare
+			?.env || {};
+	const baseUrl = (env.MATTERMOST_URL || "https://chat.internjobs.ai").replace(
+		/\/$/,
+		"",
+	);
+	return { chatUrl: `${baseUrl}/oauth/gitlab/login` };
+}
+
 export default function ChatRoute() {
+	const { chatUrl } = useLoaderData<typeof loader>();
 	return (
 		<WorkspaceShell title="Chat">
-			<ChatPane />
+			<WorkspaceAppFrame src={chatUrl} title="Mattermost Chat" />
 		</WorkspaceShell>
 	);
 }

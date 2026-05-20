@@ -1,64 +1,27 @@
-// v1.2 Phase 10 Wave 2b: /inbox route ("Email" pane).
+// v1.3.1: /inbox route — full Agentic Inbox surface inside Parrot.
 
-import {
-	Archive,
-	FileEdit,
-	Inbox as InboxIcon,
-	Send,
-	Tag,
-} from "lucide-react";
-import { InboxPane } from "~/components/InboxPane";
-import { SecondaryNavItem, WorkspaceShell } from "~/components/WorkspaceShell";
+import { useLoaderData, type LoaderFunctionArgs } from "react-router";
+import { WorkspaceAppFrame } from "~/components/WorkspaceAppFrame";
+import { WorkspaceShell } from "~/components/WorkspaceShell";
 
-function EmailSecondaryNav() {
-	return (
-		<nav className="py-3">
-			<p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-				Folders
-			</p>
-			<SecondaryNavItem
-				href="/inbox"
-				active
-				label="Inbox"
-				icon={<InboxIcon size={15} />}
-			/>
-			<SecondaryNavItem href="/inbox" label="Sent" icon={<Send size={15} />} />
-			<SecondaryNavItem
-				href="/inbox"
-				label="Drafts"
-				icon={<FileEdit size={15} />}
-			/>
-			<SecondaryNavItem
-				href="/inbox"
-				label="Archived"
-				icon={<Archive size={15} />}
-			/>
-			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-				Labels
-			</p>
-			<SecondaryNavItem
-				href="/inbox"
-				label="Investors"
-				icon={<Tag size={15} />}
-			/>
-			<SecondaryNavItem
-				href="/inbox"
-				label="Candidates"
-				icon={<Tag size={15} />}
-			/>
-			<SecondaryNavItem
-				href="/inbox"
-				label="Newsletters"
-				icon={<Tag size={15} />}
-			/>
-		</nav>
-	);
+export async function loader({ context }: LoaderFunctionArgs) {
+	const env =
+		(context as { cloudflare?: { env?: Record<string, string> } }).cloudflare
+			?.env || {};
+	const baseUrl = (
+		env.AGENTIC_INBOX_URL ||
+		"https://internjobs-agentic-inbox.rentalaraj.workers.dev"
+	).replace(/\/$/, "");
+	return {
+		inboxUrl: `${baseUrl}/mailbox/maya%40agent.internjobs.ai/emails/inbox`,
+	};
 }
 
 export default function InboxRoute() {
+	const { inboxUrl } = useLoaderData<typeof loader>();
 	return (
-		<WorkspaceShell title="Email" secondaryNav={<EmailSecondaryNav />}>
-			<InboxPane />
+		<WorkspaceShell title="Email">
+			<WorkspaceAppFrame src={inboxUrl} title="Agentic Inbox Email" />
 		</WorkspaceShell>
 	);
 }

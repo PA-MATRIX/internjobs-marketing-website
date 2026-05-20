@@ -212,6 +212,14 @@ export class WorkspaceDO extends DurableObject<Env> {
 		return this.getEmployeeById(id);
 	}
 
+	async deleteEmployee(id: string): Promise<{ deleted: boolean }> {
+		const result = this.ctx.storage.sql.exec(
+			`DELETE FROM employees WHERE id = ?`,
+			id,
+		);
+		return { deleted: result.rowsWritten > 0 };
+	}
+
 	// ── OIDC codes ──────────────────────────────────────────────────
 
 	async createAuthCode(input: {

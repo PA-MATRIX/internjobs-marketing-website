@@ -95,3 +95,25 @@ Verification before push:
 - GSD reload of `https://workspace.internjobs.ai/chat` rendered native Chat with `Off-Topic`, `Town Square`, existing messages, and the composer.
 - Fresh network buffer after reload showed `200` responses for `workspace.internjobs.ai/api/chat/bootstrap` and `workspace.internjobs.ai/api/chat/channels/:id/posts`.
 - Fresh network buffer after reload showed no direct browser `chat.internjobs.ai/api/v4/*` calls, which confirms the normal Chat tab is now inside the Parrot session boundary.
+
+## Full Surface Reversal
+
+The native Parrot chat proved the session-boundary approach, but user feedback rejected the result as a stripped-down clone. The requested product behavior is now explicit: Workspace should mount the full native Mattermost and Agentic Inbox interfaces "as-is" inside the Parrot shell.
+
+Patch direction:
+
+- `/chat` mounts `MATTERMOST_URL/oauth/gitlab/login` in a full app frame.
+- `/inbox` mounts `AGENTIC_INBOX_URL/mailbox/maya%40agent.internjobs.ai/emails/inbox` in a full app frame.
+- The Parrot `/api/chat/*` bot-token backend remains available for later one-boundary integration work, but it is no longer the visible Chat tab surface.
+
+Verification:
+
+- Live `/chat` mounts an iframe with `src=https://chat.internjobs.ai/oauth/gitlab/login`.
+- GSD network verification shows the iframe reaches `https://chat.internjobs.ai/`, loads Mattermost static assets, and returns 200 for native Mattermost APIs including `/api/v4/users/me`, `/api/v4/users/me/teams`, channel membership, posts, calls config, and user status endpoints.
+- The old nested Parrot dashboard iframe symptom was not observed.
+
+Email status:
+
+- Live `/inbox` mounts an iframe with `src=https://internjobs-agentic-inbox.rentalaraj.workers.dev/mailbox/maya%40agent.internjobs.ai/emails/inbox`.
+- Cloudflare Access redirects that iframe to `https://gpprotect.cloudflareaccess.com/...`; Chrome blocks the Access response in a sub-frame with `net::ERR_BLOCKED_BY_RESPONSE`.
+- Therefore full Agentic Inbox cannot be embedded from the raw `workers.dev` origin. The next safe architecture is a Parrot-owned email proxy/custom domain or a proper shared package/import of the Agentic Inbox app under the Parrot session boundary.

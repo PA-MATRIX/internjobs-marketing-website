@@ -208,7 +208,7 @@ export function renderOnboarding(student) {
 }
 
 export async function renderPairing({ student, pairing, config }) {
-  const number = config.photon.fromNumber || "+10000000000";
+  const number = config.onboarding?.agentNumber || "+10000000000";
   const body = `Hey internjobs.ai! My verification code is ${pairing.code}. What's next?`;
   const smsUri = `sms:${encodeURIComponent(number)}?&body=${encodeURIComponent(body)}`;
   const qrDataUrl = await QRCode.toDataURL(smsUri, { margin: 1, width: 220, color: { dark: "#111111", light: "#ffffff" } });
@@ -224,7 +224,7 @@ export async function renderPairing({ student, pairing, config }) {
       <div class="panel dark">
         <p class="eyebrow">Pairing code</p>
         <div class="pair-code">${escapeHtml(pairing.code)}</div>
-        <p class="lede">Your phone will text <strong>${escapeHtml(config.photon.fromNumber || "the InternJobs.ai number once configured")}</strong>.</p>
+        <p class="lede">Your phone will text <strong>${escapeHtml(number || "the InternJobs.ai number once configured")}</strong>.</p>
         <div class="message-preview">${escapeHtml(body)}</div>
         <p class="fine">Expires ${new Date(pairing.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
         <form method="post" action="/pairing/regenerate"><button class="button light" type="submit">Regenerate code</button></form>

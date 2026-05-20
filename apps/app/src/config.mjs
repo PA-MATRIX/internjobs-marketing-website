@@ -85,11 +85,9 @@ export function getConfig(env = process.env) {
       url: env.BRIDGE_URL || env.MAC_BRIDGE_URL || "",
       hmacSecret: env.BRIDGE_HMAC_SECRET || "",
     },
-    // SMS provider selector. Defaults to 'spectrum' (Photon cloud, the
-    // v1.1/v1.2 baseline). Set to 'mac-bridge' on Fly to switch outbound
-    // routing to the self-hosted Mac. The /webhooks/mac-bridge route is
-    // always wired so the bridge can push inbound regardless of which
-    // provider is "primary" for outbound.
+    // SMS provider selector. Production uses 'mac-bridge' (BlueBubbles on
+    // the self-hosted Mac). The legacy Spectrum/Photon webhook remains
+    // wired only for old callbacks/tests and should not drive QR numbers.
     smsProviderName: (env.SMS_PROVIDER || "spectrum").toLowerCase(),
     // v1.2 Phase 09 — Standout-style LinkedIn enrichment.
     // proxycurl.apiToken — bearer token for Proxycurl's Reverse Email
@@ -122,8 +120,19 @@ export function getMissingProviderConfig(config) {
 
   if (!config.clerk.publishableKey && !config.clerk.signInUrl) missing.push("CLERK_PUBLISHABLE_KEY or CLERK_SIGN_IN_URL");
   if (!config.databaseUrl) missing.push("DATABASE_URL");
-  if (!config.photon.fromNumber) missing.push("PHOTON_FROM_NUMBER");
-  if (!config.photon.webhookSecret) missing.push("PHOTON_WEBHOOK_SECRET or SPECTRUM_WEBHOOK_SECRET");
+  if (!config.onboarding.agentNumber) missing.push("AGENT_NUMBER");
+  if (config.smsProviderName === "mac-bridge") {
+    if (!config.macBridge.url) missing.push("BRIDGE_URL or MAC_BRIDGE_URL");
+    if (!config.macBridge.hmacSecret) missing.push("BRIDGE_HMAC_SECRET");
+  }
+  const spectrumActive =
+    config.smsProviderName === "spectrum" || config.enableSpectrumListener;
+  if (spectrumActive && !config.photon.fromNumber) {
+    missing.push("PHOTON_FROM_NUMBER or SPECTRUM_FROM_NUMBER");
+  }
+  if (spectrumActive && !config.photon.webhookSecret) {
+    missing.push("PHOTON_WEBHOOK_SECRET or SPECTRUM_WEBHOOK_SECRET");
+  }
 
   // Phase 03 keys: warnings (not hard blocks) — they become hard blocks in
   // Phase 05 when sends are required and inbound is required end-to-end.

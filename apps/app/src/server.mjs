@@ -54,16 +54,12 @@ import { getR2Client } from "./storage/r2.mjs";
 const config = getConfig();
 const store = createStore(config);
 
-// v1.2 (2026-05-17): SMS provider selector. SMS_PROVIDER=mac-bridge swaps
-// outbound routing to the self-hosted Mac mini; default 'spectrum' keeps
-// Photon cloud as the outbound path. The /webhooks/mac-bridge route below
-// is wired unconditionally so the Mac bridge can push inbound regardless.
-// We also keep a 'macBridgeProvider' handle so the webhook handler can use
-// it for inbound parsing/verification even when spectrum is the outbound.
+// v1.2 (2026-05-17): SMS provider selector. Production uses
+// SMS_PROVIDER=mac-bridge: BlueBubbles on the self-hosted Mac mini is the
+// active path. Legacy Photon/Spectrum routes stay wired for old callbacks
+// and tests, but they do not define the visible pairing number.
 const spectrumProvider = createSpectrumSmsProvider(config);
 const macBridgeProvider = createMacBridgeSmsProvider(config);
-const smsProvider =
-  config.smsProviderName === "mac-bridge" ? macBridgeProvider : spectrumProvider;
 
 // v1.2 Phase 04: initialize Mastra in-process. Idempotent + side-effect-light
 // (Mastra defers actual schema creation until first memory/workflow API call).
@@ -136,9 +132,8 @@ const server = createServer(async (req, res) => {
         configured: {
           clerk: Boolean(config.clerk.publishableKey || config.clerk.signInUrl),
           database: Boolean(config.databaseUrl),
-          photonNumber: Boolean(config.photon.fromNumber),
-          photonWebhook: Boolean(config.photon.webhookSecret),
-          spectrumListener: Boolean(config.enableSpectrumListener),
+          agentNumber: Boolean(config.onboarding.agentNumber),
+          macBridge: Boolean(config.macBridge.url && config.macBridge.hmacSecret),
           // v1.2 Phase 03: presence-only checks (we don't call CF here).
           // cloudflareEmailReady is true iff BOTH the account id and the
           // Email-Sending-scoped API token are present — the send call
@@ -556,14 +551,14 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/webhooks/photon") {
       const rawBody = await readBody(req);
-      const verified = smsProvider.verifyWebhook(req, rawBody);
+      const verified = spectrumProvider.verifyWebhook(req, rawBody);
       if (!verified.ok) {
         sendJson(res, 401, { error: "unauthorized" });
         return;
       }
 
       const payload = JSON.parse(rawBody || "{}");
-      const inbound = smsProvider.parseInbound(payload);
+      const inbound = spectrumProvider.parseInbound(payload);
       // v1.2 Phase 04, Flag 3 fix: parameterize provider so the Spectrum
       // path stays explicitly 'spectrum' (matches messaging_events writes
       // elsewhere and unblocks the future Telnyx adapter without code
@@ -573,7 +568,7 @@ const server = createServer(async (req, res) => {
         : await store.recordInboundMessage(inbound);
 
       if (confirmation.student && confirmation.welcomeNeeded) {
-        const welcome = await smsProvider.sendSms(confirmation.student.channelAddress, createWelcomeText(confirmation.student));
+        const welcome = await spectrumProvider.sendSms(confirmation.student.channelAddress, createWelcomeText(confirmation.student));
         await store.markWelcomeSent(confirmation.student.id, welcome.status, welcome.metadata);
       }
 
@@ -652,9 +647,9 @@ const server = createServer(async (req, res) => {
             if (isHardBlock) {
               // SAFETY-RESPONSE-01: canned reply matches AGENT_VOICE exactly.
               // No throw on send failure — log and continue so the 200 still goes
-              // back to Photon (no retry storm).
+              // back to the legacy provider (no retry storm).
               try {
-                await smsProvider.sendSms(
+                await spectrumProvider.sendSms(
                   inbound.channelAddress,
                   "hey — couldn't process that one. try rephrasing?",
                 );
@@ -679,7 +674,7 @@ const server = createServer(async (req, res) => {
               runStudentInboundWorkflow({
                 pool: store.pool,
                 messageId,
-                smsProvider,
+                smsProvider: spectrumProvider,
                 config,
               }).catch((err) => {
                 console.error(
@@ -725,9 +720,8 @@ const server = createServer(async (req, res) => {
     //
     // Mirrors /webhooks/photon: pairing-code path runs first when the body
     // matches, otherwise we recordInboundMessage + fire the agent workflow
-    // fire-and-forget. The smsProvider used by the workflow is whichever
-    // one is selected by SMS_PROVIDER — on the Mac path that's
-    // macBridgeProvider, so outbound replies go back through the bridge.
+    // fire-and-forget. Outbound replies go back through BlueBubbles via
+    // macBridgeProvider.
     if (req.method === "POST" && url.pathname === "/webhooks/mac-bridge") {
       const rawBody = await readBody(req);
       const verified = macBridgeProvider.verifyWebhook(req, rawBody);
@@ -1505,7 +1499,7 @@ server.listen(config.port, config.host, () => {
   console.log(`InternJobs.ai app listening on ${config.host}:${config.port}`);
 });
 
-startSpectrumWaitlistListener({ config, store, smsProvider });
+startSpectrumWaitlistListener({ config, store, smsProvider: spectrumProvider });
 
 async function requireAuth(req, res) {
   const auth = await getAuth(req, config);

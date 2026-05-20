@@ -283,7 +283,7 @@ function parseSpectrumMessage(space, message) {
 }
 
 // Photon/Spectrum iMessage encodes the participant phone in space.id as
-// `<spaceType>;-;<phone>` (e.g. `any;-;+17133924287`). space.phone can be
+// `<spaceType>;-;<phone>`. space.phone can be
 // a literal phone OR a marker string like "shared" — only accept it when
 // it actually looks like a phone. Otherwise fall back to spaceId parsing.
 const PHONE_RE = /\+?\d{6,15}/;
