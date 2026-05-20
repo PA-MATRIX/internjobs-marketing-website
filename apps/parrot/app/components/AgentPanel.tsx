@@ -33,10 +33,12 @@ import {
 	Sparkles,
 	StickyNote,
 	User,
+	Wrench,
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "~/lib/api";
+import { MCPPanel } from "./MCPPanel";
 
 export type AgentInitialAction =
 	| "summarize"
@@ -91,6 +93,7 @@ export function AgentPanel({
 	onClose,
 	onDraftSavedToCompose,
 }: AgentPanelProps) {
+	const [tab, setTab] = useState<"chat" | "tools">("chat");
 	const [messages, setMessages] = useState<AgentMessage[]>([]);
 	const [inputValue, setInputValue] = useState("");
 	const [draftInstructions, setDraftInstructions] = useState("");
@@ -282,15 +285,38 @@ export function AgentPanel({
 						Parrot Agent
 					</span>
 				</div>
-				<button
-					type="button"
-					onClick={onClose}
-					className="text-slate-400 hover:text-slate-700"
-					aria-label="Close agent"
-				>
-					<X size={14} />
-				</button>
+				<div className="flex items-center gap-1">
+					<button
+						type="button"
+						onClick={() => setTab(tab === "tools" ? "chat" : "tools")}
+						className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+							tab === "tools"
+								? "border-indigo-300 bg-indigo-50 text-indigo-700"
+								: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+						}`}
+						title="Show tool catalog"
+					>
+						<Wrench size={10} />
+						Tools
+					</button>
+					<button
+						type="button"
+						onClick={onClose}
+						className="text-slate-400 hover:text-slate-700 ml-1"
+						aria-label="Close agent"
+					>
+						<X size={14} />
+					</button>
+				</div>
 			</div>
+
+			{/* When the Tools tab is active, hand off to MCPPanel. */}
+			{tab === "tools" ? (
+				<div className="flex-1 min-h-0">
+					<MCPPanel />
+				</div>
+			) : (
+			<>
 
 			{/* Quick-action bar */}
 			<div className="border-b border-slate-100 bg-slate-50 px-3 py-2 flex flex-wrap gap-1.5">
@@ -469,6 +495,8 @@ export function AgentPanel({
 					<Send size={14} />
 				</button>
 			</div>
+			</>
+			)}
 		</div>
 	);
 }
