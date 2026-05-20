@@ -142,8 +142,9 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
 
   // 3. Load student profile context (best-effort; absence is fine).
   //    Also pulls students.name + the latest profile_snapshots.display_name
-  //    so the agent can address the candidate by first name (voice rule
-  //    introduced 2026-05-17 with AGENT-VOICE).
+  //    + the stored LinkedIn URL so the first-contact prompt can address
+  //    the candidate by name and carry the identity URL even before
+  //    provider enrichment finishes.
   const profile = await loadStudentProfile(pool, studentId);
   const profileBlob = composeProfileBlob(profile);
 
@@ -198,10 +199,10 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   // 6b. v1.2 Phase 09 — first-contact detection. Zero prior sent drafts on
   //     this conversation = the agent hasn't replied yet, so this turn is
   //     the FIRST contact. We route the prompt through composeFirstContactPrompt
-  //     which prepends a "first message, reference their LinkedIn"
-  //     instruction and embeds the structured LinkedIn block from
-  //     linkedin_profiles. On all subsequent turns we use the normal
-  //     composePrompt path.
+  //     which prepends first-message instructions and embeds the structured
+  //     LinkedIn block from linkedin_profiles when available. If enrichment
+  //     has not finished yet, the prompt still carries the stored LinkedIn
+  //     URL and explicitly tells the model not to invent details.
   const priorOutbound = await countPriorOutbound(pool, conversation.id);
   const isFirstContact = priorOutbound === 0;
   const linkedinBlock = composeLinkedInBlock(profile.linkedin);
@@ -558,6 +559,7 @@ async function loadStudentProfile(pool, studentId) {
   // null and the prompt instructs the agent to omit the name.
   const { rows: nameRows } = await pool.query(
     `select s.name as student_name,
+            s.linkedin_profile_url as student_linkedin_url,
             ps.display_name as snapshot_name
        from students s
        left join lateral (
@@ -574,6 +576,7 @@ async function loadStudentProfile(pool, studentId) {
   const nameRow = nameRows[0] || {};
   const fullName = pickName(nameRow.student_name, nameRow.snapshot_name);
   const firstName = deriveFirstName(fullName);
+  const linkedinProfileUrl = String(nameRow.student_linkedin_url || "").trim();
 
   // v1.2 Phase 09: Proxycurl-enriched LinkedIn fields. May be null on a
   // brand-new student whose /onboard/start enrichment hasn't completed yet
@@ -604,10 +607,24 @@ async function loadStudentProfile(pool, studentId) {
       );
     }
   }
+  if (!linkedin && linkedinProfileUrl) {
+    linkedin = {
+      linkedin_url: linkedinProfileUrl,
+      linkedin_id: "",
+      headline: "",
+      summary: "",
+      current_company: "",
+      current_title: "",
+      schools: [],
+      experiences: [],
+      skills: [],
+    };
+  }
 
   return {
     fullName,
     firstName,
+    linkedinProfileUrl,
     interests: row?.interests || [],
     projects: row?.projects || "",
     preferredWork: row?.preferred_work || "",
@@ -642,6 +659,7 @@ function composeProfileBlob(profile) {
   if (profile.fullName && profile.fullName !== profile.firstName) {
     parts.push("full_name: " + profile.fullName);
   }
+  if (profile.linkedinProfileUrl) parts.push("linkedin_url: " + profile.linkedinProfileUrl);
   if (profile.interests?.length) parts.push("interests: " + profile.interests.join(", "));
   if (profile.projects) parts.push("projects: " + profile.projects);
   if (profile.preferredWork) parts.push("preferred work: " + profile.preferredWork);
@@ -717,11 +735,17 @@ async function countPriorOutbound(pool, conversationId) {
 // Exported so unit tests + future startup-side workflows can reuse the
 // shape without duplicating the structure.
 export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, inboundBody }) {
+  const hasLinkedInDetails = hasDetailedLinkedInBlock(linkedinBlock);
   const parts = [
     "--- First contact ---",
     "This is the FIRST iMessage from a new student. They just paired their phone via the QR/sms deep-link onboarding flow.",
-    "Open warmly and reference something SPECIFIC from their LinkedIn (school, a past role, a skill).",
-    "Do NOT ask what they're studying or where they work — you already know. Do NOT ask for their resume.",
+    "The first sentence must include first_name if first_name is present in the student profile.",
+    hasLinkedInDetails
+      ? "Open warmly and reference something SPECIFIC from their LinkedIn (school, a past role, a skill)."
+      : "LinkedIn enrichment has not returned structured details yet. Do NOT invent a school, employer, role, or skill from the URL alone.",
+    hasLinkedInDetails
+      ? "Do NOT ask what they're studying or where they work — you already know. Do NOT ask for their resume."
+      : "Use the stored LinkedIn URL only as identity context. Ask one concrete next question tied to the matched role, not a generic profile question.",
     "",
   ];
   if (linkedinBlock) {
@@ -739,9 +763,15 @@ export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, in
     "--- New inbound from student ---",
     inboundBody || "(empty)",
     "",
-    "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must be contextual — name a school, role, or skill from their LinkedIn. Warm openers like \"fair.\", \"ok.\", \"ah, got it.\" are fine — but do not use banned chatbot tells (\"sure!\", \"absolutely!\", \"great question!\", etc.). Output only the SMS body.",
+    hasLinkedInDetails
+      ? "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available and name a school, role, or skill from their LinkedIn. Warm openers like \"fair.\", \"ok.\", \"ah, got it.\" are fine — but do not use banned chatbot tells (\"sure!\", \"absolutely!\", \"great question!\", etc.). Output only the SMS body."
+      : "Reply in the voice defined in the system message. This is your FIRST message to them, so the opener must include their first name if available. Do not claim LinkedIn details you do not have yet. Output only the SMS body.",
   );
   return parts.join("\n");
+}
+
+function hasDetailedLinkedInBlock(linkedinBlock) {
+  return /\n\s+(headline|school|current|recent|skills):\s+\S/i.test(String(linkedinBlock || ""));
 }
 
 // ─── Match step ──────────────────────────────────────────────────────────────

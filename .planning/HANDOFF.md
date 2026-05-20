@@ -89,6 +89,8 @@ Agent features (AgentPanel, MCPPanel, summarize/draft/translate, 11 MCP tools) d
 
 Latest patch: QR / START-code creation now requires a stored LinkedIn profile URL. Phone claims are immutable for that LinkedIn identity: if a student already has a confirmed phone, a different inbound phone is rejected and audited instead of replacing `students.channel_address`. If the LinkedIn URL changes for the same Clerk user, the student is reset to `linkedin_connected`, confirmed channel fields are cleared, and active pairing codes are expired so the new LinkedIn identity can pair cleanly.
 
+Follow-up patch: first-contact prompts now always carry `first_name`, `full_name`, and the stored LinkedIn URL. The agent is required to include the first name in the first sentence when available. It only references school/current role/skills when structured `linkedin_profiles` enrichment has actually returned those fields; otherwise it uses the URL as identity context and does not invent profile details.
+
 Verified with:
 - `npm run build` in `apps/app`
 - `npm run test:auth` in `apps/app`
