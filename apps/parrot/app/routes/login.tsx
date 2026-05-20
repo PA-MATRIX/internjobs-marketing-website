@@ -1,190 +1,144 @@
-// v1.2 Phase 10 Wave 2b: /sign-in — employee code sign-in.
+// v1.2 Phase 10 Wave 2b: /sign-in — Clerk-managed employee sign-in.
 //
-// We use Clerk as the auth provider, but render a small custom flow
-// instead of the stock <SignIn> widget. That lets Parrot control resend
-// cooldown UX and avoid duplicate code requests when a user clicks Continue
-// repeatedly. The primary path is phone OTP; verified workspace emails can
-// be used as a fallback for admins who have one attached in Clerk.
+// Parrot uses the dedicated employee Clerk app. The Clerk instance is
+// configured for phone OTP, so the standard Clerk form should own phone
+// formatting, country selection, resend behavior, verification-code entry,
+// and recovery states. The app only preserves same-site redirects and
+// sends already-authenticated users straight into the workspace.
 
-import { useMemo, useState } from "react";
-import { useSignIn } from "@clerk/clerk-react";
+import { useEffect, useMemo } from "react";
+import { SignIn, useAuth } from "@clerk/clerk-react";
 import { useSearchParams } from "react-router";
-import { Loader2 } from "lucide-react";
 import { VantaBirds } from "../components/VantaBirds";
 
-const E164_REGEX = /^\+[1-9]\d{7,14}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const RESEND_COOLDOWN_MS = 35_000;
-const COOLDOWN_KEY_PREFIX = "parrot_code_sent_at:";
-
-type Step = "identifier" | "code";
-type CodeFactor =
-	| { strategy: "phone_code"; phoneNumberId: string }
-	| { strategy: "email_code"; emailAddressId: string };
-
-function normalizePhone(raw: string): string {
-	const trimmed = raw.trim();
-	if (trimmed.startsWith("+")) return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-	const digits = trimmed.replace(/\D/g, "");
-	if (digits.length === 10) return `+1${digits}`;
-	if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-	return trimmed;
+function safeRedirectUrl(raw: string | null): string {
+	if (!raw || raw === "/sign-in" || raw.startsWith("/sign-in/")) {
+		return "/dashboard";
+	}
+	if (raw.startsWith("/") && !raw.startsWith("//")) {
+		return raw;
+	}
+	return "/dashboard";
 }
 
-function normalizeIdentifier(raw: string): string {
-	const trimmed = raw.trim();
-	if (trimmed.includes("@")) return trimmed.toLowerCase();
-	return normalizePhone(trimmed);
-}
+function isIdentifierInput(input: HTMLInputElement): boolean {
+	const name = input.name.toLowerCase();
+	const ariaLabel = input.getAttribute("aria-label")?.toLowerCase() ?? "";
+	const placeholder = input.placeholder.toLowerCase();
+	const autocomplete = input.autocomplete.toLowerCase();
 
-function isEmail(identifier: string): boolean {
-	return EMAIL_REGEX.test(identifier);
-}
+	if (autocomplete === "one-time-code") return false;
+	if (name.includes("code") || ariaLabel.includes("code")) return false;
 
-function userMessage(err: unknown): string {
-	const maybe = err as {
-		errors?: Array<{ longMessage?: string; message?: string; code?: string }>;
-		message?: string;
-	};
-	const first = maybe?.errors?.[0];
 	return (
-		first?.longMessage ||
-		first?.message ||
-		maybe?.message ||
-		"Sign-in failed. Please try again."
+		name.includes("identifier") ||
+		ariaLabel.includes("email") ||
+		ariaLabel.includes("phone") ||
+		placeholder.includes("email") ||
+		placeholder.includes("phone")
 	);
 }
 
-function getCooldownRemaining(identifier: string): number {
-	if (typeof window === "undefined") return 0;
-	const sentAt = Number(
-		window.localStorage.getItem(`${COOLDOWN_KEY_PREFIX}${identifier}`) || "0",
-	);
-	return Math.max(0, sentAt + RESEND_COOLDOWN_MS - Date.now());
+function replaceClerkText(root: HTMLElement) {
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	const replacements: Array<[RegExp, string]> = [
+		[/Email address or phone number/g, "Phone number"],
+		[/Email or phone/g, "Phone number"],
+		[/email address or phone number/g, "phone number"],
+		[/email or phone/g, "phone number"],
+	];
+
+	let node = walker.nextNode();
+	while (node) {
+		let nextValue = node.nodeValue ?? "";
+		for (const [pattern, replacement] of replacements) {
+			nextValue = nextValue.replace(pattern, replacement);
+		}
+		if (nextValue !== node.nodeValue) {
+			node.nodeValue = nextValue;
+		}
+		node = walker.nextNode();
+	}
+
+	for (const input of root.querySelectorAll("input")) {
+		if (input instanceof HTMLInputElement && isIdentifierInput(input)) {
+			if (input.type !== "tel") input.type = "tel";
+			if (input.inputMode !== "tel") input.inputMode = "tel";
+			if (input.autocomplete !== "tel") input.autocomplete = "tel";
+			if (input.placeholder !== "+1 555 555 5555") {
+				input.placeholder = "+1 555 555 5555";
+			}
+		}
+	}
 }
 
-function markCodeSent(identifier: string) {
-	if (typeof window === "undefined") return;
-	window.localStorage.setItem(
-		`${COOLDOWN_KEY_PREFIX}${identifier}`,
-		String(Date.now()),
-	);
+function usePhoneOnlyClerkSignIn(enabled: boolean) {
+	useEffect(() => {
+		if (!enabled) return;
+		const root = document.querySelector<HTMLElement>("[data-parrot-sign-in]");
+		if (!root) return;
+
+		const blockEmailSubmit = (event: Event) => {
+			const identifier = Array.from(root.querySelectorAll("input")).find(
+				(input): input is HTMLInputElement =>
+					input instanceof HTMLInputElement && isIdentifierInput(input),
+			);
+			if (!identifier) return;
+
+			if (identifier.value.includes("@")) {
+				event.preventDefault();
+				event.stopPropagation();
+				identifier.setCustomValidity(
+					"Use your employee phone number to sign in to Parrot.",
+				);
+				identifier.reportValidity();
+				return;
+			}
+
+			identifier.setCustomValidity("");
+		};
+
+		const observer = new MutationObserver(() => replaceClerkText(root));
+		observer.observe(root, {
+			attributes: true,
+			characterData: true,
+			childList: true,
+			subtree: true,
+		});
+
+		replaceClerkText(root);
+		root.addEventListener("submit", blockEmailSubmit, true);
+		return () => {
+			observer.disconnect();
+			root.removeEventListener("submit", blockEmailSubmit, true);
+		};
+	}, [enabled]);
 }
 
 export default function LoginRoute() {
 	const [params] = useSearchParams();
 	const reason = params.get("reason");
-	const redirectUrl = params.get("redirect_url") || "/";
-	const { isLoaded, signIn, setActive } = useSignIn();
-
-	const [step, setStep] = useState<Step>("identifier");
-	const [identifierInput, setIdentifierInput] = useState("");
-	const [identifier, setIdentifier] = useState("");
-	const [codeFactor, setCodeFactor] = useState<CodeFactor | null>(null);
-	const [code, setCode] = useState("");
-	const [error, setError] = useState<string | null>(null);
-	const [busy, setBusy] = useState(false);
-	const [cooldownUntil, setCooldownUntil] = useState(0);
-	const cooldownRemaining = Math.max(0, cooldownUntil - Date.now());
-	const cooldownSeconds = Math.ceil(cooldownRemaining / 1000);
-
-	const normalizedIdentifier = useMemo(
-		() => normalizeIdentifier(identifierInput),
-		[identifierInput],
+	const redirectUrl = useMemo(
+		() => safeRedirectUrl(params.get("redirect_url")),
+		[params],
 	);
+	const { isLoaded, isSignedIn } = useAuth();
 
-	async function sendCode(targetIdentifier: string, allowCooldown = true) {
-		if (!isLoaded || !signIn) return;
-		const cooldown = getCooldownRemaining(targetIdentifier);
-		if (allowCooldown && cooldown > 0) {
-			setCooldownUntil(Date.now() + cooldown);
-			setError(
-				`Please wait ${Math.ceil(cooldown / 1000)} seconds before requesting another code.`,
-			);
-			return;
+	useEffect(() => {
+		if (isLoaded && isSignedIn) {
+			window.location.replace(redirectUrl);
 		}
-		setBusy(true);
-		setError(null);
-		try {
-			const attempt = await signIn.create({ identifier: targetIdentifier });
-			const factors = (attempt.supportedFirstFactors ?? []) as CodeFactor[];
-			const preferEmail = isEmail(targetIdentifier);
-			const factor =
-				factors.find((f) =>
-					preferEmail
-						? f.strategy === "email_code"
-						: f.strategy === "phone_code",
-				) ??
-				factors.find((f) => f.strategy === "email_code") ??
-				factors.find((f) => f.strategy === "phone_code");
-			if (!factor) {
-				throw new Error("This account is not enabled for code sign-in.");
-			}
-			if (factor.strategy === "email_code") {
-				await signIn.prepareFirstFactor({
-					strategy: "email_code",
-					emailAddressId: factor.emailAddressId,
-				});
-			} else {
-				await signIn.prepareFirstFactor({
-					strategy: "phone_code",
-					phoneNumberId: factor.phoneNumberId,
-				});
-			}
-			markCodeSent(targetIdentifier);
-			setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
-			setIdentifier(targetIdentifier);
-			setCodeFactor(factor);
-			setStep("code");
-		} catch (e) {
-			setError(userMessage(e));
-		} finally {
-			setBusy(false);
-		}
-	}
+	}, [isLoaded, isSignedIn, redirectUrl]);
 
-	async function onIdentifierSubmit(e: React.FormEvent) {
-		e.preventDefault();
-		if (
-			!E164_REGEX.test(normalizedIdentifier) &&
-			!EMAIL_REGEX.test(normalizedIdentifier)
-		) {
-			setError("Enter a valid phone number or workspace email.");
-			return;
-		}
-		await sendCode(normalizedIdentifier);
-	}
-
-	async function onCodeSubmit(e: React.FormEvent) {
-		e.preventDefault();
-		if (!isLoaded || !signIn || !setActive) return;
-		setBusy(true);
-		setError(null);
-		try {
-			if (!codeFactor) {
-				throw new Error("Request a verification code first.");
-			}
-			const attempt = await signIn.attemptFirstFactor({
-				strategy: codeFactor.strategy,
-				code: code.trim(),
-			});
-			if (attempt.status !== "complete" || !attempt.createdSessionId) {
-				throw new Error("Code accepted, but sign-in is not complete yet.");
-			}
-			await setActive({ session: attempt.createdSessionId });
-			window.location.href = redirectUrl;
-		} catch (e) {
-			setError(userMessage(e));
-		} finally {
-			setBusy(false);
-		}
-	}
+	const isRedirecting = isLoaded && isSignedIn;
+	const isCheckingSession = !isLoaded;
+	usePhoneOnlyClerkSignIn(isLoaded && !isSignedIn);
 
 	return (
 		<div className="min-h-screen flex items-center justify-center p-6 relative">
 			<VantaBirds />
-			<div className="w-full max-w-md relative z-10 backdrop-blur-sm bg-white/60 rounded-xl border border-white/40 shadow-xl p-6">
-				<div className="mb-6 text-center">
+			<div className="w-full max-w-md relative z-10">
+				<div className="mb-5 text-center">
 					<img
 						src="/logo.svg"
 						alt="InternJobs.ai"
@@ -196,127 +150,41 @@ export default function LoginRoute() {
 					<p className="text-sm text-slate-700 mt-1 italic">
 						Birds of the same flock fly together.
 					</p>
-					<p className="text-xs text-slate-500 mt-3">
-						Clerk verification keeps this workspace protected.
-					</p>
 				</div>
 
-				{reason && (
+				{reason && !isRedirecting ? (
 					<p className="mb-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
 						{reason === "external_email"
 							? "Parrot is for InternJobs Team members. Ask an operator to invite you."
 							: "Please sign in to continue."}
 					</p>
-				)}
+				) : null}
 
-				{error && (
-					<p className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-						{error}
-					</p>
-				)}
-
-				{step === "identifier" ? (
-					<form onSubmit={onIdentifierSubmit} className="space-y-4">
-						<div>
-							<label
-								htmlFor="identifier"
-								className="block text-sm font-medium text-slate-700"
-							>
-								Phone number or workspace email
-							</label>
-							<input
-								id="identifier"
-								type="text"
-								value={identifierInput}
-								onChange={(e) => {
-									setIdentifierInput(e.target.value);
-									setError(null);
-								}}
-								placeholder="Mobile number or name@internjobs.ai"
-								autoComplete="off"
-								autoCorrect="off"
-								autoCapitalize="none"
-								spellCheck={false}
-								name="parrot-workspace-identifier"
-								className="mt-1 w-full rounded-md border border-slate-200 bg-white/90 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
-							/>
-							<p className="mt-1 text-xs text-slate-500">
-								US numbers can be entered with or without +1.
-							</p>
-						</div>
-						<button
-							type="submit"
-							disabled={!isLoaded || busy || !identifierInput.trim()}
-							className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-						>
-							{busy ? <Loader2 className="animate-spin" size={16} /> : null}
-							Send code
-						</button>
-					</form>
+				{isCheckingSession ? (
+					<div className="rounded-xl border border-white/40 bg-white/80 p-6 text-center text-sm text-slate-700 shadow-xl backdrop-blur-sm">
+						Checking your session...
+					</div>
+				) : isRedirecting ? (
+					<div className="rounded-xl border border-white/40 bg-white/70 p-6 text-center text-sm text-slate-700 shadow-xl backdrop-blur-sm">
+						Opening your workspace...
+					</div>
 				) : (
-					<form onSubmit={onCodeSubmit} className="space-y-4">
-						<div>
-							<label
-								htmlFor="code"
-								className="block text-sm font-medium text-slate-700"
-							>
-								Verification code
-							</label>
-							<input
-								id="code"
-								type="text"
-								inputMode="numeric"
-								value={code}
-								onChange={(e) => {
-									setCode(e.target.value);
-									setError(null);
-								}}
-								placeholder="123456"
-								autoComplete="one-time-code"
-								className="mt-1 w-full rounded-md border border-slate-200 bg-white/90 px-3 py-2 text-sm tracking-[0.2em] outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
-							/>
-							<p className="mt-1 text-xs text-slate-500">
-								Code sent to {isEmail(identifier) ? identifier : "your phone number"}.
-							</p>
-						</div>
-						<div className="flex flex-col gap-2 sm:flex-row">
-							<button
-								type="submit"
-								disabled={!isLoaded || busy || code.trim().length < 4}
-								className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-							>
-								{busy ? <Loader2 className="animate-spin" size={16} /> : null}
-								Continue
-							</button>
-							<button
-								type="button"
-								disabled={
-									!isLoaded ||
-									busy ||
-									cooldownRemaining > 0 ||
-									!codeFactor
-								}
-								onClick={() => sendCode(identifier)}
-								className="rounded-md border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-white disabled:opacity-50"
-							>
-								{cooldownRemaining > 0
-									? `Resend in ${cooldownSeconds}s`
-									: "Resend code"}
-							</button>
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								setStep("identifier");
-								setCode("");
-								setCodeFactor(null);
-								setError(null);
+					<div data-parrot-sign-in>
+						<SignIn
+							routing="path"
+							path="/sign-in"
+							forceRedirectUrl={redirectUrl}
+							fallbackRedirectUrl={redirectUrl}
+							appearance={{
+								elements: {
+									cardBox:
+										"shadow-xl border border-white/40 backdrop-blur-sm",
+									card: "bg-white/95",
+									footer: "hidden",
+								},
 							}}
-							className="text-xs font-medium text-slate-500 hover:text-slate-900"
-						>
-							Use a different sign-in identifier
-						</button>
-					</form>
+						/>
+					</div>
 				)}
 			</div>
 		</div>

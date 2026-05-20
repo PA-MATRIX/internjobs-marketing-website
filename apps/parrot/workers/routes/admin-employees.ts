@@ -1,9 +1,9 @@
 // v1.2 Phase 10 Wave 2b: /api/admin/employees — invite / list / disable.
 //
 // End-to-end flow for an invite:
-//   1) Operator POSTs { name, personalEmail } with their Clerk session.
+//   1) Operator POSTs { name, personalEmail, phoneNumber } with their Clerk session.
 //   2) We derive workspaceEmail = slugify(name) + "@internjobs.ai".
-//   3) Create a Clerk user with that email + parsed first/last name.
+//   3) Create a Clerk user with the phone-number login identifier + parsed first/last name.
 //   4) Add a CF Email Routing rule forwarding that address to the
 //      Parrot Worker (apps/parrot — handler in workers/app.ts:email()).
 //   5) Send a welcome email to personalEmail via the SendEmail binding
@@ -69,13 +69,13 @@ const InviteSchema = z.object({
 	name: z.string().min(1).max(200),
 	personalEmail: z.string().email(),
 	displayName: z.string().min(1).max(200).optional(),
-	// Phase 16 additions — all optional for backward compat.
+	// Phase 16 additions. phoneNumber is required because it is the login
+	// credential; the workspace email is internal Parrot state.
 	firstName: z.string().min(1).max(100).optional(),
 	lastName: z.string().min(0).max(100).optional(),
 	phoneNumber: z
 		.string()
-		.regex(/^\+[1-9]\d{7,14}$/, "phoneNumber must be E.164")
-		.optional(),
+		.regex(/^\+[1-9]\d{7,14}$/, "phoneNumber must be E.164"),
 	featureFlags: FeatureFlagsObject.optional(),
 });
 
@@ -122,17 +122,14 @@ adminEmployees.post("/", async (c) => {
 		);
 	}
 
-	// 1) Create Clerk user in the employee Clerk app.
-	// When phoneNumber is supplied, the Clerk app is phone-OTP only —
-	// createClerkUser sends `phone_number` (NOT `email_address`). When
-	// phoneNumber is absent, we fall back to the email-OTP enrollment path
-	// for backward compat with any caller that hasn't migrated.
+	// 1) Create Clerk user in the employee Clerk app. Parrot login is
+	// phone-OTP only: createClerkUser sends `phone_number` and never
+	// `email_address`. workspaceEmail is stored inside Parrot for email
+	// routing and internal identity after sign-in.
 	let clerkUserId: string;
 	try {
 		const clerkUser = await createClerkUser(c.env, {
-			...(phoneNumber
-				? { phoneNumber }
-				: { emailAddress: workspaceEmail }),
+			phoneNumber,
 			firstName: firstName || name,
 			lastName,
 			publicMetadata: { role: "employee" },

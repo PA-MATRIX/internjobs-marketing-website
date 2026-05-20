@@ -165,8 +165,8 @@ async function enrichEmployeeFromDirectory(
 	}
 }
 
-/** Send unauth users to Parrot's own embedded sign-in form (a
- *  <SignIn> from @clerk/react-router restricted to email OTP).
+/** Send unauth users to Parrot's own embedded sign-in form.
+ *  apps/parrot/app/routes/login.tsx runs the custom phone-OTP flow.
  *  app/routes/login.tsx renders the form; we pass `redirect_url` as
  *  ?after_sign_in_url so Clerk routes back to the original path. */
 function buildSignInRedirect(path: string): string {

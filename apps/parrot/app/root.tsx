@@ -27,6 +27,76 @@ import "./index.css";
 import { OnboardingWizard } from "~/components/OnboardingWizard";
 import { useCurrentEmployee } from "~/lib/auth";
 
+const parrotClerkAppearance = {
+	variables: {
+		colorPrimary: "#0f172a",
+		colorText: "#0f172a",
+		colorTextSecondary: "#334155",
+		colorBackground: "#ffffff",
+		colorInputText: "#0f172a",
+		colorInputBackground: "#ffffff",
+		colorDanger: "#be123c",
+		fontFamily:
+			'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+		borderRadius: "0.5rem",
+	},
+	elements: {
+		// Hide the "Secured by Clerk" branding row.
+		footer: { display: "none" },
+		cardBox: {
+			border: "1px solid rgba(255, 255, 255, 0.6)",
+			boxShadow: "0 20px 60px rgba(15, 23, 42, 0.18)",
+		},
+		card: {
+			backgroundColor: "rgba(255, 255, 255, 0.96)",
+		},
+		headerTitle: { color: "#0f172a" },
+		headerSubtitle: { color: "#334155" },
+		formFieldLabel: { color: "#0f172a" },
+		formFieldInput: {
+			backgroundColor: "#ffffff",
+			color: "#0f172a",
+			borderColor: "#cbd5e1",
+		},
+		formFieldInputShowPasswordButton: { color: "#334155" },
+		formFieldHintText: { color: "#475569" },
+		formFieldErrorText: { color: "#be123c" },
+		formButtonPrimary: {
+			backgroundColor: "#0f172a",
+			color: "#ffffff",
+		},
+		identityPreviewText: { color: "#0f172a" },
+		alertText: { color: "#0f172a" },
+	},
+};
+
+const parrotClerkLocalization = {
+	formFieldLabel__emailAddress: "Phone number",
+	formFieldLabel__phoneNumber: "Phone number",
+	formFieldInputPlaceholder__emailAddress: "+1 555 555 5555",
+	formFieldInputPlaceholder__phoneNumber: "+1 555 555 5555",
+	formButtonPrimary: "Continue",
+	signIn: {
+		start: {
+			title: "Sign in with phone",
+			titleCombined: "Sign in with phone",
+			subtitle: "Use your employee phone number.",
+			subtitleCombined: "Use your employee phone number.",
+			actionLink__use_phone: "Use phone",
+		},
+		phoneCode: {
+			title: "Check your phone",
+			subtitle: "Enter the verification code sent to your phone.",
+			formTitle: "Verification code",
+			resendButton: "Resend code",
+		},
+	},
+	unstable__errors: {
+		form_param_format_invalid__phone_number:
+			"Enter a valid phone number with country code.",
+	},
+};
+
 // Server loader — hand the publishable key + VAPID public key to the
 // client. Both are SAFE TO SHIP to the browser:
 //   - Clerk publishable key: it's literally designed for client-side
@@ -147,14 +217,9 @@ export default function App() {
 		<ClerkProvider
 			publishableKey={publishableKey}
 			signInUrl="/sign-in"
-			signInFallbackRedirectUrl="/"
-			afterSignInUrl="/"
-			appearance={{
-				elements: {
-					// Hide the "Secured by Clerk" branding row.
-					footer: { display: "none" },
-				},
-			}}
+			signInFallbackRedirectUrl="/dashboard"
+			appearance={parrotClerkAppearance}
+			localization={parrotClerkLocalization}
 		>
 			<QueryClientProvider client={queryClient}>
 				<AppShell vapidPublicKey={vapidPublicKey} />

@@ -37,12 +37,10 @@ export interface WelcomeEmailInput {
 	inviterEmail?: string;
 	/**
 	 * E.164 phone number the invitee should use to log in at
-	 * workspace.internjobs.ai (phone-OTP auth). When present, the login
-	 * instructions tell the invitee to enter THIS phone number. When
-	 * absent, we fall back to the legacy email-OTP instructions for
-	 * backward compatibility with callers that haven't migrated.
+	 * workspace.internjobs.ai (phone-OTP auth). Workspace email is created
+	 * inside Parrot and is not a login credential.
 	 */
-	phoneNumber?: string;
+	phoneNumber: string;
 }
 
 function renderWelcomeText(input: WelcomeEmailInput): string {
@@ -57,12 +55,7 @@ function renderWelcomeText(input: WelcomeEmailInput): string {
 	const ridhi = inviterName || "The InternJobs team";
 	const ridhiEmail = inviterEmail || "noreply@internjobs.ai";
 
-	// When phoneNumber is supplied → phone-OTP narrative. When absent →
-	// fall back to the legacy email-OTP copy so callers that haven't been
-	// updated yet continue to send a coherent email.
-	const loginLine = phoneNumber
-		? `When you open that link, enter your phone number (${phoneNumber}). You'll get a one-time code — paste it in and you're in.`
-		: `When you open that link, enter your work email (${workspaceEmail}). You'll get a one-time code at that mailbox — paste it in and you're in.`;
+	const loginLine = `When you open that link, enter your phone number (${phoneNumber}). You'll get a one-time code — paste it in and you're in.`;
 
 	return [
 		`Hi ${employeeName},`,
@@ -101,9 +94,7 @@ function renderWelcomeHtml(input: WelcomeEmailInput): string {
 	const safeUrl = escapeHtml(signinUrl);
 	const safeInviter = escapeHtml(inviterName || "The InternJobs team");
 	const safeInviterEmail = escapeHtml(inviterEmail || "noreply@internjobs.ai");
-	const loginInstruction = phoneNumber
-		? `When you open that link, enter your phone number (<strong>${escapeHtml(phoneNumber)}</strong>). You'll get a one-time code — paste it in and you're in.`
-		: `When you open that link, enter your work email (<strong>${safeEmail}</strong>). You'll get a one-time code at that mailbox — paste it in and you're in.`;
+	const loginInstruction = `When you open that link, enter your phone number (<strong>${escapeHtml(phoneNumber)}</strong>). You'll get a one-time code — paste it in and you're in.`;
 
 	return `<!doctype html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">

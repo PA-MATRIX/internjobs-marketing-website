@@ -53,13 +53,13 @@ type CfEnvBase = Omit<
 >;
 
 export interface Env extends CfEnvBase {
-	/** Clerk publishable key for the student production Clerk instance
-	 *  (clerk.internjobs.ai). Parrot reuses this app, gated by org membership. */
+	/** Clerk publishable key for the dedicated employee Clerk instance
+	 *  (clerk.workspace.internjobs.ai). Parrot uses phone-OTP only. */
 	PARROT_CLERK_PUBLISHABLE_KEY: string;
-	/** Clerk secret key — used to verify JWTs AND to call Clerk Backend API
-	 *  (org invitations, user lookups). */
+	/** Clerk secret key — used to call Clerk Backend API when provisioning
+	 *  phone-number employee users. */
 	PARROT_CLERK_SECRET_KEY: string;
-	/** JWKS URL for the student production Clerk instance. */
+	/** JWKS URL for the dedicated employee Clerk instance. */
 	PARROT_CLERK_JWKS_URL: string;
 	/** Optional explicit issuer; if unset we derive it from the JWKS URL. */
 	PARROT_CLERK_ISSUER?: string;
@@ -83,9 +83,7 @@ export interface Env extends CfEnvBase {
 	CLOUDFLARE_EMAIL_ACCOUNT_ID?: string;
 	/** Cloudflare zone ID for internjobs.ai. */
 	CLOUDFLARE_INTERNJOBS_ZONE_ID?: string;
-	/** Deprecated bootstrap allowlist. Org membership is the real gate;
-	 *  this only matters if someone needs emergency operator access while
-	 *  the org config is broken. Remove once org gate is proven. */
+	/** Bootstrap/operator allowlist for workspace admin access. */
 	PARROT_OPERATOR_EMAILS?: string;
 
 	// — Wave 2b: OIDC bridge

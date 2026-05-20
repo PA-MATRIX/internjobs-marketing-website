@@ -7,9 +7,9 @@
 //
 // Backward compatibility: the request body still includes `name` (concat of
 // firstName + lastName) so the backend's existing slugify-from-name path
-// keeps working unchanged. Phase 16 Wave 1 (16-01) made firstName,
-// lastName, phoneNumber, and featureFlags all OPTIONAL on the server, so
-// even if this form were rolled back, legacy callers stay green.
+// keeps working unchanged. The server requires `phoneNumber` because Parrot
+// login is phone-OTP only; workspace email is created inside Parrot, not as
+// a Clerk login identifier.
 //
 // Validation: phone must match /^\+[1-9]\d{7,14}$/ (E.164) client-side
 // before the API call fires — the server enforces the same regex but we
