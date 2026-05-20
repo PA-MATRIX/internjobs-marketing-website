@@ -1,25 +1,26 @@
-// v1.2 Phase 10 Wave 1: InboxPane — list view + reader stub.
+// v1.2 Phase 10 Wave 1: InboxPane — list view + reader.
 //
-// Real "port from agentic-inbox" of the EmailPanel/EmailIframe stack
-// is deferred. This Wave 1 version renders the bare list (subject,
-// sender, snippet) so the API contract can be exercised end-to-end.
-// When InboxPane grows up, lift apps/agentic-inbox/app/components/EmailPanel.tsx.
+// v1.3.1 Agent Lift: the inline reader has been replaced by EmailPanel
+// (sandboxed iframe via EmailIframe) and an optional right-side AgentPanel
+// (Summarize / Draft / Extract / Translate / Chat).
 //
-// v1.3.1 BACKFILL: Compose / Reply / Forward buttons are now real.
-//   - Compose button (top of the list pane) opens ComposePane in 'compose' mode.
-//   - Reply / Forward buttons on the reader pane open ComposePane in the
-//     matching mode pre-filled from the selected message.
+// Layout:
+//   - md+: three panes — message list | EmailPanel | AgentPanel
+//   - sm: single pane, list <→ EmailPanel transitions
+//
+// v1.3.1 BACKFILL: Compose / Reply / Forward buttons:
+//   - Compose button (top of the list pane) opens ComposePane in 'compose'.
+//   - Reply / Forward buttons on EmailPanel open ComposePane pre-filled.
 // The pane closes after a successful send and the inbox list is
 // invalidated so the new message lands in Sent on next pane switch.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Forward, PenSquare, Reply } from "lucide-react";
+import { PenSquare, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
+import { AgentPanel, type AgentInitialAction } from "./AgentPanel";
 import { ComposePane, type ComposeMode } from "./ComposePane";
-import { EmailAttachmentList } from "./EmailAttachmentList";
-import { EmailToChat } from "./crosspane/EmailToChat";
-import { StartMeeting } from "./crosspane/StartMeeting";
+import { EmailPanel } from "./EmailPanel";
 
 function formatDate(iso: string | null) {
 	if (!iso) return "";
@@ -47,6 +48,9 @@ export function InboxPane() {
 
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 
+	// EmailPanel pulls the full message via React Query itself — we still
+	// fetch a copy here so the ComposePane (reply/forward) gets the same
+	// original payload without a second round-trip.
 	const { data: selected } = useQuery({
 		queryKey: ["parrot", "inbox", "message", selectedId],
 		queryFn: () => (selectedId ? api.getMessage(selectedId) : null),
@@ -56,6 +60,13 @@ export function InboxPane() {
 	// v1.3.1 BACKFILL: compose state. `composeMode` non-null means the
 	// modal is open. `composeOriginal` is only set for reply/forward.
 	const [composeMode, setComposeMode] = useState<ComposeMode | null>(null);
+
+	// v1.3.1 Agent Lift: agent panel state. `agentOpen` controls the
+	// right-side AgentPanel visibility; `agentInitialAction` triggers a
+	// quick-action on open (summarize / draft / extract / translate).
+	const [agentOpen, setAgentOpen] = useState(false);
+	const [agentInitialAction, setAgentInitialAction] =
+		useState<AgentInitialAction | null>(null);
 
 	function openCompose(mode: ComposeMode) {
 		setComposeMode(mode);
@@ -69,6 +80,11 @@ export function InboxPane() {
 		// Invalidate so the Sent folder (and inbox unread counts) refresh on
 		// next pane switch. Compose pane already closes itself.
 		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+	}
+
+	function openAgent(action?: AgentInitialAction) {
+		setAgentInitialAction(action ?? null);
+		setAgentOpen(true);
 	}
 
 	if (isLoading) {
@@ -105,9 +121,9 @@ export function InboxPane() {
 
 	return (
 		<div className="flex h-full min-h-0">
-			<div className="w-full md:w-80 lg:w-96 border-r border-slate-200 overflow-y-auto bg-white">
-				{/* v1.3.1 BACKFILL: Compose button. */}
-				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10">
+			<div className="w-full md:w-80 lg:w-96 border-r border-slate-200 overflow-y-auto bg-white shrink-0">
+				{/* v1.3.1 BACKFILL: Compose button + Agent toggle. */}
+				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between gap-2">
 					<button
 						type="button"
 						onClick={() => openCompose("compose")}
@@ -115,6 +131,19 @@ export function InboxPane() {
 					>
 						<PenSquare size={13} />
 						Compose
+					</button>
+					<button
+						type="button"
+						onClick={() => setAgentOpen((v) => !v)}
+						className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
+							agentOpen
+								? "border-indigo-300 bg-indigo-50 text-indigo-700"
+								: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+						}`}
+						title="Toggle Parrot Agent"
+					>
+						<Sparkles size={12} />
+						Agent
 					</button>
 				</div>
 				{messages.length === 0 ? (
@@ -167,60 +196,49 @@ export function InboxPane() {
 				)}
 			</div>
 
+			{/* Email viewer pane — uses EmailPanel which itself uses
+			    EmailIframe for sandboxed HTML body rendering. */}
 			<div className="hidden md:flex flex-1 min-w-0 flex-col bg-slate-50">
-				{selectedId && selected ? (
-					<>
-						<div className="border-b border-slate-200 bg-white px-6 py-4">
-							<h2 className="text-base font-semibold mb-1">
-								{selected.subject || "(no subject)"}
-							</h2>
-							<p className="text-sm text-slate-600">
-								From {selected.sender} → {selected.recipient}
-							</p>
-							<div className="mt-3 flex flex-wrap gap-2">
-								{/* v1.3.1 BACKFILL: Reply + Forward */}
-								<button
-									type="button"
-									onClick={() => openCompose("reply")}
-									className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-								>
-									<Reply size={12} />
-									Reply
-								</button>
-								<button
-									type="button"
-									onClick={() => openCompose("forward")}
-									className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-								>
-									<Forward size={12} />
-									Forward
-								</button>
-								<EmailToChat emailId={selectedId ?? ""} />
-								<StartMeeting />
-							</div>
-						</div>
-						<div className="flex-1 overflow-auto px-6 py-4 text-sm text-slate-800 whitespace-pre-wrap">
-							{selected.body || "(empty body)"}
-							{/* v1.3.1 BACKFILL: attachment metadata display.
-							    Real download endpoint isn't wired yet (see
-							    EmailAttachmentList.tsx) but the metadata renders. */}
-							{selected.attachments && selected.attachments.length > 0 && (
-								<div className="mt-6">
-									<EmailAttachmentList
-										emailId={selectedId}
-										attachments={selected.attachments}
-										showHeading
-									/>
-								</div>
-							)}
-						</div>
-					</>
+				{selectedId ? (
+					<EmailPanel
+						emailId={selectedId}
+						onReply={() => openCompose("reply")}
+						onForward={() => openCompose("forward")}
+						onAgentAction={(action) => openAgent(action)}
+					/>
 				) : (
 					<div className="flex-1 flex items-center justify-center text-sm text-slate-400">
 						Select a message to read it.
 					</div>
 				)}
 			</div>
+
+			{/* v1.3.1 Agent Lift: right-side AgentPanel. Only mounted when
+			    open AND a message is selected — the agent always operates
+			    on the currently-viewed email's context. */}
+			{agentOpen && selectedId && (
+				<div className="hidden lg:flex w-96 shrink-0 flex-col border-l border-slate-200 bg-white">
+					<AgentPanel
+						emailId={selectedId}
+						initialAction={agentInitialAction}
+						onClose={() => setAgentOpen(false)}
+						onDraftSavedToCompose={(body) => {
+							// Open ComposePane in reply mode with the draft body
+							// pre-filled. The compose pane reads the body from
+							// the original-email payload, so we store it on the
+							// selected message via React Query cache.
+							queryClient.setQueryData(
+								["parrot", "inbox", "message", selectedId],
+								(prev: InboxMessage & { agent_draft_body?: string } | undefined) =>
+									prev
+										? { ...prev, agent_draft_body: body }
+										: prev,
+							);
+							openCompose("reply");
+						}}
+					/>
+				</div>
+			)}
 
 			{/* v1.3.1 BACKFILL: ComposePane portal-ish overlay. */}
 			{composeMode && (
