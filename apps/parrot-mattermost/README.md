@@ -13,9 +13,11 @@ on Fly — **this is not a workspace npm package**, just a Dockerfile +
   domain `mattermost.internjobs.ai` is optional — see Wave 3 / future
   work)
 - **Image:** `mattermost/mattermost-team-edition:11.6.2`
-- **DB:** Neon Postgres (project `noisy-rain-23196137`, branch `main`,
-  database `neondb`). Connection string is a Fly secret, never a Fly
-  env var.
+- **DB:** Self-hosted Postgres 17 on Fly — app `internjobs-mattermost-db`
+  (defined in `infra/mattermost-db/`), internal-only at
+  `internjobs-mattermost-db.internal:5432`, database `mattermost`.
+  Connection string is a Fly secret, never a Fly env var. (Migrated off
+  Neon 2026-05-21 — see "Why these choices".)
 - **Persistent storage:** 1GB Fly volume `mattermost_data` mounted at
   `/mattermost/data` (file uploads + plugin storage). The DB does NOT
   live here.
@@ -27,7 +29,7 @@ on Fly — **this is not a workspace npm package**, just a Dockerfile +
 | App definition (size, region, healthcheck) | `fly.toml` in this dir |
 | Image tag | `Dockerfile` in this dir |
 | Mattermost config (env vars `MM_*`) | Fly secrets — set via `flyctl secrets set` |
-| Neon DB URL | Fly secret `MM_SQLSETTINGS_DATASOURCE` (also mirrored to Infisical at `/internjobs-ai/parrot-mattermost/*`) |
+| DB URL | Fly secret `MM_SQLSETTINGS_DATASOURCE` → `internjobs-mattermost-db.internal` (mirror to Infisical at `/internjobs-ai/mattermost/*`) |
 | Google OAuth client ID/secret | Fly secrets `MM_GOOGLESETTINGS_ID` + `MM_GOOGLESETTINGS_SECRET` — **TBD, user must create the OAuth client first; see below** |
 
 ## Deploy from scratch
@@ -43,16 +45,12 @@ flyctl launch --no-deploy --name internjobs-mattermost \
 flyctl volumes create mattermost_data --region ord --size 1 \
   --app internjobs-mattermost
 
-# 3. Set Mattermost runtime secrets. The Neon DB URL is read from
-#    /tmp/mattermost-dburl-for-agent.txt (provisioned out-of-band).
-#    IMPORTANT: Mattermost's Postgres driver uses extended-query
-#    prepared statements that PgBouncer (Neon's pooler) cannot persist
-#    across transactions, so we must use the DIRECT endpoint — drop
-#    "-pooler" from the hostname before passing it as the secret.
-DBURL_DIRECT=$(sed 's|-pooler||' /tmp/mattermost-dburl-for-agent.txt)
+# 3. Set Mattermost runtime secrets. The DB URL points at the
+#    self-hosted Postgres app (infra/mattermost-db/) over the Fly
+#    private network. No TLS on that network, so sslmode=disable.
 flyctl secrets set --app internjobs-mattermost \
   MM_SQLSETTINGS_DRIVERNAME=postgres \
-  MM_SQLSETTINGS_DATASOURCE="$DBURL_DIRECT" \
+  MM_SQLSETTINGS_DATASOURCE="postgres://mmuser:<password>@internjobs-mattermost-db.internal:5432/mattermost?sslmode=disable" \
   MM_SERVICESETTINGS_SITEURL=https://internjobs-mattermost.fly.dev \
   MM_SERVICESETTINGS_LISTENADDRESS=:8065 \
   MM_TEAMSETTINGS_SITENAME='InternJobs Workspace' \
@@ -98,7 +96,7 @@ curl https://internjobs-mattermost.fly.dev/api/v4/system/ping
 
    Until these are set, the Google sign-in button on Mattermost will
    error out. **Do not commit these values.** Store them in Infisical
-   at `/internjobs-ai/parrot-mattermost/google-oauth-*`.
+   at `/internjobs-ai/mattermost/google-oauth-*`.
 3. **First admin user.** Mattermost auto-promotes the first registered
    account to System Admin. Sign in via Google with your
    `@internjobs.ai` account first to claim it.
@@ -119,15 +117,14 @@ curl https://internjobs-mattermost.fly.dev/api/v4/system/ping
 
 ## Gotchas
 
-- **Neon pooler vs direct endpoint.** The pooled connection string
-  (hostname contains `-pooler`) runs PgBouncer in transaction mode,
-  which doesn't persist Postgres prepared statements across
-  transactions. Mattermost's `lib/pq` driver uses extended-query
-  prepared statements heavily — boot fails with errors like
-  `pq: unnamed prepared statement does not exist`. Always set
-  `MM_SQLSETTINGS_DATASOURCE` to the direct endpoint (no `-pooler`).
-- **First boot is slow.** Mattermost runs ~50 schema migrations on a
-  blank Neon DB and pre-warms its plugin sandbox; expect ~2 minutes
+- **DB connectivity.** Postgres lives on the `internjobs-mattermost-db`
+  Fly app, reachable only inside `internjobs-sios-org` at
+  `internjobs-mattermost-db.internal:5432` — no public IP, no TLS on
+  the private network (datasource uses `sslmode=disable`). To reach it
+  from a laptop (psql, dumps, restores), tunnel in with
+  `flyctl proxy 15432:5432 --app internjobs-mattermost-db`.
+- **First boot is slow.** Mattermost runs its schema migrations on a
+  blank DB and pre-warms its plugin sandbox; expect ~2 minutes
   before `/api/v4/system/ping` returns OK on a cold start. The Fly
   healthcheck has a 30s grace period — the machine may flap once
   during the first boot, which is fine.
@@ -139,8 +136,11 @@ curl https://internjobs-mattermost.fly.dev/api/v4/system/ping
   which is why Wave 2 uses Mattermost's own Google OAuth flow and
   Wave 3 will layer a header-based SSO bridge for the in-Parrot
   experience.
-- **Neon over a local Postgres image:** durable, snapshotted, and
-  already part of the InternJobs stack. Saves us managing a second
-  Fly Postgres app.
+- **Self-hosted Postgres on Fly over Neon:** Mattermost holds
+  persistent DB connections and runs background jobs continuously, so
+  Neon's compute never scaled to zero — it billed a full 1 CU 24/7
+  (~$100+/mo). A flat-rate `shared-cpu-1x` Postgres app co-located in
+  `ord` costs ~$6/mo. Migrated off Neon 2026-05-21; the DB app is
+  defined in `infra/mattermost-db/`.
 - **1GB volume:** generous headroom for chat attachments — bump with
   `flyctl volumes extend` if it fills.

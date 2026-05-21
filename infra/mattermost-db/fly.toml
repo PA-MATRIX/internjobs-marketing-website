@@ -1,0 +1,38 @@
+# Self-hosted Postgres 17 for Mattermost (internjobs-mattermost).
+#
+# Replaces the Neon-hosted Mattermost DB (project noisy-rain-23196137).
+# Reason: Mattermost holds persistent DB connections + runs background
+# jobs continuously, so Neon's compute never scaled to zero — it burned
+# ~68 CPU-hours in 3 days (~$100+/mo). A flat-rate self-hosted Postgres
+# on Fly, co-located with the Mattermost app, costs ~$6/mo.
+#
+# Internal-only: no public IP, no [http_service]. Reachable from inside
+# internjobs-sios-org at internjobs-mattermost-db.internal:5432 over the
+# Fly 6PN private network. Modeled on infra/falkordb.
+#
+# Data: 3GB Fly volume mmdb_data mounted at /var/lib/postgresql/data.
+# PGDATA points at a subdir (pgdata/) because the ext4 volume root
+# contains lost+found, which initdb refuses to initialize into.
+
+app = "internjobs-mattermost-db"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  POSTGRES_USER = "mmuser"
+  POSTGRES_DB = "mattermost"
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+
+# POSTGRES_PASSWORD is injected as a Fly secret (flyctl secrets set).
+
+[[mounts]]
+  source = "mmdb_data"
+  destination = "/var/lib/postgresql/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

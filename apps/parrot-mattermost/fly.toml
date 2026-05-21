@@ -1,15 +1,16 @@
 # v1.2 Phase 10 Wave 2 — Mattermost Team Edition on Fly.
 #
 # App name: internjobs-mattermost (org: internjobs-sios-org).
-# Region: ord (same as other internjobs-* Fly apps for low-latency
-# Neon Postgres access from us-east-1 / us-east-2).
+# Region: ord (co-located with the internjobs-mattermost-db Postgres
+# app for low-latency DB access over the Fly private network).
 # Sizing: 1x shared CPU + 1GB RAM. Mattermost recommends 512MB for
 # small teams (~60 users); we run 1GB to leave room for the upcoming
 # Daily.co plugin and incremental search indexes.
 #
 # Persistent storage: 1GB Fly volume mounted at /mattermost/data for
-# file uploads + plugin storage. The DB lives on Neon, not on the
-# volume — see MM_SQLSETTINGS_DATASOURCE secret.
+# file uploads + plugin storage. The DB lives on the self-hosted
+# internjobs-mattermost-db Fly app (infra/mattermost-db/), reached via
+# the MM_SQLSETTINGS_DATASOURCE secret.
 app = "internjobs-mattermost"
 primary_region = "ord"
 
