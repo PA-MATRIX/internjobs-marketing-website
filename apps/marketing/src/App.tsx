@@ -35,6 +35,7 @@ type Channel = {
   icon: ReactNode;
   emojis: string[];
   messages: ChatMessage[];
+  comingSoon?: boolean;
 };
 
 type LegalBlock = {
@@ -115,6 +116,7 @@ const channels: Channel[] = [
     color: "#25D366",
     soft: "#E9FBEF",
     icon: <PlatformLogo platform="whatsapp" className="size-4" />,
+    comingSoon: true,
     emojis: ["paid", "class", "quick", "yes", "new"],
     messages: [
       { author: "agent", text: "Two paid roles opened while you were in class." },
@@ -128,6 +130,7 @@ const channels: Channel[] = [
     color: "#4A154B",
     soft: "#FFF0F5",
     icon: <PlatformLogo platform="slack" className="size-4" />,
+    comingSoon: true,
     emojis: ["#finds", "draft", "ship", "reply", "prep"],
     messages: [
       { author: "agent", text: "A builder community posted a growth internship before it hit LinkedIn." },
@@ -141,6 +144,7 @@ const channels: Channel[] = [
     color: "#5865F2",
     soft: "#EEF0FF",
     icon: <PlatformLogo platform="discord" className="size-4" />,
+    comingSoon: true,
     emojis: ["drop", "dm", "build", "fit", "send"],
     messages: [
       { author: "agent", text: "Design engineer internship in a founder Discord." },
@@ -149,11 +153,12 @@ const channels: Channel[] = [
     ],
   },
   {
-    name: "Phone",
-    label: "Phone",
+    name: "Call",
+    label: "Call",
     color: "#34C759",
     soft: "#EDFFF4",
     icon: <PlatformLogo platform="phone" className="size-4" />,
+    comingSoon: true,
     emojis: ["call", "prep", "calm", "ask", "go"],
     messages: [
       { author: "agent", text: "Founder call tomorrow. Want a quick prep sheet?" },
@@ -1496,7 +1501,7 @@ function ChannelSection() {
               Built for where <span className="text-party-gradient">students already talk.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              InternJobs.ai works in iMessage, WhatsApp, Slack, Discord, and phone. No separate tab to keep checking.
+              InternJobs.ai works in iMessage, with WhatsApp, Slack, Discord, and call coming soon. No separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -1521,6 +1526,7 @@ function ChannelSection() {
               >
                 {item.icon}
                 {item.label}
+                {item.comingSoon ? <span className="channel-chip-soon">Soon</span> : null}
               </button>
             ))}
           </div>

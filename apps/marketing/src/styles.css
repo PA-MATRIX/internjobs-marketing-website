@@ -430,6 +430,23 @@ a {
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.1);
 }
 
+.channel-chip-soon {
+  margin-left: 0.15rem;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: inherit;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.channel-chip.is-active .channel-chip-soon {
+  background: rgba(255, 255, 255, 0.26);
+}
+
 .whatsapp-surface,
 .slack-surface,
 .discord-surface,

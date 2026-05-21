@@ -396,10 +396,29 @@ export function renderOnboardingSuccess() {
   return `
     <section class="panel dark narrow">
       <p class="eyebrow">You're in</p>
-      <h1>Locked in.</h1>
-      <p class="lede">Maya will reach out shortly. The first text will reference your LinkedIn — school, current role, anything we already know about you.</p>
+      <h1>🎉 Congratulations — you're on the waitlist!</h1>
+      <p class="lede">You're officially in. Maya just texted you — the first messages reference your LinkedIn (school, current role, anything we already know about you). Reply any time and tell her anything extra you'd like on your profile.</p>
       <a class="button light" href="/profile">Review profile context</a>
-    </section>`;
+    </section>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <script>
+      (function () {
+        function celebrate() {
+          if (typeof confetti !== "function") return;
+          // Opening burst from the centre.
+          confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 } });
+          // Side cannons for a livelier ~1.2s finish.
+          var end = Date.now() + 1200;
+          (function frame() {
+            confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
+            confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
+            if (Date.now() < end) requestAnimationFrame(frame);
+          })();
+        }
+        if (document.readyState === "complete") celebrate();
+        else window.addEventListener("load", celebrate);
+      })();
+    </script>`;
 }
 
 // ─── Startup views (v1.2) ────────────────────────────────────────────────────

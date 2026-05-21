@@ -79,6 +79,15 @@ import { getStudentSummary, recordFact, PREDICATES } from "../memory/graph.mjs";
 const DEFAULT_MODEL = process.env.AGENT_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const LAST_N_MESSAGES = 20; // PITFALLS #19
 
+// Pause between the two welcome texts (congrats, then the LinkedIn-context
+// follow-up) so they land like a human sending a follow-up rather than a
+// double-send. Skipped on the dry-run / stubbed-LLM test paths.
+const WELCOME_MESSAGE_GAP_MS = 2200;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Execute one turn of the student inbound workflow.
  *
@@ -172,6 +181,42 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
         error: err?.message ?? String(err),
       }),
     );
+  }
+
+  // 4b. WAITLIST_MODE (config.waitlistMode, env WAITLIST_MODE, default true).
+  //     Until the product is released to students there are no live roles to
+  //     match — so every turn gets a waitlist response and the role-matching
+  //     flow below is skipped entirely:
+  //       - START-code first contact → two welcome texts (congrats, then a
+  //         LinkedIn-context follow-up) via sendWaitlistFirstContact.
+  //       - any later inbound → an encouraging holding reply via
+  //         sendWaitlistHoldingReply (the LLM varies the wording each turn).
+  //     Flip WAITLIST_MODE=false at launch to restore the matching flow.
+  if (config?.waitlistMode) {
+    if (isPairingFirstContactInbound(inbound)) {
+      return sendWaitlistFirstContact({
+        pool,
+        llm,
+        inbound,
+        studentId,
+        profile,
+        profileBlob,
+        smsProvider,
+        config,
+        sender,
+      });
+    }
+    return sendWaitlistHoldingReply({
+      pool,
+      llm,
+      inbound,
+      studentId,
+      profileBlob,
+      graphSummary,
+      smsProvider,
+      config,
+      sender,
+    });
   }
 
   // 5. Match — done before conversation creation because role conversations
@@ -428,73 +473,46 @@ export async function runStudentInboundWorkflow({ pool, llm, messageId, smsProvi
   return { draftId, conversationId: conversation.id, matchSource, sent };
 }
 
-async function sendWaitlistFirstContact({
+// Insert a 'sending' student SMS draft, autonomously send it, then flip it to
+// 'sent' (or 'failed'). Shared by the waitlist welcome (two messages) and the
+// pre-launch holding-reply path so the INSERT → send → UPDATE block lives in
+// one place. Returns { draftId, sent, providerMessageId }; never throws — a
+// send failure is logged, the draft is marked 'failed', and the caller decides
+// what to do next.
+async function persistAndSendStudentSms({
   pool,
-  llm,
-  inbound,
   studentId,
-  profile,
-  profileBlob,
+  inbound,
+  body,
+  agentMetadata,
   smsProvider,
   config,
   sender,
 }) {
-  const linkedinBlock = composeLinkedInBlock(profile.linkedin);
-  const prompt = composeFirstContactPrompt({
-    profileBlob,
-    linkedinBlock,
-    role: null,
-    inboundBody: inbound.body,
-  });
-  const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
-  const recipientType = "student";
   const channel = "sms";
   const channelAddress = inbound.channel_address || "";
-  const agentMetadata = buildDraftAgentMetadata({
-    recipientType,
-    conversationId: null,
-    matchSource: "waitlist",
-    model: generated.model,
-    prompt,
-    roleId: null,
-    startupId: null,
-  });
-  agentMetadata.first_contact = true;
-  agentMetadata.waitlist_first_contact = true;
-  agentMetadata.linkedin_present = Boolean(profile.linkedin);
-
   const { rows } = await pool.query(
     `insert into drafts
        (conversation_id, inbound_message_id, recipient_type, channel,
         channel_address, body, status, agent_metadata)
-     values (null, $1, $2, $3, $4, $5, 'sending', $6)
+     values (null, $1, 'student', $2, $3, $4, 'sending', $5)
      returning id`,
-    [inbound.id, recipientType, channel, channelAddress, generated.body, agentMetadata],
+    [inbound.id, channel, channelAddress, body, agentMetadata],
   );
   const draftId = rows[0]?.id || null;
 
-  await writeAudit(pool, studentId, "student_waitlist_first_contact_drafted", "system", {
-    inboundId: inbound.id,
-    draftId,
-    matchSource: "waitlist",
-  });
-
   let sent = false;
+  let providerMessageId = null;
   try {
-    let providerMessageId = null;
     if (typeof sender === "function") {
-      providerMessageId = await sender(generated.body, {
-        draftId,
-        channel,
-        channelAddress,
-      });
+      providerMessageId = await sender(body, { draftId, channel, channelAddress });
     } else {
       providerMessageId = await routeAndSend(
         {
           id: draftId,
           channel,
           channel_address: channelAddress,
-          body: generated.body,
+          body,
           agent_metadata: agentMetadata,
         },
         { smsProvider, config: config || {} },
@@ -510,12 +528,6 @@ async function sendWaitlistFirstContact({
       [draftId, providerMessageId],
     );
     sent = true;
-    await writeAudit(pool, studentId, "student_waitlist_first_contact_sent", "agent", {
-      inboundId: inbound.id,
-      draftId,
-      providerMessageId: providerMessageId || null,
-      channel,
-    });
   } catch (sendErr) {
     const errMsg = sendErr?.message || String(sendErr);
     await pool.query(
@@ -536,12 +548,188 @@ async function sendWaitlistFirstContact({
     console.error(
       JSON.stringify({
         level: "error",
-        message: "student_waitlist_first_contact_send_failed",
+        message: "student_sms_send_failed",
         draftId,
         error: errMsg,
       }),
     );
   }
+  return { draftId, sent, providerMessageId };
+}
+
+// v1.3 — START-code first contact sends TWO texts, not one:
+//   message 1: a pure celebratory "you're on the waitlist" congratulations.
+//   message 2: the immediate follow-up — references one real LinkedIn detail
+//              (when enrichment landed) and invites one piece of extra context.
+// They go out sequentially with a short human-pacing gap. Both are persisted
+// as drafts and sent autonomously. The return draftId is message 2's; `sent`
+// is true only when BOTH texts sent.
+async function sendWaitlistFirstContact({
+  pool,
+  llm,
+  inbound,
+  studentId,
+  profile,
+  profileBlob,
+  smsProvider,
+  config,
+  sender,
+}) {
+  const linkedinBlock = composeLinkedInBlock(profile.linkedin);
+  const linkedinPresent = Boolean(profile.linkedin);
+
+  // ── Message 1 — celebratory congratulations ──────────────────────────────
+  const congratsPrompt = composeCongratsPrompt({ profileBlob });
+  const congrats = await runLLM({ llm, prompt: congratsPrompt, model: DEFAULT_MODEL });
+  const congratsMeta = buildDraftAgentMetadata({
+    recipientType: "student",
+    conversationId: null,
+    matchSource: "waitlist",
+    model: congrats.model,
+    prompt: congratsPrompt,
+    roleId: null,
+    startupId: null,
+  });
+  congratsMeta.first_contact = true;
+  congratsMeta.waitlist_first_contact = true;
+  congratsMeta.waitlist_message = "congrats";
+  congratsMeta.linkedin_present = linkedinPresent;
+  const m1 = await persistAndSendStudentSms({
+    pool,
+    studentId,
+    inbound,
+    body: congrats.body,
+    agentMetadata: congratsMeta,
+    smsProvider,
+    config,
+    sender,
+  });
+  await writeAudit(pool, studentId, "student_waitlist_first_contact_sent", "agent", {
+    inboundId: inbound.id,
+    draftId: m1.draftId,
+    waitlistMessage: "congrats",
+    sent: m1.sent,
+  });
+
+  // Human-pacing gap so the two texts don't land as a double-send. Skipped on
+  // the dry-run / stubbed-LLM test paths so the smoke suite stays fast.
+  if (!config?.outboundDryRun && !llm) {
+    await sleep(WELCOME_MESSAGE_GAP_MS);
+  }
+
+  // ── Message 2 — LinkedIn-context follow-up ───────────────────────────────
+  const contextPrompt = composeWaitlistContextPrompt({
+    profileBlob,
+    linkedinBlock,
+    inboundBody: inbound.body,
+  });
+  const contextMsg = await runLLM({ llm, prompt: contextPrompt, model: DEFAULT_MODEL });
+  const contextMeta = buildDraftAgentMetadata({
+    recipientType: "student",
+    conversationId: null,
+    matchSource: "waitlist",
+    model: contextMsg.model,
+    prompt: contextPrompt,
+    roleId: null,
+    startupId: null,
+  });
+  contextMeta.first_contact = true;
+  contextMeta.waitlist_first_contact = true;
+  contextMeta.waitlist_message = "context";
+  contextMeta.linkedin_present = linkedinPresent;
+  const m2 = await persistAndSendStudentSms({
+    pool,
+    studentId,
+    inbound,
+    body: contextMsg.body,
+    agentMetadata: contextMeta,
+    smsProvider,
+    config,
+    sender,
+  });
+  await writeAudit(pool, studentId, "student_waitlist_first_contact_sent", "agent", {
+    inboundId: inbound.id,
+    draftId: m2.draftId,
+    waitlistMessage: "context",
+    sent: m2.sent,
+  });
+
+  await markProcessed(pool, inbound.id);
+  if (inbound.body) {
+    recordTurnFacts({
+      studentId,
+      inboundBody: inbound.body,
+      agentReply: contextMsg.body,
+      sourceMessageId: inbound.id,
+      model: DEFAULT_MODEL,
+    }).catch((err) => {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "graph_record_turn_failed",
+          studentId,
+          messageId: inbound.id,
+          error: err?.message ?? String(err),
+        }),
+      );
+    });
+  }
+
+  return {
+    draftId: m2.draftId,
+    conversationId: null,
+    matchSource: "waitlist",
+    sent: m1.sent && m2.sent,
+  };
+}
+
+// v1.3 WAITLIST_MODE — every NON-first-contact inbound while the product is
+// pre-launch. There are no live roles, so the agent never pitches one; it
+// always replies with an encouraging, reassuring holding message. The LLM
+// (temp 0.5) varies the wording each turn, so a student who asks "any jobs
+// yet?" repeatedly gets genuinely different answers.
+async function sendWaitlistHoldingReply({
+  pool,
+  llm,
+  inbound,
+  studentId,
+  profileBlob,
+  graphSummary,
+  smsProvider,
+  config,
+  sender,
+}) {
+  const prompt = composeWaitlistHoldingPrompt({
+    profileBlob,
+    graphSummary,
+    inboundBody: inbound.body,
+  });
+  const generated = await runLLM({ llm, prompt, model: DEFAULT_MODEL });
+  const agentMetadata = buildDraftAgentMetadata({
+    recipientType: "student",
+    conversationId: null,
+    matchSource: "waitlist",
+    model: generated.model,
+    prompt,
+    roleId: null,
+    startupId: null,
+  });
+  agentMetadata.waitlist_holding = true;
+  const { draftId, sent } = await persistAndSendStudentSms({
+    pool,
+    studentId,
+    inbound,
+    body: generated.body,
+    agentMetadata,
+    smsProvider,
+    config,
+    sender,
+  });
+  await writeAudit(pool, studentId, "student_waitlist_holding_sent", "agent", {
+    inboundId: inbound.id,
+    draftId,
+    sent,
+  });
 
   await markProcessed(pool, inbound.id);
   if (inbound.body) {
@@ -945,6 +1133,91 @@ export function composeFirstContactPrompt({ profileBlob, linkedinBlock, role, in
 
 function hasDetailedLinkedInBlock(linkedinBlock) {
   return /\n\s+(headline|school|current|recent|skills):\s+\S/i.test(String(linkedinBlock || ""));
+}
+
+// Message 1 of the two-message waitlist welcome: a pure celebratory
+// congratulations. No LinkedIn detail and no question — composeWaitlistContextPrompt
+// (message 2) carries those. Exported so unit tests can assert the shape.
+export function composeCongratsPrompt({ profileBlob }) {
+  return [
+    "--- Waitlist welcome — message 1 of 2 ---",
+    "A new student just joined the InternJobs.ai waitlist and paired their phone via the START-code QR flow.",
+    "Send a SHORT, celebratory congratulations text. This is purely a \"you're in\" moment.",
+    "The first sentence must include first_name if first_name is present in the student profile below.",
+    "Explicitly tell them they have been added to the waitlist.",
+    "This is a festive moment — exactly one celebratory emoji (🎉 or 🎈) is welcome here, as a deliberate exception to the usual sparse-emoji rule.",
+    "Do NOT reference LinkedIn, do NOT ask a question, do NOT pitch a role — the very next text handles all of that.",
+    "",
+    "--- Student profile (self-reported, may be empty on first contact) ---",
+    profileBlob || "(no profile context yet)",
+    "",
+    "Reply in the voice defined in the system message. Output only the SMS body.",
+  ].join("\n");
+}
+
+// Message 2 of the two-message waitlist welcome: the immediate follow-up to
+// the congratulations text. References one real LinkedIn detail (when
+// enrichment landed) and invites one piece of extra context. Distinct from
+// composeFirstContactPrompt because it must NOT re-greet or re-confirm the
+// waitlist — message 1 already did. Exported for unit tests.
+export function composeWaitlistContextPrompt({ profileBlob, linkedinBlock, inboundBody }) {
+  const hasLinkedInDetails = hasDetailedLinkedInBlock(linkedinBlock);
+  const parts = [
+    "--- Waitlist welcome — message 2 of 2 ---",
+    "A congratulations text was JUST sent to this student. This is the immediate follow-up in the same thread.",
+    "Do NOT greet them by name again and do NOT re-congratulate or re-confirm the waitlist — message 1 covered that. Continue naturally.",
+    hasLinkedInDetails
+      ? "Reference ONE real LinkedIn detail (school, past role, current role, or skill) as the kind of signal InternJobs.ai will use for matching."
+      : "LinkedIn enrichment has not returned structured details yet. Do NOT invent a school, employer, role, or skill — say their LinkedIn is connected for matching.",
+    "Then invite them to share one useful piece of extra context about themselves that their LinkedIn might leave out — and say you'll keep it on their profile.",
+    "Ask exactly one question.",
+    "Do NOT pitch a specific internship role, claim a live match, or imply a startup is waiting.",
+    "",
+  ];
+  if (linkedinBlock) {
+    parts.push(linkedinBlock, "");
+  }
+  parts.push(
+    "--- Student profile (self-reported, may be empty on first contact) ---",
+    profileBlob || "(no profile context yet)",
+    "",
+    "--- New inbound from student ---",
+    inboundBody || "(empty)",
+    "",
+    "Reply in the voice defined in the system message. Output only the SMS body.",
+  );
+  return parts.join("\n");
+}
+
+// Pre-launch holding reply. Used for every NON-first-contact inbound while
+// WAITLIST_MODE is on: the product has not been released to students yet, so
+// there are no live internship matches. The agent must still ALWAYS reply —
+// with an encouraging, reassuring holding message — and never pitch a role.
+// The LLM phrases it differently each turn, so repeated "any jobs yet?" texts
+// get genuinely varied answers. Exported for unit tests.
+export function composeWaitlistHoldingPrompt({ profileBlob, graphSummary, inboundBody }) {
+  const parts = [];
+  if (graphSummary && graphSummary.trim().length > 0) {
+    parts.push("--- What you remember about this user ---", graphSummary.trim(), "");
+  }
+  parts.push(
+    "--- Pre-launch waitlist mode ---",
+    "InternJobs.ai has not launched to students yet. There are NO live internship matches or roles to share — none exist right now.",
+    "This student is on the waitlist. Whatever they ask, never promise a specific role, never claim a match exists, never imply a startup is waiting.",
+    "Reply with a warm, encouraging, reassuring holding message: confirm they are on the waitlist, that you will reach out the moment something genuinely fits, and that they are on a strong track.",
+    "If they ask when, be honest that it is soon but not live yet — do not invent a date.",
+    "If they share extra context about themselves, acknowledge it warmly and tell them you will keep it on their profile.",
+    "Vary your wording — this student may have asked before and must not get a copy-paste answer.",
+    "",
+    "--- Student profile ---",
+    profileBlob || "(no profile context on file)",
+    "",
+    "--- New inbound from student ---",
+    inboundBody || "(empty)",
+    "",
+    "Reply in the voice defined in the system message. Output only the SMS body.",
+  );
+  return parts.join("\n");
 }
 
 // ─── Match step ──────────────────────────────────────────────────────────────

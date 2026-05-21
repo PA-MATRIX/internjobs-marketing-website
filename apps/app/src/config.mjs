@@ -9,6 +9,12 @@ export function getConfig(env = process.env) {
     appSessionSecret: env.APP_SESSION_SECRET || (isProduction ? "" : "internjobs-local-dev-secret"),
     enableDevAuth: env.ENABLE_DEV_AUTH === "true" || (!isProduction && env.ENABLE_DEV_AUTH !== "false"),
     enableSpectrumListener: env.ENABLE_SPECTRUM_LISTENER === "true",
+    // v1.3 WAITLIST_MODE — pre-launch guard for the student agent. While true,
+    // the agent never matches or pitches a real role: START-code first contact
+    // sends the two-message waitlist welcome and every later inbound gets an
+    // encouraging holding reply. Default true (on unless explicitly disabled).
+    // Flip WAITLIST_MODE=false at student launch to restore role matching.
+    waitlistMode: env.WAITLIST_MODE !== "false",
     clerk: {
       publishableKey: env.CLERK_PUBLISHABLE_KEY || env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "",
       secretKey: env.CLERK_SECRET_KEY || "",

@@ -484,12 +484,24 @@ const server = createServer(async (req, res) => {
         pairingCode = "START-DEVCODE";
       }
 
-      // LinkedIn enrichment is now part of the onboarding contract. Bright
-      // Data is the only URL→profile provider because the QR code is tied to
-      // that exact LinkedIn identity. Fail-soft: if Bright Data cannot
-      // return data, QR pairing still proceeds, and the first-contact prompt
-      // uses name + URL without inventing profile details.
-      await ensureLinkedInProfileForFirstContact(student.id);
+      // LinkedIn enrichment is part of the onboarding contract. Bright Data is
+      // the only URL→profile provider because the QR code is tied to that
+      // exact LinkedIn identity. It runs in the BACKGROUND (not awaited) so
+      // the QR page renders immediately — the student can scan while the
+      // Bright Data scrape is still in flight. The function is idempotent and
+      // is also invoked on the /webhooks/mac-bridge pairing claim, so the
+      // first-contact workflow still gets the profile even if this background
+      // run is slow. Fail-soft: a scrape error never blocks pairing.
+      void ensureLinkedInProfileForFirstContact(student.id).catch((err) => {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "background_linkedin_enrichment_failed",
+            studentId: student.id,
+            error: err?.message ?? String(err),
+          }),
+        );
+      });
 
       if (pairingCode) {
         setPairingCodeCookie(res, pairingCode, ttlHours);
