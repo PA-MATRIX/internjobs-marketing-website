@@ -44,6 +44,10 @@ export function getConfig(env = process.env) {
     //   (operator approval gate) actually triggers a send — loaded here so
     //   /healthz can report presence.
     emailWorkerSecret: env.EMAIL_WORKER_SECRET || "",
+    // Neon-exit (2026-05-21): shared Bearer secret for the /internal/* API.
+    // The Parrot Worker calls /internal/safety-events with this secret
+    // because safety_events moved off Neon into this app's Postgres.
+    internalApiSecret: env.INTERNAL_API_SECRET || "",
     cloudflareEmailAccountId: env.CLOUDFLARE_EMAIL_ACCOUNT_ID || "",
     cloudflareEmailApiToken: env.CLOUDFLARE_EMAIL_API_TOKEN || "",
     // v1.2 Phase 05: dry-run guard for outbound send paths. When true,

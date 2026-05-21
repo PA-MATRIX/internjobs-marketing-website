@@ -1,89 +1,97 @@
-# Getting internjobs off Neon
+# internjobs off Neon — COMPLETE
 
-Goal: zero Neon dependency. This doc tracks what's done and hands off
-the one remaining piece.
+**Status: ✅ Done 2026-05-21. internjobs has zero Neon dependency.**
 
-## Status — 2026-05-21
+## Final state
 
-| Database | State |
+| Database | Where it lives now |
 |---|---|
-| Mattermost DB | ✅ Migrated to self-hosted Fly Postgres (`internjobs-mattermost-db`). Neon project `noisy-rain-23196137` deleted. See `infra/mattermost-db/MIGRATION.md`. |
-| Parrot DB (`flat-scene-36951468`) | ✅ Deleted. It was empty (0 tables) and unused — Parrot keeps its state in a Cloudflare Durable Object, not Postgres. Dead `PARROT_*` secrets removed from Infisical. |
-| **Student app DB** | ⏳ **Still on Neon. This is the remaining work — see below.** |
+| Mattermost DB | Self-hosted Fly Postgres — `internjobs-mattermost-db` (`infra/mattermost-db/`) |
+| Student app DB | Self-hosted Fly Postgres + pgvector — `internjobs-student-db` (`infra/student-db/`) |
+| Parrot DB | Deleted — it was empty/unused (Parrot keeps state in a Durable Object) |
 
-## Remaining task: migrate the student app DB off Neon
+All three Neon projects are deleted: `noisy-rain-23196137`,
+`flat-scene-36951468`, `soft-dust-92209989`.
 
-The live production database for `apps/app`:
-- ~12 MB, 60 tables, `pgvector` + `pgcrypto` extensions, HNSW vector indexes
-- Connection: Infisical `/internjobs-ai` → `NEON_DATABASE_URL`
-  (this is also the student app's `DATABASE_URL` Fly secret)
+## What was done — Mattermost DB
 
-### ⚠️ Read this before planning — the constraint
+See `infra/mattermost-db/MIGRATION.md`. Straight infra migration:
+Neon → self-hosted Fly Postgres, no code changes.
 
-This DB has **two** consumers, not one:
+## What was done — student app DB
 
-1. `apps/app` — the student app, runs on **Fly**. A self-hosted Fly
-   Postgres is trivially reachable from it (same 6PN private network).
-2. `apps/parrot` — the Parrot **Cloudflare Worker**. It uses
-   `NEON_DATABASE_URL` via the `@neondatabase/serverless` HTTP driver
-   to read/write the `safety_events` table
-   (`workers/lib/inbound-email.ts`, `workers/routes/ops-safety.ts`).
+This one needed a code change AND an infra migration, because the DB
+had two consumers: the student app (`apps/app`, on Fly) and the Parrot
+Cloudflare Worker (`apps/parrot`, which read/wrote `safety_events`).
+A Cloudflare Worker cannot reach a Fly-internal Postgres.
 
-A self-hosted Fly Postgres is **internal-only** (`*.internal`, 6PN).
-**A Cloudflare Worker cannot reach `*.internal`.** Neon works for the
-Worker today only because Neon exposes a public HTTPS endpoint.
+### 1. Decoupled the Parrot Worker from the DB
 
-So this is NOT a copy-paste of the Mattermost migration — you must
-also solve Worker → DB access.
+- The student app gained an internal, Bearer-authed API (it already
+  owns `safety_events` — it writes the SMS-path rows via `store.pool`):
+  - `POST /internal/safety-events` — insert a screening event
+  - `GET  /internal/safety-events` — paginated flag log (100 / 7 days)
+  - `GET  /internal/safety-events/unreviewed-count` — badge count
+  - `POST /internal/safety-events/mark-reviewed` — mark reviewed
+  Auth: `Authorization: Bearer <INTERNAL_API_SECRET>`.
+- The Parrot Worker (`workers/routes/ops-safety.ts`,
+  `workers/lib/inbound-email.ts`) now calls that API via
+  `STUDENT_API_URL` + `STUDENT_API_SECRET` instead of touching Postgres.
+- `NEON_DATABASE_URL` removed from the Worker — code, `types.ts`, the
+  `wrangler secret`, and Infisical.
 
-### Recommended approach: decouple the Worker first
+> ⚠️ For the developer: the safety-events path is a SAFETY feature.
+> The decouple change is in `apps/app/src/server.mjs` (new `/internal/
+> safety-events` block) and `apps/parrot/workers/{routes/ops-safety.ts,
+> lib/inbound-email.ts}`. Worth a review pass.
 
-The Parrot Worker shouldn't write to the student DB directly anyway —
-that's a small architectural smell. Fix it, then the DB has a single
-consumer and migrates cleanly:
+### 2. Migrated the DB
 
-1. Add an authenticated endpoint on `apps/app` (e.g.
-   `POST /internal/safety-events`) that performs the `safety_events`
-   insert/query currently done inside the Worker.
-2. Change `apps/parrot` (`workers/lib/inbound-email.ts`,
-   `workers/routes/ops-safety.ts`) to call that endpoint instead of
-   `neon(env.NEON_DATABASE_URL)`.
-3. Remove `NEON_DATABASE_URL` from the Parrot Worker — the `wrangler`
-   secret and the `Env` field in `workers/types.ts`.
-4. The DB now has one consumer (the Fly student app). Migrate it.
+- New Fly app `internjobs-student-db` — Postgres 17 + pgvector
+  (`pgvector/pgvector:pg17`), internal-only, 3 GB volume.
+- `pg_dump` from Neon → `pg_restore` into Fly. Verified identical:
+  60 tables, 108 audit / 2 students / 18 inbound / 16 safety rows,
+  both HNSW vector indexes (`student_embeddings`, `role_embeddings`).
+- Student app `DATABASE_URL` Fly secret repointed to
+  `internjobs-student-db.internal:5432`.
+- `pg_session_jwt` (a Neon-proprietary extension) did not carry over —
+  it is unused (no RLS policies; auth is Clerk, not Postgres-JWT).
 
-Alternative (more infra, less clean): give the Fly Postgres a public
-IP + TLS and have the Worker connect over TCP (`cloudflare:sockets` +
-`postgres.js`) or Cloudflare Hyperdrive.
+## Operating the student DB
 
-### The DB migration itself
+Internal-only — connect through a tunnel:
 
-Same playbook as `infra/mattermost-db/MIGRATION.md`, with ONE
-difference — the image must ship `pgvector`:
+```bash
+flyctl proxy 15432:5432 --app internjobs-student-db
+psql "postgres://ijapp:<password>@127.0.0.1:15432/internjobs"
+```
 
-- Use **`pgvector/pgvector:pg17`** as the base image, not `postgres:17`.
-  The dump contains `CREATE EXTENSION vector` and HNSW index
-  definitions; the restore target must have the `vector` extension
-  available or the restore fails.
+Credentials in Infisical `/internjobs-ai`:
+- `DATABASE_URL` — full datasource string
+- `STUDENT_DB_PASSWORD` — the `ijapp` / `POSTGRES_PASSWORD` value
+- `INTERNAL_API_SECRET` — Bearer secret for the `/internal/*` API
+  (the Parrot Worker holds the same value as `STUDENT_API_SECRET`)
 
-Steps:
-1. New Fly app `internjobs-student-db` in `infra/student-db/`
-   (`pgvector/pgvector:pg17`, volume, internal-only, `ord`).
-2. Stop `internjobs-ai-student-app`, `pg_dump` from Neon,
-   `pg_restore` into the Fly Postgres via `flyctl proxy`.
-3. Repoint the student app's `DATABASE_URL` Fly secret to
-   `internjobs-student-db.internal:5432`, restart.
-4. Verify: `/healthz` shows `mastraReady` true, row counts match,
-   `\di` shows the HNSW indexes. Then delete the Neon project.
+## Secrets summary
 
-### Watch out for
+| Secret | Where | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Fly `internjobs-ai-student-app` + Infisical | student app → its Postgres |
+| `INTERNAL_API_SECRET` | Fly `internjobs-ai-student-app` + Infisical | auth for `/internal/*` |
+| `STUDENT_API_SECRET` | `wrangler secret` on `internjobs-parrot` | Worker → student app (same value as `INTERNAL_API_SECRET`) |
+| `POSTGRES_PASSWORD` | Fly `internjobs-student-db` | the DB's own password |
 
-- It's the **live product** — schedule a real downtime window.
-- `apps/app/db/migrations/` — do NOT re-run migrations; the dump
-  already carries the full schema.
-- Keep the pre-migration dump as a backup before deleting Neon.
+## Gotchas — same as `infra/mattermost-db/`
 
-## After this
+- `PGDATA` is a subdirectory (ext4 `lost+found`).
+- `sslmode=disable` — no TLS on Fly's private network. The student
+  app's `pg` pool already keys SSL off the connection string.
+- Single Postgres machine, no replica. Fly daily volume snapshots.
+- Image MUST be `pgvector/pgvector:pg17` — the schema uses the
+  `vector` extension + HNSW indexes.
 
-Once the student DB is on Fly, internjobs has **zero Neon
-dependency**. Update this file's status table when done.
+## Backups
+
+Pre-migration dumps (on the migrating operator's machine, not in repo):
+- `~/mattermost-neon-backup-2026-05-21.dump`
+- `~/student-neon-backup-2026-05-21.dump`

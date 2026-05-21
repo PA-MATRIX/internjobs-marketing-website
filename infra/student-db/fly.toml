@@ -1,0 +1,33 @@
+# Self-hosted Postgres 17 + pgvector for the student app (apps/app).
+#
+# Replaces the Neon-hosted student database. Internal-only: no public
+# IP, no [http_service]. Reachable from inside internjobs-sios-org at
+# internjobs-student-db.internal:5432 over the Fly 6PN private network.
+# Modeled on infra/mattermost-db.
+#
+# Data: 3GB Fly volume studentdb_data mounted at /var/lib/postgresql/data.
+# PGDATA points at a subdir (pgdata/) because the ext4 volume root
+# contains lost+found, which initdb refuses to initialize into.
+
+app = "internjobs-student-db"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  POSTGRES_USER = "ijapp"
+  POSTGRES_DB = "internjobs"
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+
+# POSTGRES_PASSWORD is injected as a Fly secret (flyctl secrets set).
+
+[[mounts]]
+  source = "studentdb_data"
+  destination = "/var/lib/postgresql/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

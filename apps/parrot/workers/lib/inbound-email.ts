@@ -240,36 +240,34 @@ export async function receiveEmail(
 				}),
 			);
 
-			// Plan 20-03: Write to Neon safety_events (fire-and-forget — must not block email ingest)
-			if (env.NEON_DATABASE_URL) {
-				(async () => {
-					try {
-						const { neon } = await import("@neondatabase/serverless");
-						const sql = neon(env.NEON_DATABASE_URL!);
-						await sql`
-							insert into safety_events
-								(channel, action, reason, score, sender_last4, preview, employee_id, reviewed)
-							values (
-								'email',
-								${isHardBlock ? "blocked" : screenResult.action},
-								${screenResult.reason},
-								${screenResult.score},
-								${senderEmail.slice(-4)},
-								${emailBody.slice(0, 80)},
-								${employee.id},
-								false
-							)
-						`;
-					} catch (err: unknown) {
-						console.error(
-							JSON.stringify({
-								level: "error",
-								event: "safety_events_write_failed",
-								error: (err as Error)?.message ?? String(err),
-							}),
-						);
-					}
-				})();
+			// Neon-exit (2026-05-21): write safety_events via the student app's
+			// internal API — the DB moved off Neon and a Worker can't reach a
+			// Fly-internal Postgres. Fire-and-forget; must not block email ingest.
+			if (env.STUDENT_API_URL && env.STUDENT_API_SECRET) {
+				void fetch(`${env.STUDENT_API_URL}/internal/safety-events`, {
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${env.STUDENT_API_SECRET}`,
+						"content-type": "application/json",
+					},
+					body: JSON.stringify({
+						channel: "email",
+						action: isHardBlock ? "blocked" : screenResult.action,
+						reason: screenResult.reason,
+						score: screenResult.score,
+						sender_last4: senderEmail.slice(-4),
+						preview: emailBody.slice(0, 80),
+						employee_id: employee.id,
+					}),
+				}).catch((err: unknown) => {
+					console.error(
+						JSON.stringify({
+							level: "error",
+							event: "safety_events_write_failed",
+							error: (err as Error)?.message ?? String(err),
+						}),
+					);
+				});
 			}
 		}
 

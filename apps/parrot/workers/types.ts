@@ -160,14 +160,18 @@ export interface Env extends CfEnvBase {
 	 *  Optional at type level — Worker boots without it; screenMessage() fails open. */
 	LAKERA_GUARD_API_KEY?: string;
 
-	// — Phase 20 SAFETY-03: Neon connection for safety_events writes (operator view).
-	/** Neon DATABASE_URL for safety_events inserts from the Parrot Worker.
-	 *  Uses @neondatabase/serverless (HTTP-based driver, CF Workers compatible).
-	 *  Set via `wrangler secret put NEON_DATABASE_URL`. Also in Infisical
-	 *  /internjobs-ai/NEON_DATABASE_URL (mirrors DATABASE_URL).
-	 *  Optional at type level — when absent, Worker logs to console only and
-	 *  /api/ops/safety returns empty {events:[], total:0}. */
-	NEON_DATABASE_URL?: string;
+	// — Neon-exit (2026-05-21): safety_events via the student app's API.
+	// The student DB moved off Neon to a Fly-internal Postgres a Worker
+	// can't reach. The Worker now calls /internal/safety-events on the
+	// student app (apps/app) instead of touching the DB directly.
+	/** HTTPS base URL of the student app for the internal safety-events
+	 *  API. Set in wrangler.jsonc [vars] — not a secret. Optional at type
+	 *  level — when absent the Worker's safety routes degrade fail-soft. */
+	STUDENT_API_URL?: string;
+	/** Shared Bearer secret for the student app's /internal/* API.
+	 *  Set via `wrangler secret put STUDENT_API_SECRET`; matches
+	 *  INTERNAL_API_SECRET on the Fly student app. Mirrors GRAPH_API_SECRET. */
+	STUDENT_API_SECRET?: string;
 
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).

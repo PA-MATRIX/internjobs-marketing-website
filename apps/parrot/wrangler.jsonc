@@ -91,7 +91,12 @@
 		// `wrangler secret put GRAPH_API_SECRET`; matches the secret on the
 		// Fly app via `flyctl secrets set GRAPH_API_SECRET`). URL is NOT a
 		// secret — it's an internet-facing HTTPS hostname.
-		"GRAPH_API_URL": "https://internjobs-graph-api.fly.dev"
+		"GRAPH_API_URL": "https://internjobs-graph-api.fly.dev",
+		// Neon-exit (2026-05-21): student app base URL for the internal
+		// safety-events API. safety_events lives in the student app's
+		// Postgres; the Worker reaches it via /internal/safety-events
+		// (Bearer STUDENT_API_SECRET). Not a secret — public HTTPS host.
+		"STUDENT_API_URL": "https://app.internjobs.ai"
 	},
 	// v1.2 Phase 12 Wave 1: Secrets — set via `wrangler secret put`.
 	// (wrangler.jsonc has no native `secrets` array, so we declare them as
@@ -123,6 +128,11 @@
 	//                              Also store in Infisical /internjobs-ai/DAILY_API_KEY.
 	//                              Optional — room provisioning degrades to null when absent;
 	//                              the UI falls back to the Phase 13 toast.
+	//   STUDENT_API_SECRET       — Bearer secret for the student app's /internal/*
+	//                              safety-events API (Neon-exit 2026-05-21). Set via
+	//                              `wrangler secret put STUDENT_API_SECRET`; must equal
+	//                              INTERNAL_API_SECRET on the Fly student app. Also in
+	//                              Infisical /internjobs-ai/INTERNAL_API_SECRET.
 	//
 	// Phase 13 Wave 3 — KV namespace for feature flags. Holds the
 	// `global_defaults` key (JSON object) used by getFeatureFlags() in
