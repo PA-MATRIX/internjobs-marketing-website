@@ -78,7 +78,7 @@ interface EmployeeLookupRow {
 export async function receiveEmail(
 	event: { raw: ReadableStream; rawSize: number },
 	env: Env,
-	_ctx: ExecutionContext,
+	ctx: ExecutionContext,
 ): Promise<void> {
 	// NOTE (SAFETY-SCOPE-01): Mattermost inbound is polled via EmployeeMailboxDO
 	// alarm and is NOT screened by Lakera in v1.3. Internal channel, wrong risk
@@ -242,32 +242,37 @@ export async function receiveEmail(
 
 			// Neon-exit (2026-05-21): write safety_events via the student app's
 			// internal API — the DB moved off Neon and a Worker can't reach a
-			// Fly-internal Postgres. Fire-and-forget; must not block email ingest.
+			// Fly-internal Postgres. Registered with ctx.waitUntil so CF keeps
+			// the Worker alive until the write finishes — a bare fire-and-forget
+			// fetch can be cut off when the email handler returns, dropping the
+			// safety audit row. Does not block email ingest (not awaited).
 			if (env.STUDENT_API_URL && env.STUDENT_API_SECRET) {
-				void fetch(`${env.STUDENT_API_URL}/internal/safety-events`, {
-					method: "POST",
-					headers: {
-						authorization: `Bearer ${env.STUDENT_API_SECRET}`,
-						"content-type": "application/json",
-					},
-					body: JSON.stringify({
-						channel: "email",
-						action: isHardBlock ? "blocked" : screenResult.action,
-						reason: screenResult.reason,
-						score: screenResult.score,
-						sender_last4: senderEmail.slice(-4),
-						preview: emailBody.slice(0, 80),
-						employee_id: employee.id,
-					}),
-				}).catch((err: unknown) => {
-					console.error(
-						JSON.stringify({
-							level: "error",
-							event: "safety_events_write_failed",
-							error: (err as Error)?.message ?? String(err),
+				ctx.waitUntil(
+					fetch(`${env.STUDENT_API_URL}/internal/safety-events`, {
+						method: "POST",
+						headers: {
+							authorization: `Bearer ${env.STUDENT_API_SECRET}`,
+							"content-type": "application/json",
+						},
+						body: JSON.stringify({
+							channel: "email",
+							action: isHardBlock ? "blocked" : screenResult.action,
+							reason: screenResult.reason,
+							score: screenResult.score,
+							sender_last4: senderEmail.slice(-4),
+							preview: emailBody.slice(0, 80),
+							employee_id: employee.id,
 						}),
-					);
-				});
+					}).catch((err: unknown) => {
+						console.error(
+							JSON.stringify({
+								level: "error",
+								event: "safety_events_write_failed",
+								error: (err as Error)?.message ?? String(err),
+							}),
+						);
+					}),
+				);
 			}
 		}
 
