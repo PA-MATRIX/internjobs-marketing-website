@@ -1866,11 +1866,15 @@ function Footer() {
       <div className="footer-word" aria-hidden="true">internjobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <BrandMark />
-            <span className="font-bold text-ink">internjobs.ai</span>
-          </div>
-          <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">Way less exhausting than doing it alone.</p>
+          <img
+            src="/logo/lockup-gradient-ink.svg"
+            alt="internjobs.ai"
+            height={32}
+            style={{ height: 32, minWidth: 140 }}
+          />
+          <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">
+            made with <span aria-label="love">❤️</span> Texas <span aria-label="cowboy">🤠</span>
+          </p>
         </div>
         <div className="flex flex-wrap gap-5 text-sm font-medium text-ink-secondary">
           {studentFooterLinks.map((link) => (
