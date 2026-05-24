@@ -16,8 +16,8 @@
   --radius-pill: 999px;
   --radius-mark: 8px;
 
-  color: #111111;
-  background: #fbf7ef;
+  color: var(--ink);
+  background: var(--lavender);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -30,13 +30,13 @@
 
 html {
   scroll-behavior: smooth;
-  background: #fbf7ef;
+  background: var(--lavender);
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: #fbf7ef;
+  background: var(--lavender);
   font-family:
     Inter,
     ui-sans-serif,
@@ -769,7 +769,7 @@ a {
     radial-gradient(circle at 12% 18%, rgba(255, 77, 141, 0.14), transparent 22rem),
     radial-gradient(circle at 44% 3%, rgba(255, 206, 61, 0.16), transparent 24rem),
     radial-gradient(circle at 86% 26%, rgba(0, 122, 255, 0.12), transparent 24rem),
-    linear-gradient(180deg, #fbf7ef 0%, #f7f0e6 100%);
+    linear-gradient(180deg, var(--lavender) 0%, var(--lavender) 100%);
 }
 
 .employer-glow {
@@ -894,7 +894,7 @@ a {
     radial-gradient(circle at 10% 18%, rgba(255, 77, 141, 0.16), transparent 24rem),
     radial-gradient(circle at 48% 4%, rgba(255, 206, 61, 0.16), transparent 24rem),
     radial-gradient(circle at 88% 20%, rgba(54, 197, 240, 0.14), transparent 24rem),
-    linear-gradient(180deg, #fbf7ef 0%, #f8f2e9 100%);
+    linear-gradient(180deg, var(--lavender) 0%, var(--lavender) 100%);
 }
 
 .startup-hero-glow,
@@ -1088,7 +1088,7 @@ a {
     radial-gradient(circle at 16% 24%, rgba(255, 77, 141, 0.16), transparent 22rem),
     radial-gradient(circle at 78% 20%, rgba(37, 211, 102, 0.14), transparent 22rem),
     radial-gradient(circle at 50% 88%, rgba(88, 101, 242, 0.12), transparent 24rem),
-    linear-gradient(180deg, #fbf7ef 0%, #f7f0e6 100%);
+    linear-gradient(180deg, var(--lavender) 0%, var(--lavender) 100%);
 }
 
 .workflow-card {

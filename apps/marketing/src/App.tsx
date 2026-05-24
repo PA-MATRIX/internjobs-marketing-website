@@ -169,9 +169,9 @@ const channels: Channel[] = [
 ];
 
 const steps = [
-  ["Start with what you have", "Use LinkedIn or your projects so InternJobs.ai knows the basics. No giant profile to fill out."],
+  ["Start with what you have", "Use LinkedIn or your projects so internjobs.ai knows the basics. No giant profile to fill out."],
   ["Text it naturally", "Say what kind of work you want and what you have already built."],
-  ["Get the text", "InternJobs.ai keeps looking in the background, texts when something fits, and helps coordinate the next step."],
+  ["Get the text", "internjobs.ai keeps looking in the background, texts when something fits, and helps coordinate the next step."],
 ];
 
 const signals = [
@@ -184,7 +184,7 @@ const signals = [
 const faqs = [
   [
     "Is this another job board?",
-    "No. InternJobs.ai texts you when something actually looks worth your time, then helps you reply without the awkward blank-page moment.",
+    "No. internjobs.ai texts you when something actually looks worth your time, then helps you reply without the awkward blank-page moment.",
   ],
   [
     "Does it apply without me?",
@@ -202,7 +202,7 @@ const faqs = [
 
 const employerCards = [
   ["Share the real work", "What they will build, who they will learn from, and what kind of student will enjoy it."],
-  ["Reach students where they are", "InternJobs.ai explains the role over text, with enough context to make it feel worth a reply."],
+  ["Reach students where they are", "internjobs.ai explains the role over text, with enough context to make it feel worth a reply."],
   ["Get clearer replies", "Students can ask for help drafting something short, normal, and easy to send."],
 ];
 
@@ -246,7 +246,7 @@ const humanYesList = ["Students with context", "Faster replies", "Natural conver
 
 const startupSteps = [
   ["Describe the role", "What they'll build, learn, and work on."],
-  ["InternJobs.ai keeps looking", "Projects, communities, student builders, and early interest."],
+  ["internjobs.ai keeps looking", "Projects, communities, student builders, and early interest."],
   ["Students get the text", "The role gets explained with context, not just a listing."],
   ["Start the conversation", "Slack, email, or text. Whatever your team already uses."],
 ];
@@ -256,7 +256,7 @@ const startupFaqs = [
   ["Do students approve intros?", "Yes. Nothing moves forward without student approval."],
   ["What kinds of startups is this built for?", "Founder-led teams, AI startups, small teams, remote teams, and companies hiring through networks."],
   ["Can this work in Slack or email?", "Yes. Slack, email, text, or Discord. Whatever your team already uses."],
-  ["How is this different from LinkedIn?", "InternJobs.ai looks for students who fit the role and care about startups, then helps start the conversation."],
+  ["How is this different from LinkedIn?", "internjobs.ai looks for students who fit the role and care about startups, then helps start the conversation."],
 ];
 
 const privacyContent: LegalPageContent = {
@@ -797,8 +797,12 @@ function App() {
   }
 
   return (
-    <main className="page-shell min-h-screen overflow-hidden bg-canvas text-ink">
-      <Navbar />
+    <main
+      className="page-shell min-h-screen overflow-hidden"
+      style={{ background: "var(--lavender)", color: "var(--ink)" }}
+      data-accent="lime"
+    >
+      <Navbar isStartupPage={false} />
       <HeroSection />
       <HowItWorksSection />
       <ChannelSection />
@@ -812,7 +816,7 @@ function App() {
   );
 }
 
-function Navbar() {
+function Navbar({ isStartupPage = false }: { isStartupPage?: boolean }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeHref, setActiveHref] = useState("");
@@ -842,25 +846,28 @@ function Navbar() {
     };
   }, []);
 
+  const logoSrc = isStartupPage ? "/logo/lockup-lavender.svg" : "/logo/lockup-gradient-ink.svg";
+
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] backdrop-blur-2xl transition ${
-        scrolled ? "bg-canvas/92 shadow-[0_12px_36px_rgba(0,0,0,0.06)]" : "bg-canvas/76"
-      }`}
+      className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] backdrop-blur-2xl transition"
+      style={{ background: scrolled ? "rgba(232, 222, 245, 0.92)" : "rgba(232, 222, 245, 0.76)" }}
     >
       <nav className="relative flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
-        <a href="/" className="flex items-center gap-2.5" aria-label="InternJobs.ai home" onClick={() => setOpen(false)}>
-          <BrandMark size="sm" />
-          <span className="text-base font-black text-ink">InternJobs.ai</span>
+        <a href="/" className="flex items-center" aria-label="internjobs.ai home" onClick={() => setOpen(false)}>
+          <img src={logoSrc} alt="internjobs.ai" height={28} style={{ height: 28, minWidth: 120 }} />
         </a>
 
-        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-black/[0.06] bg-white/46 p-1 lg:flex">
+        <div
+          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-black/[0.06] p-1 lg:flex"
+          style={{ background: "rgba(232, 222, 245, 0.55)" }}
+        >
           {navLinks.map((link) => (
             <a
               key={link.href}
               href={link.href}
               className={`rounded-full px-3.5 py-2 text-sm font-bold transition ${
-                activeHref === link.href ? "bg-black/[0.06] text-ink" : "text-ink-secondary hover:bg-white/70 hover:text-ink"
+                activeHref === link.href ? "bg-black/[0.06] text-ink" : "text-ink-secondary hover:bg-black/[0.05] hover:text-ink"
               }`}
             >
               {link.label}
@@ -868,14 +875,26 @@ function Navbar() {
           ))}
         </div>
 
-        <a href={APP_WAITLIST_URL} className="primary-party-button hidden rounded-full px-5 py-3 text-sm font-bold text-white lg:inline-flex">
-          Join Early Access
-          <ArrowRight className="ml-2 size-4" />
+        <a
+          href={APP_WAITLIST_URL}
+          className="hidden items-center rounded-full px-5 py-3 text-sm lowercase lg:inline-flex"
+          style={{
+            background: "var(--lime)",
+            color: "var(--ink)",
+            borderRadius: "var(--radius-pill)",
+            fontWeight: 700,
+            textDecoration: "none",
+            gap: "0.5rem",
+          }}
+        >
+          get on the list
+          <ArrowRight className="size-4" />
         </a>
 
         <button
           type="button"
-          className="grid size-10 place-items-center rounded-lg border border-black/[0.08] bg-white/70 lg:hidden"
+          className="grid size-10 place-items-center rounded-lg border border-black/[0.08] lg:hidden"
+          style={{ background: "rgba(232, 222, 245, 0.7)" }}
           aria-label="Toggle navigation"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
@@ -890,7 +909,8 @@ function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-t border-black/[0.06] bg-canvas lg:hidden"
+            className="border-t border-black/[0.06] lg:hidden"
+            style={{ background: "var(--lavender)" }}
           >
             <div className="space-y-1 px-5 py-4">
               {navLinks.map((link) => (
@@ -908,9 +928,15 @@ function Navbar() {
               <a
                 href={APP_WAITLIST_URL}
                 onClick={() => setOpen(false)}
-                className="primary-party-button mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm font-bold text-white"
+                className="mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm lowercase"
+                style={{
+                  background: "var(--lime)",
+                  color: "var(--ink)",
+                  borderRadius: "var(--radius-pill)",
+                  fontWeight: 700,
+                }}
               >
-                Join Early Access
+                get on the list
               </a>
             </div>
           </motion.div>
@@ -937,40 +963,76 @@ function HeroSection() {
   const phoneY = useTransform(scrollYProgress, [0, 0.2], [0, 18]);
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden bg-canvas px-5 pb-8 pt-20 sm:px-6 sm:pt-24 lg:px-8">
-      <div className="hero-spectrum" aria-hidden="true" />
+    <section
+      className="relative min-h-[100svh] overflow-hidden px-5 pb-8 pt-20 sm:px-6 sm:pt-24 lg:px-8"
+      style={{ background: "var(--lavender)" }}
+    >
       <div className="relative z-10 mx-auto grid min-h-[calc(100svh-5rem)] w-full max-w-[1600px] items-center gap-6 lg:grid-cols-[0.86fr_1.14fr] lg:gap-10">
         <Reveal className="max-w-[36rem]">
-          <div className="mb-6 inline-flex items-center rounded-full border border-black/[0.08] bg-white/50 px-3 py-2 text-sm font-semibold text-ink-secondary">
-            Text-first internship search
-          </div>
-
-          <h1 className="font-display text-[2.95rem] leading-[0.98] text-ink sm:text-[5.5rem] lg:text-[6rem]">
-            Internships <span className="text-party-gradient">over text.</span>
-          </h1>
-
-          <p className="mt-4 max-w-[28rem] text-lg leading-8 text-ink-secondary sm:mt-6">
-            InternJobs.ai keeps looking for startup internships while you're busy with class, work, or literally anything else.
+          <p
+            className="mb-6"
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--ink)",
+              opacity: 0.6,
+            }}
+          >
+            JOIN EARLY ACCESS · HOUSTON, TX
           </p>
 
-          <div className="mt-6 grid gap-3 sm:mt-8 sm:flex sm:flex-row">
-            <a href={APP_WAITLIST_URL} className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-4 text-sm font-bold text-white sm:h-14 sm:px-7 sm:text-base">
-              <span>Join Early Access</span>
-              <ArrowRight className="ml-2 size-4" />
-            </a>
-            <a href="#channels" className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] bg-white/55 px-4 text-sm font-bold text-ink transition hover:bg-white sm:h-14 sm:px-7 sm:text-base">
-              See the texts
+          <h1
+            className="font-display lowercase"
+            style={{
+              fontSize: "clamp(72px, 8vw, 96px)",
+              lineHeight: "0.95",
+              letterSpacing: "-0.04em",
+              fontWeight: 900,
+              color: "var(--ink)",
+            }}
+          >
+            internships<span className="accent-comma">,</span> in your dms<span className="accent-dot">.</span>
+          </h1>
+
+          <p
+            className="mt-4 max-w-[28rem]"
+            style={{ fontSize: "16px", lineHeight: "1.55", color: "var(--ink)", opacity: 0.7 }}
+          >
+            no resumes · no cover letters · just texts
+          </p>
+
+          <div className="mt-6 flex flex-row gap-3">
+            <a
+              href={APP_WAITLIST_URL}
+              className="lowercase"
+              style={{
+                background: "var(--lime)",
+                color: "var(--ink)",
+                borderRadius: "var(--radius-pill)",
+                padding: "0.75rem 1.75rem",
+                fontWeight: 700,
+                fontSize: "1rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                textDecoration: "none",
+              }}
+            >
+              get on the list
+              <ArrowRight size={16} />
             </a>
           </div>
 
           <div className="mt-5 grid gap-2 text-sm text-ink-secondary sm:mt-7 sm:gap-3">
             <div className="flex items-center gap-2">
               <Linkedin className="size-4" />
-              <span>Start with LinkedIn. Then just text.</span>
+              <span>start with linkedin. then just text.</span>
             </div>
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4" />
-              <span>You approve anything before it sends.</span>
+              <span>you approve anything before it sends.</span>
             </div>
           </div>
         </Reveal>
@@ -1076,7 +1138,7 @@ function IMessageSurface({
           <InfinityIcon className="size-5" strokeWidth={2.4} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-ink">InternJobs.ai</p>
+          <p className="truncate text-sm font-bold text-ink">internjobs.ai</p>
           <p className="text-[11px] font-medium text-ink-secondary">{channel.label}</p>
         </div>
         <motion.div
@@ -1167,7 +1229,7 @@ function WhatsAppSurface({
           <PlatformLogo platform="whatsapp" className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-white">InternJobs.ai</p>
+          <p className="truncate text-sm font-bold text-white">internjobs.ai</p>
           <p className="text-[11px] text-white/78">online</p>
         </div>
         <motion.span key={pulse} initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} className="rounded-full bg-white/18 px-2 py-1 text-[10px] font-bold text-white">
@@ -1232,7 +1294,7 @@ function SlackSurface({
           <PlatformLogo platform="slack" className="size-5" />
         </div>
         <div>
-          <p className="text-sm font-black text-white">InternJobs.ai</p>
+          <p className="text-sm font-black text-white">internjobs.ai</p>
           <p className="text-[11px] text-white/70"># tiny-wins</p>
         </div>
       </div>
@@ -1253,7 +1315,7 @@ function SlackSurface({
                 <SlackMessage key={`${message.text}-${windowStart + index}`} message={message} index={index} />
               ))}
             </AnimatePresence>
-            {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#616061]">InternJobs.ai is typing...</div> : null}
+            {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#616061]">internjobs.ai is typing...</div> : null}
           </div>
         </div>
       </div>
@@ -1277,7 +1339,7 @@ function SlackMessage({ message, index }: { message: ChatMessage; index: number 
       </div>
       <div className="min-w-0">
         <p className="text-[12px] font-black text-[#1D1C1D]">
-          {isAgent ? "InternJobs.ai" : "You"} <span className="font-medium text-[#616061]">9:41 AM</span>
+          {isAgent ? "internjobs.ai" : "You"} <span className="font-medium text-[#616061]">9:41 AM</span>
         </p>
         <p className="text-[13px] leading-5 text-[#1D1C1D]">{message.text}</p>
       </div>
@@ -1313,7 +1375,7 @@ function DiscordSurface({
               <DiscordMessage key={`${message.text}-${windowStart + index}`} message={message} index={index} />
             ))}
           </AnimatePresence>
-          {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#B5BAC1]">InternJobs.ai is typing...</div> : null}
+          {visibleCount < totalMessages ? <div className="px-2 py-2 text-xs text-[#B5BAC1]">internjobs.ai is typing...</div> : null}
         </div>
       </div>
       <div className="discord-compose">Message #internjobs-helper</div>
@@ -1336,7 +1398,7 @@ function DiscordMessage({ message, index }: { message: ChatMessage; index: numbe
       </div>
       <div>
         <p className={`text-[12px] font-black ${isAgent ? "text-[#8E95FF]" : "text-[#23A559]"}`}>
-          {isAgent ? "InternJobs.ai" : "student"} <span className="font-medium text-[#949BA4]">Today at 9:41 AM</span>
+          {isAgent ? "internjobs.ai" : "student"} <span className="font-medium text-[#949BA4]">Today at 9:41 AM</span>
         </p>
         <p className="text-[13px] leading-5 text-[#DBDEE1]">{message.text}</p>
       </div>
@@ -1365,7 +1427,7 @@ function PhoneCallSurface({
         <div className="mx-auto grid size-20 place-items-center rounded-full bg-white/16 text-white">
           <InfinityIcon className="size-10" />
         </div>
-        <p className="mt-4 text-sm text-white/70">InternJobs.ai</p>
+        <p className="mt-4 text-sm text-white/70">internjobs.ai</p>
         <h3 className="mt-1 text-2xl font-black text-white">Tiny prep sheet</h3>
         <p className="mt-2 text-sm leading-5 text-white/65">Quick call tomorrow at 3:00 PM</p>
         <div className="mt-7 flex justify-center gap-5">
@@ -1399,7 +1461,7 @@ function PhoneCallSurface({
       </div>
       <div className="phonecall-tabbar">
         <span>Recents</span>
-        <strong>InternJobs.ai</strong>
+        <strong>internjobs.ai</strong>
         <span>Voicemail</span>
       </div>
     </div>
@@ -1501,7 +1563,7 @@ function ChannelSection() {
               Built for where <span className="text-party-gradient">students already talk.</span>
             </h2>
             <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              InternJobs.ai works in iMessage, with WhatsApp, Slack, Discord, and call coming soon. No separate tab to keep checking.
+              internjobs.ai works in iMessage, with WhatsApp, Slack, Discord, and call coming soon. No separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -1533,7 +1595,7 @@ function ChannelSection() {
 
           <div className="mt-10 grid gap-3 sm:grid-cols-2">
             <HumanAgentCard icon={<UserRound className="size-5" />} title="You" copy="Tell it what you're into and what you've built. Approve anything before it goes out." />
-            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="InternJobs.ai" copy="Finds roles, explains why they fit, handles the back-and-forth, and helps set up the interview." />
+            <HumanAgentCard icon={<InfinityIcon className="size-5" />} title="internjobs.ai" copy="Finds roles, explains why they fit, handles the back-and-forth, and helps set up the interview." />
           </div>
         </div>
 
@@ -1601,7 +1663,7 @@ function SignalsSection() {
               <div className="agent-node">
                 <BrandMark />
                 <div>
-                  <strong>InternJobs.ai</strong>
+                  <strong>internjobs.ai</strong>
                   <p>texts you first</p>
                 </div>
               </div>
@@ -1634,7 +1696,7 @@ function EmployerSection() {
           <SectionIntro
             eyebrow="For startups"
             title="Find students who already move like builders."
-            copy="Share the role in plain English. InternJobs.ai helps the right students understand why it fits and reply with context."
+            copy="Share the role in plain English. internjobs.ai helps the right students understand why it fits and reply with context."
           />
 
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -1673,7 +1735,7 @@ function EmployerSection() {
             </div>
 
             <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs.ai note</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai note</p>
               <p className="mt-3 text-lg font-black leading-7">This is best for students who have built projects, grown communities, or shipped content before.</p>
             </div>
 
@@ -1751,7 +1813,7 @@ function WaitlistSection() {
       <div className="cta-card relative z-10 mx-auto grid max-w-7xl items-center gap-8 rounded-none p-0 shadow-none sm:p-0 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="relative z-10 text-left">
           <BrandMark size="lg" />
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">InternJobs.ai</p>
+          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">internjobs.ai</p>
           <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl">Join Early Access</h2>
           <p className="mt-5 max-w-md leading-7 text-white/75">
             Get the first text when we open up. Built for students who would rather text than fill out another giant form.
@@ -1764,7 +1826,7 @@ function WaitlistSection() {
         <div className="relative z-10">
           <img
             src="/images/student-agent-handshake.png"
-            alt="A student shaking hands with a glowing InternJobs.ai helper"
+            alt="A student shaking hands with a glowing internjobs.ai helper"
             className="cta-illustration w-full"
           />
         </div>
@@ -1776,12 +1838,12 @@ function WaitlistSection() {
 function Footer() {
   return (
     <footer className="relative overflow-hidden border-t border-black/[0.08] bg-canvas px-5 py-12 sm:px-6 lg:px-8">
-      <div className="footer-word" aria-hidden="true">InternJobs.ai</div>
+      <div className="footer-word" aria-hidden="true">internjobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <BrandMark />
-            <span className="font-bold text-ink">InternJobs.ai</span>
+            <span className="font-bold text-ink">internjobs.ai</span>
           </div>
           <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">Way less exhausting than doing it alone.</p>
         </div>
@@ -1799,7 +1861,11 @@ function Footer() {
 
 function StartupPage() {
   return (
-    <main className="page-shell startup-page min-h-screen overflow-hidden bg-canvas text-ink">
+    <main
+      className="page-shell startup-page min-h-screen overflow-hidden"
+      style={{ background: "var(--lavender)", color: "var(--ink)" }}
+      data-accent="cobalt"
+    >
       <StartupNavbar />
       <StartupHeroSection />
       <ResumePileSection />
@@ -1820,37 +1886,67 @@ function StartupNavbar() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-canvas/88 backdrop-blur-2xl">
+    <header
+      className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] backdrop-blur-2xl"
+      style={{ background: "rgba(56, 85, 255, 0.92)" }}
+    >
       <nav className="relative flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
-        <a href="/" className="flex items-center gap-2.5" aria-label="InternJobs.ai home">
-          <BrandMark size="sm" />
-          <span className="text-base font-black text-ink">InternJobs.ai</span>
+        <a href="/" className="flex items-center" aria-label="internjobs.ai home">
+          <img src="/logo/lockup-lavender.svg" alt="internjobs.ai" height={28} style={{ height: 28, minWidth: 120 }} />
         </a>
 
-        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-black/[0.08] bg-white/58 p-1 md:flex">
-          <a href="/" className="rounded-full px-4 py-2 text-sm font-black text-ink-secondary transition hover:bg-white hover:text-ink">
-            Students
+        <div
+          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border p-1 md:flex"
+          style={{ background: "rgba(232, 222, 245, 0.18)", borderColor: "rgba(232, 222, 245, 0.24)" }}
+        >
+          <a
+            href="/"
+            className="rounded-full px-4 py-2 text-sm font-black transition"
+            style={{ color: "rgba(232, 222, 245, 0.7)" }}
+          >
+            students
           </a>
-          <a href="/startups" className="rounded-full bg-black px-4 py-2 text-sm font-black text-white">
-            Startups
+          <a
+            href="/startups"
+            className="rounded-full px-4 py-2 text-sm font-black"
+            style={{ background: "var(--lavender)", color: "var(--cobalt)" }}
+          >
+            startups
           </a>
         </div>
 
         <div className="hidden items-center gap-6 lg:flex">
           {startupNavLinks.map((link) => (
-            <a key={link.href} href={link.href} className="text-sm font-bold text-ink-secondary transition hover:text-ink">
-              {link.label}
+            <a
+              key={link.href}
+              href={link.href}
+              className="text-sm font-bold transition"
+              style={{ color: "rgba(232, 222, 245, 0.78)" }}
+            >
+              {link.label.toLowerCase()}
             </a>
           ))}
-          <a href="#startup-access" className="primary-party-button inline-flex rounded-full px-5 py-3 text-sm font-bold text-white">
-            Join Startup Access
-            <ArrowRight className="ml-2 size-4" />
+          <a
+            href="#startup-access"
+            className="inline-flex items-center rounded-full px-5 py-3 text-sm lowercase"
+            style={{
+              background: "var(--lavender)",
+              color: "var(--cobalt)",
+              borderRadius: "var(--radius-pill)",
+              fontWeight: 700,
+              textDecoration: "none",
+              gap: "0.5rem",
+            }}
+          >
+            post a role
+            <ArrowRight className="size-4" />
           </a>
         </div>
 
         <button
           type="button"
-          className="grid size-10 place-items-center rounded-lg border border-black/[0.08] bg-white/70 lg:hidden"
+          className="grid size-10 place-items-center rounded-lg border lg:hidden"
+          style={{ background: "rgba(232, 222, 245, 0.18)", borderColor: "rgba(232, 222, 245, 0.24)", color: "var(--lavender)" }}
           aria-label="Toggle startup navigation"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
@@ -1861,23 +1957,47 @@ function StartupNavbar() {
 
       <AnimatePresence>
         {open ? (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="border-t border-black/[0.06] bg-canvas lg:hidden">
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t lg:hidden"
+            style={{ background: "var(--cobalt)", borderColor: "rgba(232, 222, 245, 0.16)" }}
+          >
             <div className="space-y-2 px-5 py-4">
-              <div className="grid grid-cols-2 rounded-full border border-black/[0.08] bg-white/58 p-1 md:hidden">
-                <a href="/" className="rounded-full px-4 py-2 text-center text-sm font-black text-ink-secondary">
-                  Students
+              <div
+                className="grid grid-cols-2 rounded-full border p-1 md:hidden"
+                style={{ background: "rgba(232, 222, 245, 0.18)", borderColor: "rgba(232, 222, 245, 0.24)" }}
+              >
+                <a href="/" className="rounded-full px-4 py-2 text-center text-sm font-black" style={{ color: "rgba(232, 222, 245, 0.7)" }}>
+                  students
                 </a>
-                <a href="/startups" className="rounded-full bg-black px-4 py-2 text-center text-sm font-black text-white">
-                  Startups
+                <a
+                  href="/startups"
+                  className="rounded-full px-4 py-2 text-center text-sm font-black"
+                  style={{ background: "var(--lavender)", color: "var(--cobalt)" }}
+                >
+                  startups
                 </a>
               </div>
               {startupNavLinks.map((link) => (
-                <a key={link.href} href={link.href} onClick={() => setOpen(false)} className="block rounded-lg px-3 py-3 text-sm font-bold text-ink-secondary hover:bg-black/[0.04]">
-                  {link.label}
+                <a
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-lg px-3 py-3 text-sm font-bold"
+                  style={{ color: "rgba(232, 222, 245, 0.82)" }}
+                >
+                  {link.label.toLowerCase()}
                 </a>
               ))}
-              <a href="#startup-access" onClick={() => setOpen(false)} className="primary-party-button mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm font-bold text-white">
-                Join Startup Access
+              <a
+                href="#startup-access"
+                onClick={() => setOpen(false)}
+                className="mt-3 flex h-12 items-center justify-center rounded-full px-5 text-sm lowercase"
+                style={{ background: "var(--lavender)", color: "var(--cobalt)", borderRadius: "var(--radius-pill)", fontWeight: 700 }}
+              >
+                post a role
               </a>
             </div>
           </motion.div>
@@ -1889,27 +2009,67 @@ function StartupNavbar() {
 
 function StartupHeroSection() {
   return (
-    <section className="startup-hero relative min-h-[100svh] overflow-hidden px-5 pb-16 pt-24 sm:px-6 lg:px-8">
-      <div className="startup-hero-glow" aria-hidden="true" />
+    <section
+      className="startup-hero relative min-h-[100svh] overflow-hidden px-5 pb-16 pt-24 sm:px-6 lg:px-8"
+      style={{ background: "var(--lavender)" }}
+    >
       <div className="relative z-10 mx-auto grid min-h-[calc(100svh-6rem)] max-w-[90rem] items-center gap-10 lg:grid-cols-[0.78fr_1.22fr]">
         <Reveal className="max-w-[42rem]">
-          <div className="mb-6 inline-flex rounded-full border border-black/[0.08] bg-white/55 px-3 py-2 text-sm font-bold text-ink-secondary">For startups</div>
-          <h1 className="font-display text-[3.3rem] leading-[0.98] text-ink sm:text-[5.4rem] lg:text-[6.4rem]">
-            Find students who already move like builders.
-          </h1>
-          <p className="mt-6 max-w-[37rem] text-lg leading-8 text-ink-secondary">
-            Find ambitious students through projects, communities, and warm intros, not just resumes.
+          <p
+            className="mb-6"
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--ink)",
+              opacity: 0.6,
+            }}
+          >
+            FOR COMPANIES · HIRING INTERNS
           </p>
-          <div className="mt-8 grid gap-3 sm:flex">
-            <a href="#startup-access" className="primary-party-button inline-flex h-12 items-center justify-center rounded-full px-5 text-sm font-black text-white sm:h-14 sm:px-7 sm:text-base">
-              Join Startup Access
-              <ArrowRight className="ml-2 size-4" />
-            </a>
-            <a href="#startup-how" className="inline-flex h-12 items-center justify-center rounded-full border border-black/[0.08] bg-white/60 px-5 text-sm font-black text-ink transition hover:bg-white sm:h-14 sm:px-7 sm:text-base">
-              See how it works
+          <h1
+            className="font-display lowercase"
+            style={{
+              fontSize: "clamp(72px, 8vw, 96px)",
+              lineHeight: "0.95",
+              letterSpacing: "-0.04em",
+              fontWeight: 900,
+              color: "var(--ink)",
+            }}
+          >
+            hire interns by text<span className="accent-comma">,</span> not by tower of resumes<span className="accent-dot">.</span>
+          </h1>
+          <p
+            className="mt-4 max-w-[37rem]"
+            style={{ fontSize: "16px", lineHeight: "1.55", color: "var(--ink)", opacity: 0.7 }}
+          >
+            vetted students · matched in minutes · no platform fee
+          </p>
+          <div className="mt-6">
+            <a
+              href="#startup-access"
+              className="lowercase"
+              style={{
+                background: "var(--cobalt)",
+                color: "var(--lavender)",
+                borderRadius: "var(--radius-pill)",
+                padding: "0.75rem 1.75rem",
+                fontWeight: 700,
+                fontSize: "1rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                textDecoration: "none",
+              }}
+            >
+              post a role
+              <ArrowRight size={16} />
             </a>
           </div>
-          <p className="mt-5 text-sm font-semibold text-ink-secondary">Students approve every intro before conversations begin.</p>
+          <p className="mt-5 text-sm" style={{ color: "var(--ink)", opacity: 0.6 }}>
+            students approve every intro before conversations begin.
+          </p>
         </Reveal>
 
         <Reveal delay={0.12}>
@@ -1959,7 +2119,7 @@ function StartupChatMockup() {
               <span className="mt-4 px-2 pb-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/32">Apps</span>
               <span className="startup-slack-channel flex items-center gap-2">
                 <InfinityIcon className="size-3.5" />
-                InternJobs.ai
+                internjobs.ai
               </span>
             </div>
           </aside>
@@ -1968,7 +2128,7 @@ function StartupChatMockup() {
             <div className="startup-slack-header">
               <div>
                 <p className="text-sm font-black text-[#1D1C1D]"># intern-intros</p>
-                <p className="text-xs font-semibold text-[#616061]">InternJobs.ai sends strong student matches here.</p>
+                <p className="text-xs font-semibold text-[#616061]">internjobs.ai sends strong student matches here.</p>
               </div>
               <span className="rounded-full bg-[#2EB67D]/12 px-3 py-1 text-xs font-black text-[#137A45]">live</span>
             </div>
@@ -1978,7 +2138,7 @@ function StartupChatMockup() {
                 Need someone scrappy for growth + community.
               </StartupSlackMessage>
 
-              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+              <StartupSlackMessage name="internjobs.ai" role="app" color="#1264A3" agent>
                 <p>Found 3 students that fit.</p>
                 <div className="startup-slack-card">
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-[#616061]">Why this one stands out</p>
@@ -1994,7 +2154,7 @@ function StartupChatMockup() {
                 This one feels interesting.
               </StartupSlackMessage>
 
-              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+              <StartupSlackMessage name="internjobs.ai" role="app" color="#1264A3" agent>
                 <p>Warm intro drafted. Waiting for student approval.</p>
               </StartupSlackMessage>
 
@@ -2002,7 +2162,7 @@ function StartupChatMockup() {
                 Can we keep this in Slack?
               </StartupSlackMessage>
 
-              <StartupSlackMessage name="InternJobs.ai" role="app" color="#1264A3" agent>
+              <StartupSlackMessage name="internjobs.ai" role="app" color="#1264A3" agent>
                 Yep. Slack, text, or email. Whatever your team already uses.
               </StartupSlackMessage>
             </div>
@@ -2047,10 +2207,10 @@ function ResumePileSection() {
   return (
     <section className="dark-band px-5 py-24 text-white sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.75fr_1.25fr]">
-        <StartupSectionIntro eyebrow="Anti-resume-pile" title="Not another resume pile." copy="Good interns should not be buried in a crowded board. InternJobs.ai keeps the first conversation warmer." light />
+        <StartupSectionIntro eyebrow="Anti-resume-pile" title="Not another resume pile." copy="Good interns should not be buried in a crowded board. internjobs.ai keeps the first conversation warmer." light />
         <div className="grid gap-4 md:grid-cols-2">
           <ComparisonCard title="Most internship platforms" items={resumeProblems} muted />
-          <ComparisonCard title="InternJobs.ai" items={resumeFocuses} />
+          <ComparisonCard title="internjobs.ai" items={resumeFocuses} />
         </div>
       </div>
     </section>
@@ -2082,7 +2242,7 @@ function StartupWorkflowSection() {
         <StartupSectionIntro
           eyebrow="No new dashboard"
           title="Works where your team already works."
-          copy="Some founders want texts. Some want Slack. Some want email. InternJobs.ai adapts to the workflow you already use."
+          copy="Some founders want texts. Some want Slack. Some want email. internjobs.ai adapts to the workflow you already use."
         />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {startupWorkflowChannels.map((channel, index) => (
@@ -2105,7 +2265,7 @@ function StartupContextSection() {
   return (
     <section className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <StartupSectionIntro eyebrow="Context first" title="See the context before the conversation." copy="A resume can miss why someone is worth talking to. InternJobs.ai shows the reason." />
+        <StartupSectionIntro eyebrow="Context first" title="See the context before the conversation." copy="A resume can miss why someone is worth talking to. internjobs.ai shows the reason." />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {startupContextCards.map(([title, copy], index) => (
             <Reveal key={title} delay={index * 0.06} className="h-full">
@@ -2128,7 +2288,7 @@ function StartupSignalsSection() {
         <StartupSectionIntro
           eyebrow="Earlier signal"
           title="Find students before everyone else does."
-          copy="The best startup interns are often already building, posting, and helping in communities. InternJobs.ai helps you reach them earlier."
+          copy="The best startup interns are often already building, posting, and helping in communities. internjobs.ai helps you reach them earlier."
         />
         <div className="grid gap-3 sm:grid-cols-2">
           {startupSignals.map((signal, index) => (
@@ -2160,7 +2320,7 @@ function StartupHiringSection() {
           </Reveal>
           <Reveal className="h-full" delay={0.08}>
             <div className="h-full rounded-lg border border-black/[0.08] bg-[#111] p-6 text-white shadow-soft">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs.ai explains</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai explains</p>
               <ul className="mt-5 space-y-3">
                 {["why the role fits", "why the student fits", "what stands out", "how to reply"].map((item) => (
                   <li key={item} className="flex gap-3 text-sm font-bold text-white/74">
@@ -2196,7 +2356,7 @@ function StartupHowItWorksSection() {
   return (
     <section id="startup-how" className="bg-canvas px-5 py-24 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <StartupSectionIntro eyebrow="How it works" title="Tell InternJobs.ai what you need." />
+        <StartupSectionIntro eyebrow="How it works" title="Tell internjobs.ai what you need." />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {startupSteps.map(([title, copy], index) => (
             <Reveal key={title} delay={index * 0.06} className="h-full">
@@ -2242,7 +2402,7 @@ function StartupRolePanel() {
           ))}
         </div>
         <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">InternJobs.ai note</p>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai note</p>
           <p className="mt-3 text-lg font-black leading-7">Best for students who have built projects, enjoy startup environments, and like growth/content/community work.</p>
         </div>
         <div className="mt-4 rounded-lg border border-black/[0.08] bg-white p-4">
@@ -2284,14 +2444,14 @@ function StartupAccessSection() {
           <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl">Get startup access.</h2>
           <p className="mt-5 max-w-md leading-7 text-white/74">Meet ambitious students before everyone else does.</p>
           <p className="mt-6 max-w-md text-sm leading-6 text-white/54">
-            InternJobs.ai works inside the channels your team already uses.
+            internjobs.ai works inside the channels your team already uses.
           </p>
         </div>
         <form
           className="rounded-lg border border-white/10 bg-white/[0.075] p-5 backdrop-blur-xl sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
-            window.location.href = "mailto:hello@internjobs.ai?subject=Join%20InternJobs.ai%20Startup%20Access";
+            window.location.href = "mailto:hello@internjobs.ai?subject=Join%20internjobs.ai%20Startup%20Access";
           }}
         >
           <div className="grid gap-3 sm:grid-cols-2">
@@ -2354,12 +2514,12 @@ function StartupFooter() {
 
   return (
     <footer className="relative overflow-hidden border-t border-black/[0.08] bg-canvas px-5 py-12 sm:px-6 lg:px-8">
-      <div className="footer-word" aria-hidden="true">InternJobs.ai</div>
+      <div className="footer-word" aria-hidden="true">internjobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <BrandMark />
-            <span className="font-bold text-ink">InternJobs.ai</span>
+            <span className="font-bold text-ink">internjobs.ai</span>
           </div>
           <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">Find students before everyone else does.</p>
         </div>
@@ -2385,7 +2545,11 @@ function TermsPage() {
 
 function LegalPage({ content, active }: { content: LegalPageContent; active: "privacy" | "terms" }) {
   return (
-    <main className="page-shell legal-page min-h-screen overflow-hidden bg-canvas text-ink">
+    <main
+      className="page-shell legal-page min-h-screen overflow-hidden"
+      style={{ background: "var(--cream)", color: "var(--ink)" }}
+      data-accent="lime"
+    >
       <LegalNavbar active={active} />
       <section className="relative overflow-hidden px-5 pb-16 pt-28 sm:px-6 lg:px-8">
         <div className="legal-spectrum" aria-hidden="true" />
@@ -2395,7 +2559,7 @@ function LegalPage({ content, active }: { content: LegalPageContent; active: "pr
             Back to home
           </a>
           <div className="rounded-lg border border-black/[0.08] bg-white/62 p-6 shadow-soft backdrop-blur-xl sm:p-8 lg:p-10">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-secondary">InternJobs.ai</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-secondary">internjobs.ai</p>
             <h1 className="mt-4 font-display text-5xl leading-none text-ink sm:text-7xl">{content.title}</h1>
             <p className="mt-5 text-sm font-bold text-ink-secondary">{content.updated}</p>
             <div className="mt-8 space-y-4 border-b border-black/[0.08] pb-8 text-base leading-8 text-ink-secondary">
@@ -2421,9 +2585,9 @@ function LegalNavbar({ active }: { active: "privacy" | "terms" }) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-canvas/88 backdrop-blur-2xl">
       <nav className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
-        <a href="/" className="flex items-center gap-2.5" aria-label="InternJobs.ai home">
+        <a href="/" className="flex items-center gap-2.5" aria-label="internjobs.ai home">
           <BrandMark size="sm" />
-          <span className="text-base font-black text-ink">InternJobs.ai</span>
+          <span className="text-base font-black text-ink">internjobs.ai</span>
         </a>
         <div className="hidden items-center gap-1 rounded-full border border-black/[0.08] bg-white/58 p-1 sm:flex">
           <a href="/privacy" className={`rounded-full px-4 py-2 text-sm font-black transition ${active === "privacy" ? "bg-black text-white" : "text-ink-secondary hover:bg-white hover:text-ink"}`}>
@@ -2493,12 +2657,12 @@ function LegalFooter() {
 
   return (
     <footer className="relative overflow-hidden border-t border-black/[0.08] bg-canvas px-5 py-12 sm:px-6 lg:px-8">
-      <div className="footer-word" aria-hidden="true">InternJobs.ai</div>
+      <div className="footer-word" aria-hidden="true">internjobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <BrandMark />
-            <span className="font-bold text-ink">InternJobs.ai</span>
+            <span className="font-bold text-ink">internjobs.ai</span>
           </div>
           <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">Internships over text.</p>
         </div>
