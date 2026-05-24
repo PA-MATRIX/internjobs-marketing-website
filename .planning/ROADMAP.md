@@ -56,7 +56,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 10. Brand-voice rewrites live — apex hero "internships, in your dms." + /startups hero "hire interns by text, not by tower of resumes." (lowercase, punctuation accents in section accent color, three-bullet supporting line)
 11. WCAG AAA contrast for body, AA for display; one accent per section; corporate-speak audit grep returns zero matches
 
-**Plans**: TBD (likely 5)
+**Plans**: 5 plans
 
 Plans:
 - [ ] 22-01: Lakera v2 schema verification + parser-block updates if needed (LAKERA-V2-01..03)
