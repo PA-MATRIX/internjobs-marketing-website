@@ -1875,6 +1875,9 @@ function Footer() {
           <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">
             made with <span aria-label="love">❤️</span> Texas <span aria-label="cowboy">🤠</span>
           </p>
+          <address className="mt-2 max-w-md text-sm not-italic leading-6 text-ink-secondary">
+            5900 Balcones Dr, Suite 100, Austin, TX 78731
+          </address>
         </div>
         <div className="flex flex-wrap gap-5 text-sm font-medium text-ink-secondary">
           {studentFooterLinks.map((link) => (
