@@ -1734,8 +1734,8 @@ function EmployerSection() {
               ))}
             </div>
 
-            <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai note</p>
+            <div className="mt-6 rounded-lg p-4" style={{ background: "var(--ink)", color: "var(--lavender)" }}>
+              <p className="text-xs font-black uppercase tracking-[0.16em]" style={{ color: "var(--lavender)", opacity: 0.55 }}>internjobs.ai note</p>
               <p className="mt-3 text-lg font-black leading-7">This is best for students who have built projects, grown communities, or shipped content before.</p>
             </div>
 
@@ -1818,9 +1818,20 @@ function WaitlistSection() {
           <p className="mt-5 max-w-md leading-7 text-white/75">
             Get the first text when we open up. Built for students who would rather text than fill out another giant form.
           </p>
-          <a href={APP_WAITLIST_URL} className="secondary-party-button mt-8 inline-flex h-[3.35rem] items-center justify-center rounded-full px-7 font-black text-[#111]">
-            Join Early Access
-            <ArrowRight className="ml-2 size-4" />
+          <a
+            href={APP_WAITLIST_URL}
+            className="mt-8 inline-flex h-[3.35rem] items-center justify-center px-7 lowercase"
+            style={{
+              background: "var(--lime)",
+              color: "var(--ink)",
+              borderRadius: "var(--radius-pill)",
+              fontWeight: 700,
+              textDecoration: "none",
+              gap: "0.5rem",
+            }}
+          >
+            get on the list
+            <ArrowRight className="size-4" />
           </a>
         </div>
         <div className="relative z-10">
@@ -2319,17 +2330,20 @@ function StartupHiringSection() {
             </div>
           </Reveal>
           <Reveal className="h-full" delay={0.08}>
-            <div className="h-full rounded-lg border border-black/[0.08] bg-[#111] p-6 text-white shadow-soft">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai explains</p>
+            <div
+              className="h-full rounded-lg border border-black/[0.08] p-6 shadow-soft"
+              style={{ background: "var(--ink)", color: "var(--lavender)" }}
+            >
+              <p className="text-xs font-black uppercase tracking-[0.16em]" style={{ color: "var(--lavender)", opacity: 0.55 }}>internjobs.ai explains</p>
               <ul className="mt-5 space-y-3">
                 {["why the role fits", "why the student fits", "what stands out", "how to reply"].map((item) => (
-                  <li key={item} className="flex gap-3 text-sm font-bold text-white/74">
-                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-white" />
+                  <li key={item} className="flex gap-3 text-sm font-bold" style={{ color: "var(--lavender)", opacity: 0.8 }}>
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full" style={{ background: "var(--lavender)" }} />
                     {item}
                   </li>
                 ))}
               </ul>
-              <p className="mt-6 text-sm font-semibold text-white/50">Slack, email, text. Whatever your team already uses.</p>
+              <p className="mt-6 text-sm font-semibold" style={{ color: "var(--lavender)", opacity: 0.55 }}>Slack, email, text. Whatever your team already uses.</p>
             </div>
           </Reveal>
         </div>
@@ -2401,8 +2415,8 @@ function StartupRolePanel() {
             </span>
           ))}
         </div>
-        <div className="mt-6 rounded-lg bg-[#111] p-4 text-white">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-white/45">internjobs.ai note</p>
+        <div className="mt-6 rounded-lg p-4" style={{ background: "var(--ink)", color: "var(--lavender)" }}>
+          <p className="text-xs font-black uppercase tracking-[0.16em]" style={{ color: "var(--lavender)", opacity: 0.55 }}>internjobs.ai note</p>
           <p className="mt-3 text-lg font-black leading-7">Best for students who have built projects, enjoy startup environments, and like growth/content/community work.</p>
         </div>
         <div className="mt-4 rounded-lg border border-black/[0.08] bg-white p-4">
@@ -2462,9 +2476,21 @@ function StartupAccessSection() {
               </label>
             ))}
           </div>
-          <button type="submit" className="secondary-party-button mt-5 inline-flex h-[3.35rem] w-full items-center justify-center rounded-full px-7 font-black text-[#111]">
-            Join Startup Access
-            <ArrowRight className="ml-2 size-4" />
+          <button
+            type="submit"
+            className="mt-5 inline-flex h-[3.35rem] w-full items-center justify-center px-7 lowercase"
+            style={{
+              background: "var(--lavender)",
+              color: "var(--cobalt)",
+              borderRadius: "var(--radius-pill)",
+              fontWeight: 700,
+              gap: "0.5rem",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            post a role
+            <ArrowRight className="size-4" />
           </button>
         </form>
       </div>
