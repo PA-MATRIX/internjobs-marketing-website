@@ -846,7 +846,13 @@ function Navbar({ isStartupPage = false }: { isStartupPage?: boolean }) {
     };
   }, []);
 
-  const logoSrc = isStartupPage ? "/logo/lockup-lavender.svg" : "/logo/lockup-gradient-ink.svg";
+  // Apex Navbar always sits on the lavender header background regardless of
+  // page. Per brand: lockup-gradient-ink on lavender. The /startups page uses
+  // a separate cobalt-headered StartupNavbar (with lockup-lavender) — see
+  // StartupNavbar below. The old isStartupPage branch returned a lavender
+  // lockup on a lavender bg (invisible).
+  const logoSrc = "/logo/lockup-gradient-ink.svg";
+  void isStartupPage;
 
   return (
     <header
@@ -947,14 +953,22 @@ function Navbar({ isStartupPage = false }: { isStartupPage?: boolean }) {
 }
 
 function BrandMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const className = size === "lg" ? "size-14" : size === "sm" ? "size-8" : "size-10";
-
+  // Brand v1.0 mark — full lime → tangerine → cobalt gradient on transparent
+  // bg. 2:1 aspect per BRAND-V1.md §3. Replaces the legacy CSS-based dark
+  // gradient mark which used non-brand colors (pink/cyan/yellow). Min width
+  // 28px per brand minimum size rule.
+  const heightPx = size === "lg" ? 56 : size === "sm" ? 32 : 40;
+  const widthPx = heightPx * 2;
   return (
-    <span className={`${className} brand-mark brand-mark-${size} grid shrink-0 place-items-center rounded-lg`}>
-      <span className="brand-infinity" aria-hidden="true">
-        ∞
-      </span>
-    </span>
+    <img
+      src="/logo/mark-gradient.svg"
+      alt=""
+      aria-hidden="true"
+      width={widthPx}
+      height={heightPx}
+      style={{ height: heightPx, width: widthPx }}
+      className="shrink-0"
+    />
   );
 }
 
@@ -2611,9 +2625,13 @@ function LegalNavbar({ active }: { active: "privacy" | "terms" }) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-canvas/88 backdrop-blur-2xl">
       <nav className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
-        <a href="/" className="flex items-center gap-2.5" aria-label="internjobs.ai home">
-          <BrandMark size="sm" />
-          <span className="text-base font-black text-ink">internjobs.ai</span>
+        <a href="/" className="flex items-center" aria-label="internjobs.ai home">
+          <img
+            src="/logo/lockup-gradient-ink.svg"
+            alt="internjobs.ai"
+            height={26}
+            style={{ height: 26, minWidth: 120 }}
+          />
         </a>
         <div className="hidden items-center gap-1 rounded-full border border-black/[0.08] bg-white/58 p-1 sm:flex">
           <a href="/privacy" className={`rounded-full px-4 py-2 text-sm font-black transition ${active === "privacy" ? "bg-black text-white" : "text-ink-secondary hover:bg-white hover:text-ink"}`}>
@@ -2686,10 +2704,12 @@ function LegalFooter() {
       <div className="footer-word" aria-hidden="true">internjobs.ai</div>
       <div className="relative mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <BrandMark />
-            <span className="font-bold text-ink">internjobs.ai</span>
-          </div>
+          <img
+            src="/logo/lockup-gradient-ink.svg"
+            alt="internjobs.ai"
+            height={32}
+            style={{ height: 32, minWidth: 140 }}
+          />
           <p className="mt-4 max-w-md text-sm leading-6 text-ink-secondary">Internships over text.</p>
         </div>
         <div className="flex flex-wrap gap-5 text-sm font-medium text-ink-secondary">
