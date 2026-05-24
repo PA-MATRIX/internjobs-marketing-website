@@ -4,13 +4,13 @@ milestone: "v1.4"
 phase: 22
 phase_name: "Lakera Verification + Marketing Brand Refresh"
 phase_total: 6
-plan: 1
+plan: 4
 plan_total: 5
 status: "in_progress"
-progress: 2
+progress: 3
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
-resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-05-PLAN.md"
 blockers: []
 ---
 
@@ -35,11 +35,11 @@ See: .planning/WORKSTREAMS.md (team assignments)
 
 Milestone: v1.4 Pilot Readiness
 Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
-Plan: 22-03 + 22-01 complete (brand foundation + Lakera v2 verification shipped); 22-04/05 next
-Status: In progress — Lakera track + brand track wave-1 both done
-Last activity: 2026-05-24 — 22-01 executed (Lakera v2 schema verified + critical silent-fail hard-block bug fixed; 3 commits; LAKERA-PRICING.md written; all 5 tests pass)
+Plan: 22-01 + 22-03 + 22-04 complete (Lakera v2 + brand foundation + brand surface apply); 22-05 next (marketing visual verification)
+Status: In progress — Lakera track done, brand track wave-2 done
+Last activity: 2026-05-24 — 22-04 executed (apex + /startups hero rewrites, data-accent system wired, OG image generated via sharp, 5+6 hex literals purged from marketing surfaces; 3 commits; all 11 plan verify-checks pass; build green)
 
-Progress: █░░░░░░░░░ 3% (2/68 requirements done; 8 brand reqs verified by 22-03; LAKERA-V2-01/02/03 verified by 22-01)
+Progress: ██░░░░░░░░ 4% (3/68 requirements done; 8 brand reqs verified by 22-03; LAKERA-V2-01/02/03 by 22-01; 17 brand-layout/logo/copy reqs by 22-04)
 
 ## Team Mode
 
@@ -67,7 +67,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 22 | 2 | 5 | ~14 min (22-03: ~3 min, 22-01: ~25 min) |
+| 22 | 3 | 5 | ~13 min (22-03: ~3 min, 22-01: ~25 min, 22-04: ~12 min) |
 | 23 | 0 | TBD | — |
 | 24 | 0 | TBD | — |
 | 25 | 0 | TBD | — |
@@ -99,6 +99,12 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - 22-01: Binary flag → numeric score mapping (`flagged: true → score=1`) preserves the `ScreenResult.score: number | null` contract used by every caller + the `safety_events.score` DB column. Considered `null` but rejected — would force every caller to handle a new code path.
 - 22-01: Lakera tier/quota is not API-visible — `infra/LAKERA-PRICING.md` documents this as a deferred dashboard-sign-in follow-up; 22-01 did not block on it because the operational signal ("logs visible in dashboard, key works") is positive.
 - 22-01: Skipped the Lakera signup checkpoint (Task 1) — production key already wired (Infisical + Fly digest `64ee3c881fc8742c`). Verified by direct probe from inside the Fly app's env, not from a dev laptop.
+- 22-04: StartupNavbar mounts lockup-lavender.svg (not lockup-gradient-ink.svg) because the cobalt header literally sits on cobalt — BRAND-LOGO-04 cobalt exception applied at navbar surface, not just inside the hero. Apex Navbar receives isStartupPage prop and picks gradient-ink variant for default lavender surface.
+- 22-04: OG image generated via sharp (already in node_modules) — wrote SVG to /tmp, sharp.png().toFile() to public/logo/og-1200x630.png. No new dep. SVG snippet preserved in commit fed1d0b for regen.
+- 22-04: WaitlistSection + StartupAccessSection CTA buttons rewritten to brand pills ("get on the list" / "post a role") for cross-page brand-voice consistency. Was "Join Early Access" / "Join Startup Access" on .secondary-party-button with #111 text — both forbidden hex AND Title Case.
+- 22-04: ChannelSection h2 (with text-party-gradient rainbow + #111111 stops) left untouched — out of 22-04 scope. Flagged as known follow-up for 22-05 visual diff or later.
+- 22-04: Phone-demo UI mocks (iphone-screen, ios-*, whatsapp-*, slack-*, discord-*, phonecall-*) + startup-chat-shell + startup-slack-* all kept their original hex literals per BRAND-LAYOUT-05 mock-exception clause (they simulate real app UIs).
+- 22-04: Apex Navbar mobile drawer nav links kept Title Case (How it works, Channels, etc.); StartupNavbar nav links lowercased (cobalt header is strongly branded surface, lowercase matches brand voice more strictly). Small judgment call documented in deviations.
 
 ### Pending Todos
 
@@ -116,6 +122,6 @@ Pre-existing TS error in `apps/parrot/workers/types.ts:55` (`STUDENT_API_URL` di
 
 ## Session Continuity
 
-Last session: 2026-05-24 — Phase 22 plan execution continued. 22-01 (Lakera v2 schema verification) shipped: live-probed the v2 endpoint from inside the Fly app env (no signup needed), discovered a critical silent-fail bug where the v1 parser was deriving `score=0` on every flagged response so the production hard-block gate had been dead code since v1.3. Fixed the parser in both `screen.mjs` (Node) + `safety.ts` (Worker) for the v2 binary `{flagged, metadata}` shape; switched the caller's hard-block gate to `flagged === true || score >= 0.8` at 4 call sites. Updated tests (all 5 pass). Wrote `infra/LAKERA-PRICING.md` with verified findings + tier-confirmation follow-up. 3 atomic commits + metadata commit.
-Stopped at: 22-01 complete; 22-03 already complete. Ready for 22-04 (Marketing Layout & Copy) which will mount lockup-gradient-ink.svg in Navbar and audit/swap remaining hex literals to brand tokens. Phase 23 unblocked — SAFETY-VERIFY-LIVE-04 tests now meaningful.
-Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md`
+Last session: 2026-05-24 — Phase 22 brand track wave-2 shipped. 22-04 (Marketing Layout & Copy) executed in ~12min: rewrote apex `/` hero with lime accent + "internships, in your dms." + lime pill CTA; rewrote `/startups` hero with cobalt accent + "hire interns by text, not by tower of resumes." + cobalt pill CTA; wired data-accent="lime|cobalt|lime" page attribute system on apex/startup/legal wrappers so .accent-comma/.accent-dot inherit accent colors via CSS from 22-03; mounted lockup-gradient-ink.svg in apex Navbar + lockup-lavender.svg in StartupNavbar (cobalt exception per BRAND-LOGO-04); generated 1200x630 OG PNG via sharp (no new dep) + wired full OG + Twitter Card meta tag suite; purged 5 marketing-surface hex literals in App.tsx + 6 in styles.css → all brand tokens; lowercased 28 user-visible "InternJobs.ai" copy refs to "internjobs.ai" (legal intro defs preserved per BRAND-COPY-07 exception); zero corp-speak grep hits. All 11 plan verify checks pass + build green (41.68 kB CSS, 1.37s). 3 atomic commits + metadata.
+Stopped at: 22-04 complete. Ready for 22-05 (Marketing Visual Verification — playwright contrast checks, OG card smoke-test via Twitter/Facebook validators, accessibility AA check).
+Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-05-PLAN.md`
