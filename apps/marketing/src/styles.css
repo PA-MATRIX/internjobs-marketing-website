@@ -3,6 +3,19 @@
 @tailwind utilities;
 
 :root {
+  /* Brand color tokens — v1.0 (BRAND-TOKENS-01) */
+  --lavender:  #E8DEF5;
+  --ink:       #1A0D2E;
+  --lime:      #CAFF4D;
+  --tangerine: #FF7A3A;
+  --cobalt:    #3855FF;
+  --cream:     #FAF6EB;
+
+  /* Radii tokens — v1.0 (BRAND-TOKENS-02) */
+  --radius-card: 18px;
+  --radius-pill: 999px;
+  --radius-mark: 8px;
+
   color: #111111;
   background: #fbf7ef;
   font-synthesis: none;
@@ -1150,6 +1163,22 @@ a {
 .startup-input:focus {
   border-color: rgba(255, 255, 255, 0.38);
   background: rgba(255, 255, 255, 0.13);
+}
+
+/* Punctuation accent spans — inherit section accent color (BRAND-COPY-01..04) */
+.accent-dot,
+.accent-comma {
+  color: var(--lime);
+}
+
+[data-accent="tangerine"] .accent-dot,
+[data-accent="tangerine"] .accent-comma {
+  color: var(--tangerine);
+}
+
+[data-accent="cobalt"] .accent-dot,
+[data-accent="cobalt"] .accent-comma {
+  color: var(--cobalt);
 }
 
 @media (max-width: 780px) {
