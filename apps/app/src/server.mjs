@@ -699,7 +699,10 @@ const server = createServer(async (req, res) => {
             const _screenMs = Date.now() - _screenStart;
             console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "photon" }));
             const injectionScore = screenResult.score ?? 0;
-            const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+            // Lakera v2 returns a binary flag (no per-category score) — `flagged: true`
+            // alone is sufficient to hard-block. The `>= 0.8` clause is the forward-compat
+            // shim for if Lakera ever re-introduces a per-category numeric score.
+            const isHardBlock = screenResult.flagged === true || injectionScore >= 0.8;
 
             if (screenResult.action !== "passed") {
               console.log(JSON.stringify({
@@ -879,7 +882,10 @@ const server = createServer(async (req, res) => {
                 const _screenMs = Date.now() - _screenStart;
                 console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "mac-bridge-pairing" }));
                 const injectionScore = screenResult.score ?? 0;
-                const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+                // Lakera v2 returns a binary flag (no per-category score) — `flagged: true`
+                // alone is sufficient to hard-block. The `>= 0.8` clause is the forward-compat
+                // shim for if Lakera ever re-introduces a per-category numeric score.
+                const isHardBlock = screenResult.flagged === true || injectionScore >= 0.8;
 
                 if (screenResult.action !== "passed") {
                   console.log(JSON.stringify({
@@ -1053,7 +1059,10 @@ const server = createServer(async (req, res) => {
             const _screenMs = Date.now() - _screenStart;
             console.log(JSON.stringify({ level: "info", event: "lakera_latency_ms", ms: _screenMs, channel: "sms", source: "mac-bridge" }));
             const injectionScore = screenResult.score ?? 0;
-            const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+            // Lakera v2 returns a binary flag (no per-category score) — `flagged: true`
+            // alone is sufficient to hard-block. The `>= 0.8` clause is the forward-compat
+            // shim for if Lakera ever re-introduces a per-category numeric score.
+            const isHardBlock = screenResult.flagged === true || injectionScore >= 0.8;
 
             if (screenResult.action !== "passed") {
               console.log(JSON.stringify({

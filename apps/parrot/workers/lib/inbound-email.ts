@@ -222,7 +222,10 @@ export async function receiveEmail(
 		const _screenMs = Date.now() - _screenStart;
 
 		const injectionScore = screenResult.score ?? 0;
-		const isHardBlock = screenResult.flagged && injectionScore >= 0.8;
+		// Lakera v2 returns a binary flag (no per-category score) — `flagged: true`
+		// alone is sufficient to hard-block. The `>= 0.8` clause is the forward-compat
+		// shim for if Lakera ever re-introduces a per-category numeric score.
+		const isHardBlock = screenResult.flagged === true || injectionScore >= 0.8;
 
 		if (screenResult.action !== "passed") {
 			console.log(
