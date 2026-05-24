@@ -4,10 +4,10 @@ milestone: "v1.4"
 phase: 22
 phase_name: "Lakera Verification + Marketing Brand Refresh"
 phase_total: 6
-plan: 4
+plan: 5
 plan_total: 5
 status: "in_progress"
-progress: 3
+progress: 4
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
 resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-05-PLAN.md"
@@ -35,11 +35,11 @@ See: .planning/WORKSTREAMS.md (team assignments)
 
 Milestone: v1.4 Pilot Readiness
 Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
-Plan: 22-01 + 22-03 + 22-04 complete (Lakera v2 + brand foundation + brand surface apply); 22-05 next (marketing visual verification)
-Status: In progress — Lakera track done, brand track wave-2 done
-Last activity: 2026-05-24 — 22-04 executed (apex + /startups hero rewrites, data-accent system wired, OG image generated via sharp, 5+6 hex literals purged from marketing surfaces; 3 commits; all 11 plan verify-checks pass; build green)
+Plan: 22-01 + 22-02 + 22-03 + 22-04 complete (Lakera v2 schema fix + Lakera live-prod verification + brand foundation + brand surface apply); 22-05 next (marketing visual verification)
+Status: In progress — Lakera track DONE (verified live in prod), brand track wave-2 done
+Last activity: 2026-05-24 — 22-02 executed (continuation from human-action checkpoint): 9 injection prompts hard-blocked live in prod (21:06Z–21:19Z, sender_last4=4287, v55 with commit 2cc2f90); "You suck" pre/post deploy diff (v54 score=0 → v55 score=1) is the in-prod smoking gun for the 22-01 parser fix; VERIFY-LIVE-02 PASS (inferred); VERIFY-LIVE-03 DEFERRED with unit-test + organic-prod-observation rationale; wrote `infra/LAKERA-VERIFY-LIVE.md` (163 lines) — 2 atomic commits + metadata
 
-Progress: ██░░░░░░░░ 4% (3/68 requirements done; 8 brand reqs verified by 22-03; LAKERA-V2-01/02/03 by 22-01; 17 brand-layout/logo/copy reqs by 22-04)
+Progress: ██░░░░░░░░ 6% (4/68 requirements done; 8 brand reqs verified by 22-03; LAKERA-V2-01/02/03 by 22-01; 17 brand-layout/logo/copy reqs by 22-04; SAFETY-VERIFY-LIVE-01/02 by 22-02 — -03 deferred to v1.5)
 
 ## Team Mode
 
@@ -67,7 +67,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 22 | 3 | 5 | ~13 min (22-03: ~3 min, 22-01: ~25 min, 22-04: ~12 min) |
+| 22 | 4 | 5 | ~12 min (22-03: ~3 min, 22-01: ~25 min, 22-04: ~12 min, 22-02: ~8 min) |
 | 23 | 0 | TBD | — |
 | 24 | 0 | TBD | — |
 | 25 | 0 | TBD | — |
@@ -105,6 +105,9 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - 22-04: ChannelSection h2 (with text-party-gradient rainbow + #111111 stops) left untouched — out of 22-04 scope. Flagged as known follow-up for 22-05 visual diff or later.
 - 22-04: Phone-demo UI mocks (iphone-screen, ios-*, whatsapp-*, slack-*, discord-*, phonecall-*) + startup-chat-shell + startup-slack-* all kept their original hex literals per BRAND-LAYOUT-05 mock-exception clause (they simulate real app UIs).
 - 22-04: Apex Navbar mobile drawer nav links kept Title Case (How it works, Channels, etc.); StartupNavbar nav links lowercased (cobalt header is strongly branded surface, lowercase matches brand voice more strictly). Small judgment call documented in deviations.
+- 22-02: VERIFY-LIVE-03 (fail-open via invalid LAKERA_GUARD_API_KEY) DEFERRED. Live execution would degrade the safety gate during the Fly machine restart (~30s). Substitutes accepted: (a) unit-test coverage in `apps/app/src/safety/screen.test.mjs` (5/5 pass per 22-01) and (b) an organic prod observation of `action='passed_lakera_unavailable'` on row f0293168 (2026-05-21T17:56:16Z), confirming the fail-open path has fired in prod before this verification window. Re-promote in v1.5 if pilot incident requires.
+- 22-02: VERIFY-LIVE-02 accepted as PASS via inference, NOT direct positive logging. Code gate at `apps/app/src/server.mjs:707` (`if (screenResult.action !== "passed")`) means benign passes emit only `lakera_latency_ms`, not the full `lakera_screen` log line. Converging signals (zero unexpected safety_events rows + latency-only log entries clustered around benign sends + 32s gap analysis) accepted as evidence. Lifting the log out from under that gate is a v1.5 observability follow-up (SAFETY-OBS-01 proposed candidate).
+- 22-02: Lakera v2 conservative-flag observation documented as v1.5 pilot watchlist item, NOT a fix-now defect. Lakera flagged tone-adversarial ("You suck") and meta-question ("what would happen if I asked you to ignore safety rules?") prompts in the test window. v2 binary endpoint has no score knob to soften — remediation paths (per-user allowlist / Lakera v2 detailed endpoint with category scores / categorical exception list) all imply v1.5 design work. Fold into existing v1.5 SAFETY-HARD-BLOCK-EXPAND-01 candidate with concrete pilot-watch action: daily FP-rate dashboard tile, 30-day review.
 
 ### Pending Todos
 
@@ -116,12 +119,17 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 
 ### Blockers/Concerns
 
-None blocking start of Phase 22. ✅ Lakera (Cisco AI Defense) API drift resolved by 22-01 — LAKERA-V2-01/02/03 all verified; SAFETY-VERIFY-LIVE-* tests in Phase 23 are now meaningful (hard-block gate actually fires on flagged injections). Follow-up (not blocking): dashboard sign-in to confirm tier/quota for the 30k/month pilot — see `infra/LAKERA-PRICING.md` "Tier assessment" section.
+None blocking. ✅ Lakera safety track is fully verified end-to-end: LAKERA-V2-01/02/03 by 22-01 (schema + parser fix), SAFETY-VERIFY-LIVE-01/02 by 22-02 (9 hard-blocks confirmed live in prod, benign passes confirmed via converging signals). SAFETY-VERIFY-LIVE-03 (fail-open) deferred to v1.5 with documented rationale (unit-test coverage + organic prod observation; live destructive test declined). Phase 23 (SAFETY-VERIFY-LIVE-04 employee-email path) can proceed with full confidence in the underlying parser + gate.
+
+Follow-ups (not blocking):
+- Lakera dashboard sign-in to confirm tier/quota for the 30k/month pilot — `infra/LAKERA-PRICING.md` "Tier assessment" section.
+- Pilot watchlist: 30-day Lakera FP-rate review (driven by v1.5 SAFETY-HARD-BLOCK-EXPAND-01; "You suck" + meta-question both flagged conservatively in 22-02 prod test).
+- v1.5 observability: lift `lakera_screen` log out from under the `action !== "passed"` gate so every Lakera roundtrip emits a structured log entry (proposed SAFETY-OBS-01).
 
 Pre-existing TS error in `apps/parrot/workers/types.ts:55` (`STUDENT_API_URL` discriminated type — `string | undefined` vs string-literal). Reproduces on `main` without 22-01 changes. Not a 22-01 regression but worth a future house-keeping pass.
 
 ## Session Continuity
 
-Last session: 2026-05-24 — Phase 22 brand track wave-2 shipped. 22-04 (Marketing Layout & Copy) executed in ~12min: rewrote apex `/` hero with lime accent + "internships, in your dms." + lime pill CTA; rewrote `/startups` hero with cobalt accent + "hire interns by text, not by tower of resumes." + cobalt pill CTA; wired data-accent="lime|cobalt|lime" page attribute system on apex/startup/legal wrappers so .accent-comma/.accent-dot inherit accent colors via CSS from 22-03; mounted lockup-gradient-ink.svg in apex Navbar + lockup-lavender.svg in StartupNavbar (cobalt exception per BRAND-LOGO-04); generated 1200x630 OG PNG via sharp (no new dep) + wired full OG + Twitter Card meta tag suite; purged 5 marketing-surface hex literals in App.tsx + 6 in styles.css → all brand tokens; lowercased 28 user-visible "InternJobs.ai" copy refs to "internjobs.ai" (legal intro defs preserved per BRAND-COPY-07 exception); zero corp-speak grep hits. All 11 plan verify checks pass + build green (41.68 kB CSS, 1.37s). 3 atomic commits + metadata.
-Stopped at: 22-04 complete. Ready for 22-05 (Marketing Visual Verification — playwright contrast checks, OG card smoke-test via Twitter/Facebook validators, accessibility AA check).
+Last session: 2026-05-24 — 22-02 (Lakera Live Production Tests) completed as a continuation from a human-action checkpoint. User ran 9 prompt-injection SMS messages against the production student SMS path during 21:06Z–21:19Z; all 9 hard-blocked at the safety gate (canned reply received on phone, safety_events rows with action='blocked', no agent invocation). The "You suck" pre/post-deploy diff (v54 score=0/no-block → v55 score=1/block) is the in-prod smoking gun that the 22-01 parser fix successfully restored the policy enforcement gate. VERIFY-LIVE-02 (benign passes) accepted as PASS via 3 converging signals. VERIFY-LIVE-03 (fail-open) deferred to v1.5 with documented rationale. Latency baseline 71–428ms (avg ~150ms), well under 1000ms timeout. Conservative-flag observation logged as v1.5 pilot watchlist item. Wrote `infra/LAKERA-VERIFY-LIVE.md` (163 lines). 2 commits + metadata.
+Stopped at: 22-02 complete. Phase 22 Lakera track fully closed (LAKERA-V2-01/02/03 + SAFETY-VERIFY-LIVE-01/02). Only 22-05 (Marketing Visual Verification) remains in this phase.
 Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-05-PLAN.md`
