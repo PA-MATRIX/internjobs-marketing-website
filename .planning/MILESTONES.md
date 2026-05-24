@@ -1,5 +1,31 @@
 # Project Milestones: InternJobs.ai
 
+## v1.3 Pilot Hardening (Shipped: 2026-05-19, partial)
+
+**Delivered:** 3 of 4 planned phases shipped; 1 explicitly skipped; 1 large un-roadmapped initiative also landed.
+
+**Phases shipped:**
+- **Phase 18 — Graph Bridge Runtime**: `internjobs-graph-api` Fly proxy + Workspace Worker `graph.ts` rewire from direct FalkorDB to HTTP transport. Workspace `/healthz` reports `graph_proxy_reachable: true`.
+- **Phase 19 — Todo Auto-Resolution**: DO migration 8 + `auto-clear.ts` cron + Resolved view + Undo + animate-out. **Caveat:** cron runs but finds nothing — `closeTodoFact` writer not built; carried to v1.4 A1.
+- **Phase 20 — Pre-LLM Safety Screening**: Lakera screen helpers (Node + Worker) + insertion in student SMS + Workspace email + Neon migration 0009 `safety_events` + `/ops/safety` view. **Caveat:** 3 verification tests not yet run; carried to v1.4 A2.
+- **Phase 21 — Credential Rotation: SKIPPED** at user direction (sole user, not needed yet). RUNBOOK preserved.
+
+**Un-roadmapped (shipped 2026-05-21): Neon-exit**
+- Mattermost DB → self-hosted Fly Postgres `internjobs-mattermost-db`
+- Student app DB → self-hosted Fly Postgres `internjobs-student-db` (pgvector + HNSW preserved)
+- All 3 Neon projects deleted (`noisy-rain-23196137`, `flat-scene-36951468`, `soft-dust-92209989`)
+- Workspace Worker decoupled from Postgres via student-app `/internal/safety-events` Bearer API
+
+**v1.3.1 partial-ships:** Workspace agent-lift (AgentPanel, MCPPanel, EmailPanel, agent-tools), chat/email native Workspace surfaces, Mattermost white-label proxy, LinkedIn URL invariant + Bright Data enrichment
+
+**Stats:**
+- 12 commits for v1.3 phases 18–20 + 5 commits for Neon-exit + ~10 commits for v1.3.1 partials
+- Calendar: 2026-05-19 → 2026-05-24
+
+**Archive:** `.planning/milestones/v1.3-pilot-hardening/`
+
+---
+
 ## v1.2 Two-Sided Agent MVP (Shipped: 2026-05-19)
 
 **Delivered:** Two-sided messaging product (students ↔ startups via Mastra agent) PLUS Parrot internal employee workspace at workspace.internjobs.ai with email/chat/meetings/dashboard panes, kimi-k2.6-powered cross-channel todo extraction via Cloudflare AI Gateway, Daily.co video integration, per-employee push notifications, and admin invite UX with capability toggles.

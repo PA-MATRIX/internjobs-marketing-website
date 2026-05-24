@@ -5,7 +5,8 @@
 - ✅ **v1.0 Waitlist Identity and Messaging Foundation** — Phases 01–06 (shipped 2026-05-09)
 - ✅ **v1.1 Seamless Waitlist and Student Threading** — Phase 07 (shipped 2026-05-15)
 - ✅ **v1.2 Two-Sided Agent MVP** — Phases 08–17 (shipped 2026-05-19)
-- 🚧 **v1.3 Pilot Hardening** — Phases 18–21 (in progress)
+- ✅ **v1.3 Pilot Hardening** — Phases 18–20 shipped; Phase 21 skipped (sole-user deferral). Plus un-roadmapped Neon-exit shipped 2026-05-21.
+- 🚧 **v1.4 Pilot Readiness** — Phases TBD (run `/rrr:create-roadmap` to define). First milestone under RRR team mode.
 
 ## Overview
 

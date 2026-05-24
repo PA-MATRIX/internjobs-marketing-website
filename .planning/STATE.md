@@ -1,87 +1,81 @@
 ---
 schema_version: 2
-milestone: "v1.3"
-phase: 21
-phase_name: "Credential Rotation"
-phase_total: 4
+milestone: "v1.4"
+phase: 0
+phase_name: "Defining requirements"
+phase_total: 0
 plan: 0
 plan_total: 0
-status: "ready_to_execute"
-progress: 75
-last_activity: "2026-05-19"
-session_last: "2026-05-19"
-resume_file: ".planning/milestones/v1.3-pilot-hardening/SHIP-READY.md"
-blockers:
-  - "Phase 19 cron is wired but inert until a closeTodoFact helper writes valid_to (recommend v1.3.1 patch ~50 LOC)"
-  - "Lakera/Cisco AI Defense post-acquisition API drift - verify endpoint at platform.lakera.ai before Phase 20 deploy"
+status: "defining_requirements"
+progress: 0
+last_activity: "2026-05-24"
+session_last: "2026-05-24"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/SCOPE.md"
+blockers: []
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-19)
-See: .planning/MILESTONES.md (full v1.0 / v1.1 / v1.2 ship history)
-See: .planning/milestones/v1.2-two-sided-agent-mvp/ (full v1.2 archive)
-See: .planning/milestones/v1.3-pilot-hardening/research/SUMMARY.md (research basis for v1.3)
+See: .planning/PROJECT.md (updated 2026-05-24)
+See: .planning/MILESTONES.md (full v1.0 / v1.1 / v1.2 / v1.3 ship history)
+See: .planning/milestones/v1.4-pilot-readiness/SCOPE.md (initial v1.4 scope draft)
+See: .planning/codebase/ (codebase map written 2026-05-24)
+See: .planning/team-mode.json (RRR team mode initialized 2026-05-24)
+See: .planning/WORKSTREAMS.md (team assignments)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** Phase 18 — Graph Bridge Runtime
+**Current focus:** v1.4 Pilot Readiness — close v1.3 dangling work + complete Neon-exit + Workspace upgrades
 
 ## Current Position
 
-Milestone: v1.3 Pilot Hardening
-Phase: 21 of 21 (Credential Rotation) — code-complete on phases 18/19/20; awaiting human-action deploys
-Plan: All 9 plans + 1 runbook complete
-Status: Ready to execute (deploys + Lakera signup + credential rotation pending user)
-Last activity: 2026-05-19 — Phases 18/19/20 code-complete (12 commits), Phase 21 RUNBOOK ready, SHIP-READY.md written
+Milestone: v1.4 Pilot Readiness
+Phase: Not started (run `/rrr:create-roadmap`)
+Plan: —
+Status: Defining requirements (scope drafted; phases TBD)
+Last activity: 2026-05-24 — Milestone v1.4 started under RRR team mode (first team-mode milestone for this repo)
 
-Progress: ███████░░░ 75% (3/4 code-complete; Phase 21 is ops-only)
+Progress: ░░░░░░░░░░ 0% (scope drafted; no phases yet)
 
-## Performance Metrics
+## Team Mode
 
-**Velocity:**
-- Total plans completed: ~43 across v1.0/v1.1/v1.2 (see milestone archives)
-- v1.3 plans completed: 0
+This milestone runs under **RRR team mode** (initialized 2026-05-24).
 
-**By Phase:**
+- `team-cms` (Raj) — owns Marketing CMS (`apps/marketing/`) + Student app (`apps/app/`) + Mac bridge + student-db. Branch `rrr/v1.4/team-cms`.
+- `team-workspace` (other dev) — owns Workspace app (`apps/parrot/`) + agentic-inbox + Mattermost stack + graph-api + mattermost-db. Branch `rrr/v1.4/team-workspace`.
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 18 | 0 | 3 (TBD) | — |
-| 19 | 0 | 3 (TBD) | — |
-| 20 | 0 | 3 (TBD) | — |
-| 21 | 0 | 3 (TBD) | — |
+Coordinator workflow: each team works on their own branch; root `.planning/STATE.md` is coordinator-owned; integration via `integration/v1.4` branch via coordinator-driven `coordinate-merge`.
+
+See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 ## Accumulated Context
 
-### v1.3 phase dependency graph
+### v1.3 outcome (what shipped, what carried)
 
-- **Phase 18** (Graph Bridge Runtime) — no dependencies; unblocks Phase 19
-- **Phase 19** (Todo Auto-Resolution) — blocked on Phase 18
-- **Phase 20** (Pre-LLM Safety Screening) — independent; can run parallel to 18/19 once Lakera account exists
-- **Phase 21** (Credential Rotation) — runs last; rotates `GRAPH_API_SECRET` and `LAKERA_GUARD_API_KEY` introduced in earlier phases
+- **Shipped:** PHASE14-RUNTIME (Phase 18), PARROT-AUTO-CLEAR infra (Phase 19, cron inert), SAFETY-01 code (Phase 20, tests pending), Neon-exit (un-roadmapped).
+- **Skipped:** SEC-ROTATE (Phase 21) — sole-user deferral; RUNBOOK preserved.
+- **Carried into v1.4:** closeTodoFact writer (A1), 3 Lakera tests (A2), Lakera v2 schema verify (A3), attachment download (A4), agent-lift UAT (A5), Neon-exit closeout (B1-B3), v1.3 carryovers from parrot-agent-roadmap memory (C1-C4).
 
 ### Decisions
 
-Recent v1.3 decisions logged in PROJECT.md Key Decisions table (to be appended):
-- Fly REST proxy chosen over Workers RESP3 for FalkorDB bridge
-- Lakera Guard fail-open policy
-- PARROT-AUTO-CLEAR animate-out UX with Undo (not silent delete)
-- SEC-ROTATE 5-step verify-before-revoke sequence
+Recent v1.4 decisions (to add to PROJECT.md Key Decisions table as they're locked):
+- Use RRR team mode for v1.4 (first team-mode milestone)
+- Two-team split: team-cms (external surfaces) + team-workspace (employee surfaces)
+- "Workspace" is the verbal/written name for the worker-side app (code paths still use `apps/parrot/`)
 
-### Pending Todos
+### Pending Todos (for /rrr:create-roadmap)
 
-- Verify Lakera (Cisco AI Defense) API endpoint at `platform.lakera.ai` before writing any Phase 20 code
-- Audit which CF Email token (`CLOUDFLARE_EMAIL_API_TOKEN` vs `CLOUDFLARE_EMAIL_ROUTING_API_TOKEN`) is live before Phase 21
-- Manual smoke test of Parrot Worker `graph.ts` Cypher code against production FalkorDB (Phase 18 — code untested in v1.2)
+- Decide phase grouping: conservative 4-phase (Phase 22 v1.3 closeout / Phase 23 auth+admin / Phase 24 graph / Phase 25 polish+tests) vs aggressive 2-phase (pilot-blockers first, then everything else)
+- Decide whether to do milestone research or jump to define-requirements (recommend skip — codebase mapped + scope is mostly closeout work)
+- Decide pilot-launch criteria (what MUST be true before first pilot user signs in)
 
 ### Blockers/Concerns
 
-None blocking start of Phase 18. Phase 20 has an external-vendor gate (Lakera API verification) that's NOT blocking Phase 18.
+None blocking start of v1.4 planning. External vendor gate persists from v1.3: Lakera (Cisco AI Defense) API drift — A3 must verify before A2 tests are meaningful.
 
 ## Session Continuity
 
-Last session: 2026-05-19 — v1.3 milestone initialized (PROJECT.md scoped, REQUIREMENTS.md defined, research synthesized, ROADMAP.md with phases 18-21 written).
-Stopped at: Roadmap complete, ready to plan Phase 18.
-Resume file: None
+Last session: 2026-05-24 — Codebase mapped, v1.4 drafted, RRR team mode initialized for v1.4 with team-cms + team-workspace, PROJECT.md updated for v1.4 (v1.3 moved to Validated).
+Stopped at: PROJECT.md / STATE.md updated; ready to run `/rrr:define-requirements` or `/rrr:create-roadmap` for v1.4.
+Resume file: `.planning/milestones/v1.4-pilot-readiness/SCOPE.md`
