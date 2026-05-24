@@ -2,7 +2,7 @@
 schema_version: 2
 milestone: "v1.4"
 phase: 22
-phase_name: "Lakera Production Verification"
+phase_name: "Lakera Verification + Marketing Brand Refresh"
 phase_total: 6
 plan: 0
 plan_total: 0
@@ -20,25 +20,26 @@ blockers: []
 
 See: .planning/PROJECT.md (updated 2026-05-24)
 See: .planning/MILESTONES.md (full v1.0 / v1.1 / v1.2 / v1.3 ship history)
-See: .planning/REQUIREMENTS.md (46 active v1.4 requirements, all mapped to phases)
+See: .planning/REQUIREMENTS.md (68 active v1.4 requirements — 46 original + 22 brand — all mapped to phases)
 See: .planning/ROADMAP.md (v1.4 = Phases 22–27, two-team execution)
 See: .planning/milestones/v1.4-pilot-readiness/SCOPE.md (initial scope draft)
+See: .planning/brand/BRAND-V1.md (brand spec captured from PDF + logo pack 2026-05-24)
 See: .planning/codebase/ (codebase map written 2026-05-24)
 See: .planning/team-mode.json (RRR team mode: team-cms + team-workspace)
 See: .planning/WORKSTREAMS.md (team assignments)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** Phase 22 — Lakera Production Verification (team-cms)
+**Current focus:** Phase 22 — Lakera Verification + Marketing Brand Refresh (team-cms)
 
 ## Current Position
 
 Milestone: v1.4 Pilot Readiness
-Phase: 22 of 27 (Lakera Production Verification — team-cms)
+Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
 Plan: Not started (run `/rrr:plan-phase 22`)
 Status: Ready to plan (roadmap complete; first phase plans not yet drafted)
-Last activity: 2026-05-24 — Roadmap created with 6 phases; all 46 requirements mapped to phases
+Last activity: 2026-05-24 — Roadmap created with 6 phases; brand refresh added to Phase 22; all 68 requirements mapped to phases
 
-Progress: ░░░░░░░░░░ 0% (0/46 requirements done)
+Progress: ░░░░░░░░░░ 0% (0/68 requirements done)
 
 ## Team Mode
 
@@ -77,7 +78,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 ### v1.4 phase dependency graph
 
-- **Phase 22** (Lakera Production Verification, team-cms) — first phase, no v1.4 deps
+- **Phase 22** (Lakera Verification + Marketing Brand Refresh, team-cms) — first phase, no v1.4 deps. Two independent tracks within team-cms (Lakera + Brand).
 - **Phase 23** (Workspace Pilot Closeouts, team-workspace) — depends on Phase 22 (SAFETY-VERIFY-LIVE-04 needs LAKERA-V2-02)
 - **Phase 24** (Neon-Exit Closeout, team-cms) — no deps; can start parallel to 23
 - **Phase 25** (SSO + Admin UX, team-workspace) — sequential after 23 on team-workspace branch
@@ -106,6 +107,6 @@ None blocking start of Phase 22. External vendor gate persists: Lakera (Cisco AI
 
 ## Session Continuity
 
-Last session: 2026-05-24 — Codebase mapped, v1.4 milestone promoted, RRR team mode initialized + GitHub teams created (`team-cms` with growthpods; `team-workspace` with growthpods + nithinpotti), REQUIREMENTS.md defined (46 reqs), ROADMAP.md created (6 phases mapped).
-Stopped at: Roadmap complete. Ready to plan Phase 22.
+Last session: 2026-05-24 — Codebase mapped, v1.4 milestone promoted, RRR team mode initialized + GitHub teams created (`team-cms` with growthpods; `team-workspace` with growthpods + nithinpotti), REQUIREMENTS.md defined (46 → 68 reqs after brand-refresh scope-add), ROADMAP.md created (6 phases mapped, Phase 22 renamed to absorb brand work), `.planning/brand/BRAND-V1.md` captured from PDF + logo pack.
+Stopped at: Roadmap complete. Ready to plan Phase 22 (Lakera + Brand).
 Resume file: `.planning/milestones/v1.4-pilot-readiness/SCOPE.md`

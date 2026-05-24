@@ -18,7 +18,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - Integer phases (22-27): Planned v1.4 work
 - Decimal phases (e.g., 22.1): Reserved for urgent insertions during execution
 
-- [ ] **Phase 22: Lakera Production Verification** — *team-cms*. Verify Lakera (Cisco AI Defense) v2 schema in production + run 3 student-SMS-path safety tests live
+- [ ] **Phase 22: Lakera Verification + Marketing Brand Refresh** — *team-cms*. Verify Lakera (Cisco AI Defense) v2 schema in production + run 3 student-SMS-path safety tests live + apply v1.0 brand system to `apps/marketing/` (lavender anchor + ink + lime/tangerine/cobalt accents + Inter type + new logo pack + voice rewrites)
 - [ ] **Phase 23: Workspace Pilot Closeouts** — *team-workspace*. closeTodoFact writer + Workspace email Lakera test + attachment download + agent-lift authenticated UAT
 - [ ] **Phase 24: Neon-Exit Closeout** — *team-cms*. End-to-end verification of new student-app `/internal/safety-events` API + planning doc refresh
 - [ ] **Phase 25: SSO Activation + Admin UX** — *team-workspace*. Mattermost OIDC SSO activation + frontend admin page with capability toggles + orphan Neon dep cleanup
@@ -27,30 +27,45 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 
 ## Phase Details
 
-### Phase 22: Lakera Production Verification
+### Phase 22: Lakera Verification + Marketing Brand Refresh
 
-**Goal**: Make Lakera Guard pre-LLM safety screening actually functional end-to-end on the student SMS path. v1.3 shipped the code; v1.4 verifies it works in production against the post-Cisco-acquisition API.
+**Goal**: Two-track team-cms phase. Track 1: make Lakera Guard pre-LLM safety screening actually functional end-to-end on the student SMS path (v1.3 shipped the code; v1.4 verifies it works in production against the post-Cisco-acquisition API). Track 2: apply the v1.0 brand system to `apps/marketing/` (lavender anchor + ink text + lime/tangerine/cobalt one-per-section accents + Inter type stack + new logo pack + voice rewrites). Tracks are independent and can run in parallel within team-cms.
 
 **Team owner**: `team-cms`
 **Branch**: `rrr/v1.4/team-cms`
 **Depends on**: Nothing (first phase of v1.4)
 
-**Requirements**: LAKERA-V2-01, LAKERA-V2-02, LAKERA-V2-03, SAFETY-VERIFY-LIVE-01, SAFETY-VERIFY-LIVE-02, SAFETY-VERIFY-LIVE-03
+**Requirements**: LAKERA-V2-01..03, SAFETY-VERIFY-LIVE-01..03, BRAND-TOKENS-01..02, BRAND-TYPE-01..02, BRAND-LAYOUT-01..05, BRAND-LOGO-01..07, BRAND-COPY-01..08, BRAND-VERIFY-01..03 *(28 total)*
+
+**Brand spec source**: `.planning/brand/BRAND-V1.md` (captured from the PDF + logo pack on 2026-05-24)
 
 **Success Criteria** (what must be TRUE):
+
+*Lakera (Track 1):*
 1. Live injection-test student SMS is hard-blocked, student receives the exact canned reply, `safety_events` row written with `action='blocked'`
 2. Live benign student SMS produces zero `safety_events` log entries and the agent replies normally
 3. Simulated Lakera 5xx produces a `passed_lakera_unavailable` row and the message proceeds (fail-open verified)
-4. Lakera (Cisco AI Defense) v2 endpoint URL + response schema verified at `platform.lakera.ai`; parser blocks in `screen.mjs` + `safety.ts` match production reality
-5. Pricing tier confirmed sufficient for 30k/month pilot volume (Community vs Pro decision documented)
+4. Lakera (Cisco AI Defense) v2 endpoint + response schema verified at `platform.lakera.ai`; parser blocks in `screen.mjs` + `safety.ts` match production reality
+5. Pricing tier confirmed sufficient for 30k/month pilot volume
 
-**Plans**: TBD (likely 2 — schema-verify + run-3-tests)
+*Brand (Track 2):*
+6. `apps/marketing/` builds with all brand tokens as CSS variables; **zero hex literals in components, zero white/pure-black/gray-fill**
+7. Inter loaded with all weights 400–900; no fallback substitution in headlines
+8. Apex `/` uses lavender + ink + lime hero; `/startups` uses lavender + ink + cobalt hero with `lockup-lavender.svg` (cobalt exception)
+9. New logo pack live: gradient lockup in header, mark-gradient favicon (multi-size), OG image (1200×630) on lavender
+10. Brand-voice rewrites live — apex hero "internships, in your dms." + /startups hero "hire interns by text, not by tower of resumes." (lowercase, punctuation accents in section accent color, three-bullet supporting line)
+11. WCAG AAA contrast for body, AA for display; one accent per section; corporate-speak audit grep returns zero matches
+
+**Plans**: TBD (likely 5)
 
 Plans:
 - [ ] 22-01: Lakera v2 schema verification + parser-block updates if needed (LAKERA-V2-01..03)
 - [ ] 22-02: 3 production-path SAFETY-VERIFY-LIVE tests against student SMS (SAFETY-VERIFY-LIVE-01..03)
+- [ ] 22-03: Brand foundation — CSS tokens + Inter loaded + logo SVG/PNG assets committed (BRAND-TOKENS-01..02, BRAND-TYPE-01..02, BRAND-LOGO-01..05)
+- [ ] 22-04: Brand surface — apex + /startups layout / accent system / copy rewrites + favicon + OG image (BRAND-LAYOUT-01..05, BRAND-LOGO-06..07, BRAND-COPY-01..08)
+- [ ] 22-05: Brand verify — contrast checks + visual QA + corporate-speak audit + punctuation-accent inline-span spot-check (BRAND-VERIFY-01..03)
 
-**Research flags**: Unlikely (Lakera docs available; reuses existing helpers)
+**Research flags**: Unlikely on both tracks (Lakera docs available + reuses existing helpers; brand spec captured at `.planning/brand/BRAND-V1.md`, logo pack at `~/Downloads/logo_pack/`)
 
 ---
 
@@ -203,7 +218,7 @@ Plans:
 
 | Phase | Milestone | Owner | Plans Complete | Status | Completed |
 |-------|-----------|-------|----------------|--------|-----------|
-| 22. Lakera Production Verification | v1.4 | team-cms | 0/TBD | Not started | — |
+| 22. Lakera Verification + Marketing Brand Refresh | v1.4 | team-cms | 0/TBD | Not started | — |
 | 23. Workspace Pilot Closeouts | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 24. Neon-Exit Closeout | v1.4 | team-cms | 0/TBD | Not started | — |
 | 25. SSO Activation + Admin UX | v1.4 | team-workspace | 0/TBD | Not started | — |

@@ -197,6 +197,52 @@ Biggest agent-quality win. Unblocked by v1.3 Phase 18 (graph proxy is live). Sam
 - [ ] **WSTEST-02**: One happy-path smoke test per Worker route file in `apps/parrot/workers/routes/` (return 200 with expected shape). *Team: team-workspace*
 - [ ] **WSTEST-03**: `npm test` in `apps/parrot/` documented in README; ideally wired to GitHub Actions on `rrr/v1.4/team-workspace` branch. *Team: team-workspace*
 
+### Group F — Marketing Brand Refresh (team-cms)
+
+Apply the v1.0 brand system (lavender anchor + ink text + lime/tangerine/cobalt accents + Inter type stack + lowercase-text voice) to `apps/marketing/`. Spec captured at `.planning/brand/BRAND-V1.md` (source: `~/Downloads/internjobs_brand_guidelines_1.pdf` + `~/Downloads/logo_pack/`). Folded into Phase 22 since team-cms has bandwidth (Phase 22 was Lakera-only).
+
+**Foundation — CSS tokens + typography:**
+
+- [ ] **BRAND-TOKENS-01**: 6 brand color CSS variables (`--lavender #E8DEF5`, `--ink #1A0D2E`, `--lime #CAFF4D`, `--tangerine #FF7A3A`, `--cobalt #3855FF`, `--cream #FAF6EB`) defined in `apps/marketing/src/styles.css` (or `tailwind.config.ts`). **No hex literals in components.**
+- [ ] **BRAND-TOKENS-02**: Radii tokens added — `--radius-card: 18px`, `--radius-pill: 999px`, `--radius-mark: 8px`
+- [ ] **BRAND-TYPE-01**: Inter font loaded with all weights 400, 500, 600, 700, 800, 900 (Google Fonts or self-hosted). **No fallback substitution in headline elements.**
+- [ ] **BRAND-TYPE-02**: Type-scale tokens for Display / H1 / H2 / H3 / Body / Label match spec exactly (Inter 900/72-96px/-0.04em, Inter 800/36-48px/-0.025em, etc — see `.planning/brand/BRAND-V1.md §2`)
+
+**Layout system — one-accent-per-section:**
+
+- [ ] **BRAND-LAYOUT-01**: Apex `/` landing page restructured as lavender background + ink text + lime accent (hero default per section playbook)
+- [ ] **BRAND-LAYOUT-02**: `/startups` (for-companies) page uses cobalt accent for hero + CTA; logo switches to `lockup-lavender.svg` per cobalt exception
+- [ ] **BRAND-LAYOUT-03**: Page-level `data-accent="lime|tangerine|cobalt"` attribute drives the section's accent; punctuation-accent + CTA-pill components inherit, don't override
+- [ ] **BRAND-LAYOUT-04**: Cream `#FAF6EB` allowed only on `/privacy` + `/terms` long-form pages; cream + lavender never mixed on the same surface
+- [ ] **BRAND-LAYOUT-05**: Grep-audit `apps/marketing/` for `#fff`, `#FFFFFF`, `white`, `#000`, gray-fill — all removed in favor of token variables (per "no white, no pure black, no gray fills" rule)
+
+**Logo asset migration:**
+
+- [ ] **BRAND-LOGO-01**: 7 SVG logo variants copied from `~/Downloads/logo_pack/*.svg` into `apps/marketing/public/logo/`
+- [ ] **BRAND-LOGO-02**: 28 PNG variants copied from `~/Downloads/logo_pack/png/` into `apps/marketing/public/logo/png/` for favicon/OG/social use
+- [ ] **BRAND-LOGO-03**: Site header (lavender bg) uses `lockup-gradient-ink.svg` per "approved combinations · primary on lavender"
+- [ ] **BRAND-LOGO-04**: Cobalt sections (e.g., `/startups` hero) use `lockup-lavender.svg` per cobalt exception
+- [ ] **BRAND-LOGO-05**: Favicon updated using `mark-gradient_256w.png` (multi-size: 16/32/64); Apple touch icon (180px) + safari-pinned-tab SVG added
+- [ ] **BRAND-LOGO-06**: OG image (1200×630) for social sharing generated from logo + tagline ("internships, in your dms.") on lavender bg; meta tags wired in `apps/marketing/index.html`
+- [ ] **BRAND-LOGO-07**: Logo respects clearspace (1× mark height) and minimum sizes (28px mark, 120px lockup) — verified in QA
+
+**Copy — voice rewrites:**
+
+- [ ] **BRAND-COPY-01**: Apex hero rewritten as "internships**,** in your dms**.**" — lowercase headline, comma + dot in lime accent (inline spans, not images)
+- [ ] **BRAND-COPY-02**: Apex hero subhead = three-bullet pattern "no resumes · no cover letters · just texts" with middle dots
+- [ ] **BRAND-COPY-03**: Apex primary CTA = "get on the list →" (lowercase, arrow, lime pill on lavender)
+- [ ] **BRAND-COPY-04**: `/startups` hero rewritten as "hire interns by text**,** not by tower of resumes**.**" — lowercase, accent in cobalt
+- [ ] **BRAND-COPY-05**: `/startups` CTA = "post a role →" (cobalt pill, lavender text, lowercase)
+- [ ] **BRAND-COPY-06**: Uppercase labels (e.g., "JOIN EARLY ACCESS · HOUSTON, TX") use Inter 600, tracking 0.1em, per Label/Caps spec
+- [ ] **BRAND-COPY-07**: Brand-name audit — every reference uses `internjobs.ai` lowercase (including the dot); headlines all lowercase
+- [ ] **BRAND-COPY-08**: Grep-audit for forbidden corporate-speak ("Unlock", "Streamline", "revolutionary", "in today's competitive landscape", title-case headlines) — removed in favor of brand-voice phrasings
+
+**Verification:**
+
+- [ ] **BRAND-VERIFY-01**: WCAG contrast check — ink on lavender clears AAA for body; lime backgrounds use ink text; cobalt + ink-dark backgrounds use lavender text (never gray/white). Tested with axe-core or equivalent.
+- [ ] **BRAND-VERIFY-02**: Visual QA on production deploy — every section has exactly one accent; no two accents next to each other; no white background regressed in
+- [ ] **BRAND-VERIFY-03**: Punctuation accents implemented as inline spans (`<span class="accent-dot">.</span>`), not background images; verified by view-source spot-check
+
 ## Future Milestones
 
 Candidates flagged by v1.3 + v1.4 work but not in v1.4 roadmap.
@@ -277,14 +323,20 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | STAR-API-01 | Phase 27 | team-workspace | Pending |
 | DATES-01 | Phase 27 | team-workspace | Pending |
 | WSTEST-01..03 | Phase 27 | team-workspace | Pending |
+| BRAND-TOKENS-01..02 | Phase 22 | team-cms | Pending |
+| BRAND-TYPE-01..02 | Phase 22 | team-cms | Pending |
+| BRAND-LAYOUT-01..05 | Phase 22 | team-cms | Pending |
+| BRAND-LOGO-01..07 | Phase 22 | team-cms | Pending |
+| BRAND-COPY-01..08 | Phase 22 | team-cms | Pending |
+| BRAND-VERIFY-01..03 | Phase 22 | team-cms | Pending |
 
 **Coverage (v1.4):**
-- Active requirements: 46 total
-- Mapped to phases: 46 ✓
+- Active requirements: 68 total (46 original + 22 brand)
+- Mapped to phases: 68 ✓
 - Unmapped: 0 ✓
 
 **Phase distribution:**
-- Phase 22 (team-cms): 6 reqs — LAKERA-V2 + SAFETY-VERIFY-LIVE-01..03
+- Phase 22 (team-cms): **28 reqs** — LAKERA-V2 (3) + SAFETY-VERIFY-LIVE-01..03 (3) + BRAND (22)
 - Phase 23 (team-workspace): 11 reqs — CLOSETODO + SAFETY-VERIFY-LIVE-04 + ATTACH-DOWN + AGENT-UAT
 - Phase 24 (team-cms): 7 reqs — NEONEX-VER + NEONEX-DOC
 - Phase 25 (team-workspace): 8 reqs — MMSSO + ADMIN-UX + NEONEX-DEP
@@ -292,7 +344,7 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 - Phase 27 (team-workspace): 6 reqs — DAILY-THEME + STAR-API + DATES + WSTEST
 
 **Team load:**
-- team-cms: 13 requirements across Phases 22 + 24
+- team-cms: 35 requirements across Phases 22 + 24
 - team-workspace: 33 requirements across Phases 23 + 25 + 26 + 27
 
 **Cross-team sequencing:** Phase 23 depends on Phase 22 (SAFETY-VERIFY-LIVE-04 needs Lakera v2 schema from LAKERA-V2-02). Otherwise teams run in parallel on their own branches.
