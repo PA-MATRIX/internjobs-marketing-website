@@ -994,7 +994,7 @@ function HeroSection() {
               opacity: 0.6,
             }}
           >
-            JOIN EARLY ACCESS · HOUSTON, TX
+            JOIN EARLY ACCESS
           </p>
 
           <h1
