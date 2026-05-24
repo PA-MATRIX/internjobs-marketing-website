@@ -256,37 +256,46 @@ Candidates flagged by v1.3 + v1.4 work but not in v1.4 roadmap.
 
 ## Traceability
 
-To be populated by `/rrr:create-roadmap`. Each Active v1.4 requirement maps to exactly one phase.
+Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:create-roadmap` 2026-05-24.
 
 | Requirement | Phase | Team | Status |
 |-------------|-------|------|--------|
-| CLOSETODO-01..04 | TBD | team-workspace | Pending |
-| SAFETY-VERIFY-LIVE-01..03 | TBD | team-cms | Pending |
-| SAFETY-VERIFY-LIVE-04 | TBD | team-workspace | Pending |
-| LAKERA-V2-01..03 | TBD | team-cms | Pending |
-| ATTACH-DOWN-01..03 | TBD | team-workspace | Pending |
-| AGENT-UAT-01..03 | TBD | team-workspace | Pending |
-| NEONEX-VER-01..04 | TBD | team-cms / team-workspace | Pending |
-| NEONEX-DEP-01 | TBD | team-workspace | Pending |
-| NEONEX-DOC-01..03 | TBD | team-cms | Pending |
-| MMSSO-01..03 | TBD | team-workspace | Pending |
-| KGRAPH-01..05 | TBD | team-workspace | Pending |
-| ADMIN-UX-01..04 | TBD | team-workspace | Pending |
-| GENZ-01..03 | TBD | team-workspace | Pending |
-| DAILY-THEME-01 | TBD | team-workspace | Pending |
-| STAR-API-01 | TBD | team-workspace | Pending |
-| DATES-01 | TBD | shared | Pending |
-| WSTEST-01..03 | TBD | team-workspace | Pending |
+| LAKERA-V2-01..03 | Phase 22 | team-cms | Pending |
+| SAFETY-VERIFY-LIVE-01..03 | Phase 22 | team-cms | Pending |
+| CLOSETODO-01..04 | Phase 23 | team-workspace | Pending |
+| SAFETY-VERIFY-LIVE-04 | Phase 23 | team-workspace | Pending |
+| ATTACH-DOWN-01..03 | Phase 23 | team-workspace | Pending |
+| AGENT-UAT-01..03 | Phase 23 | team-workspace | Pending |
+| NEONEX-VER-01..04 | Phase 24 | team-cms | Pending |
+| NEONEX-DOC-01..03 | Phase 24 | team-cms | Pending |
+| MMSSO-01..03 | Phase 25 | team-workspace | Pending |
+| ADMIN-UX-01..04 | Phase 25 | team-workspace | Pending |
+| NEONEX-DEP-01 | Phase 25 | team-workspace | Pending |
+| KGRAPH-01..05 | Phase 26 | team-workspace | Pending |
+| GENZ-01..03 | Phase 26 | team-workspace | Pending |
+| DAILY-THEME-01 | Phase 27 | team-workspace | Pending |
+| STAR-API-01 | Phase 27 | team-workspace | Pending |
+| DATES-01 | Phase 27 | team-workspace | Pending |
+| WSTEST-01..03 | Phase 27 | team-workspace | Pending |
 
 **Coverage (v1.4):**
-- Active requirements: 39 total (4 closeTodo + 4 safety-verify + 3 lakera-v2 + 3 attach + 3 agent-uat + 4 neonex-ver + 1 dep + 3 docs + 3 sso + 5 kgraph + 4 admin + 3 genz + 3 polish + 3 tests)
-- Mapped to phases: 0 ⚠️ (pending `/rrr:create-roadmap`)
-- Unmapped: 39 ⚠️
+- Active requirements: 46 total
+- Mapped to phases: 46 ✓
+- Unmapped: 0 ✓
 
-**Team split:**
-- team-cms: 9 requirements (LAKERA-V2 + SAFETY-VERIFY-LIVE-01..03 + NEONEX-VER + NEONEX-DOC, plus shared role on NEONEX-VER)
-- team-workspace: 27 requirements (Group A workspace items + Neon-exit dep cleanup + all of C + all of D except DATES + all of E + SAFETY-VERIFY-LIVE-04)
-- shared: 3 requirements (NEONEX-VER end-to-end + DATES-01 cross-app cleanup)
+**Phase distribution:**
+- Phase 22 (team-cms): 6 reqs — LAKERA-V2 + SAFETY-VERIFY-LIVE-01..03
+- Phase 23 (team-workspace): 11 reqs — CLOSETODO + SAFETY-VERIFY-LIVE-04 + ATTACH-DOWN + AGENT-UAT
+- Phase 24 (team-cms): 7 reqs — NEONEX-VER + NEONEX-DOC
+- Phase 25 (team-workspace): 8 reqs — MMSSO + ADMIN-UX + NEONEX-DEP
+- Phase 26 (team-workspace): 8 reqs — KGRAPH + GENZ
+- Phase 27 (team-workspace): 6 reqs — DAILY-THEME + STAR-API + DATES + WSTEST
+
+**Team load:**
+- team-cms: 13 requirements across Phases 22 + 24
+- team-workspace: 33 requirements across Phases 23 + 25 + 26 + 27
+
+**Cross-team sequencing:** Phase 23 depends on Phase 22 (SAFETY-VERIFY-LIVE-04 needs Lakera v2 schema from LAKERA-V2-02). Otherwise teams run in parallel on their own branches.
 
 ---
 *Requirements defined: 2026-05-19 (v1.3)*
