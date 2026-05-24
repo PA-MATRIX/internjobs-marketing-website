@@ -4,10 +4,10 @@ milestone: "v1.4"
 phase: 22
 phase_name: "Lakera Verification + Marketing Brand Refresh"
 phase_total: 6
-plan: 3
+plan: 1
 plan_total: 5
 status: "in_progress"
-progress: 1
+progress: 2
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
 resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md"
@@ -35,11 +35,11 @@ See: .planning/WORKSTREAMS.md (team assignments)
 
 Milestone: v1.4 Pilot Readiness
 Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
-Plan: 22-03 complete (brand foundation shipped); 22-01 (Lakera) running in parallel; 22-04/05 next
-Status: In progress — brand track wave-1 done
-Last activity: 2026-05-24 — 22-03 executed (CSS tokens + Tailwind extend + 35 logo assets + favicon swap; 3 commits; build green)
+Plan: 22-03 + 22-01 complete (brand foundation + Lakera v2 verification shipped); 22-04/05 next
+Status: In progress — Lakera track + brand track wave-1 both done
+Last activity: 2026-05-24 — 22-01 executed (Lakera v2 schema verified + critical silent-fail hard-block bug fixed; 3 commits; LAKERA-PRICING.md written; all 5 tests pass)
 
-Progress: █░░░░░░░░░ 1% (1/68 requirements done; 8 brand reqs verified by 22-03)
+Progress: █░░░░░░░░░ 3% (2/68 requirements done; 8 brand reqs verified by 22-03; LAKERA-V2-01/02/03 verified by 22-01)
 
 ## Team Mode
 
@@ -67,7 +67,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 22 | 1 | 5 | ~3 min (22-03) |
+| 22 | 2 | 5 | ~14 min (22-03: ~3 min, 22-01: ~25 min) |
 | 23 | 0 | TBD | — |
 | 24 | 0 | TBD | — |
 | 25 | 0 | TBD | — |
@@ -95,6 +95,10 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - 22-03: Brand `ink` overrides legacy tailwind `ink:#111111` (renamed to `ink-legacy`). All `text-ink` usages now resolve to `var(--ink)=#1A0D2E`. 22-04 contrast pass will catch any regressions.
 - 22-03: PNG-only favicon strategy (no .ico generated). 256w mark-gradient PNG used for 32/64/180 sizes; Safari mask-icon → mark-ink.svg.
 - 22-03: Tailwind brand keys reference CSS vars (`var(--lavender)` etc.) instead of duplicating hex values — single source of truth in `styles.css :root`.
+- 22-01: Lakera v2 returns a binary `{flagged, metadata}` payload — no `results[]`, no per-category scores. The v1 parser silently fell through to `score=0` on every flagged response, so the production `score >= 0.8` hard-block gate was dead code. Fixed via parser rewrite + caller-gate change to `flagged === true || score >= 0.8`. Both `screen.mjs` (Node) and `safety.ts` (Worker) mirror.
+- 22-01: Binary flag → numeric score mapping (`flagged: true → score=1`) preserves the `ScreenResult.score: number | null` contract used by every caller + the `safety_events.score` DB column. Considered `null` but rejected — would force every caller to handle a new code path.
+- 22-01: Lakera tier/quota is not API-visible — `infra/LAKERA-PRICING.md` documents this as a deferred dashboard-sign-in follow-up; 22-01 did not block on it because the operational signal ("logs visible in dashboard, key works") is positive.
+- 22-01: Skipped the Lakera signup checkpoint (Task 1) — production key already wired (Infisical + Fly digest `64ee3c881fc8742c`). Verified by direct probe from inside the Fly app's env, not from a dev laptop.
 
 ### Pending Todos
 
@@ -106,10 +110,12 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 
 ### Blockers/Concerns
 
-None blocking start of Phase 22. External vendor gate persists: Lakera (Cisco AI Defense) API drift — LAKERA-V2-01 must verify before LAKERA-V2-02/03 and SAFETY-VERIFY-LIVE-* tests are meaningful.
+None blocking start of Phase 22. ✅ Lakera (Cisco AI Defense) API drift resolved by 22-01 — LAKERA-V2-01/02/03 all verified; SAFETY-VERIFY-LIVE-* tests in Phase 23 are now meaningful (hard-block gate actually fires on flagged injections). Follow-up (not blocking): dashboard sign-in to confirm tier/quota for the 30k/month pilot — see `infra/LAKERA-PRICING.md` "Tier assessment" section.
+
+Pre-existing TS error in `apps/parrot/workers/types.ts:55` (`STUDENT_API_URL` discriminated type — `string | undefined` vs string-literal). Reproduces on `main` without 22-01 changes. Not a 22-01 regression but worth a future house-keeping pass.
 
 ## Session Continuity
 
-Last session: 2026-05-24 — Phase 22 plan execution started. 22-03 (brand foundation) shipped: 6 color CSS vars + 3 radii in styles.css, Tailwind extended with brand keys + type scale, 35 logo assets copied, favicon/touch-icon/mask-icon swapped to mark-gradient, title/meta updated to brand voice. 3 atomic commits + metadata commit. Build green throughout. 22-01 (Lakera track) executing in parallel.
-Stopped at: 22-03 complete. Ready for 22-04 (Marketing Layout & Copy) which will mount lockup-gradient-ink.svg in Navbar and audit/swap remaining hex literals to brand tokens.
+Last session: 2026-05-24 — Phase 22 plan execution continued. 22-01 (Lakera v2 schema verification) shipped: live-probed the v2 endpoint from inside the Fly app env (no signup needed), discovered a critical silent-fail bug where the v1 parser was deriving `score=0` on every flagged response so the production hard-block gate had been dead code since v1.3. Fixed the parser in both `screen.mjs` (Node) + `safety.ts` (Worker) for the v2 binary `{flagged, metadata}` shape; switched the caller's hard-block gate to `flagged === true || score >= 0.8` at 4 call sites. Updated tests (all 5 pass). Wrote `infra/LAKERA-PRICING.md` with verified findings + tier-confirmation follow-up. 3 atomic commits + metadata commit.
+Stopped at: 22-01 complete; 22-03 already complete. Ready for 22-04 (Marketing Layout & Copy) which will mount lockup-gradient-ink.svg in Navbar and audit/swap remaining hex literals to brand tokens. Phase 23 unblocked — SAFETY-VERIFY-LIVE-04 tests now meaningful.
 Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md`
