@@ -4,13 +4,13 @@ milestone: "v1.4"
 phase: 22
 phase_name: "Lakera Verification + Marketing Brand Refresh"
 phase_total: 6
-plan: 0
+plan: 3
 plan_total: 5
-status: "ready_to_execute"
-progress: 0
+status: "in_progress"
+progress: 1
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
-resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-01-PLAN.md"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md"
 blockers: []
 ---
 
@@ -35,11 +35,11 @@ See: .planning/WORKSTREAMS.md (team assignments)
 
 Milestone: v1.4 Pilot Readiness
 Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
-Plan: 5 plans drafted + verified (run `/rrr:execute-phase 22` to start)
-Status: Ready to execute — Phase 22 plans passed checker on iteration 2
-Last activity: 2026-05-24 — Phase 22 planned (5 plans, 2 tracks, 3 waves; rrr-plan-checker verified after 1 revision)
+Plan: 22-03 complete (brand foundation shipped); 22-01 (Lakera) running in parallel; 22-04/05 next
+Status: In progress — brand track wave-1 done
+Last activity: 2026-05-24 — 22-03 executed (CSS tokens + Tailwind extend + 35 logo assets + favicon swap; 3 commits; build green)
 
-Progress: ░░░░░░░░░░ 0% (0/68 requirements done; Phase 22 = 28 reqs ready to execute)
+Progress: █░░░░░░░░░ 1% (1/68 requirements done; 8 brand reqs verified by 22-03)
 
 ## Team Mode
 
@@ -67,7 +67,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 22 | 0 | TBD | — |
+| 22 | 1 | 5 | ~3 min (22-03) |
 | 23 | 0 | TBD | — |
 | 24 | 0 | TBD | — |
 | 25 | 0 | TBD | — |
@@ -92,6 +92,9 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - Phase ownership by team (one team per phase) rather than per-requirement mixing — keeps team branches clean
 - NEONEX-DEP-01 folded into Phase 25 (team-workspace housekeeping) rather than splitting Phase 24 across teams
 - DATES-01 classified team-workspace (both source apps are team-workspace-owned), not "shared"
+- 22-03: Brand `ink` overrides legacy tailwind `ink:#111111` (renamed to `ink-legacy`). All `text-ink` usages now resolve to `var(--ink)=#1A0D2E`. 22-04 contrast pass will catch any regressions.
+- 22-03: PNG-only favicon strategy (no .ico generated). 256w mark-gradient PNG used for 32/64/180 sizes; Safari mask-icon → mark-ink.svg.
+- 22-03: Tailwind brand keys reference CSS vars (`var(--lavender)` etc.) instead of duplicating hex values — single source of truth in `styles.css :root`.
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ None blocking start of Phase 22. External vendor gate persists: Lakera (Cisco AI
 
 ## Session Continuity
 
-Last session: 2026-05-24 — Codebase mapped, v1.4 milestone promoted, RRR team mode initialized + GitHub teams created (`team-cms` with growthpods; `team-workspace` with growthpods + nithinpotti), REQUIREMENTS.md defined (46 → 68 reqs after brand-refresh scope-add), ROADMAP.md created (6 phases mapped, Phase 22 renamed to absorb brand work), `.planning/brand/BRAND-V1.md` captured from PDF + logo pack.
-Stopped at: Roadmap complete. Ready to plan Phase 22 (Lakera + Brand).
-Resume file: `.planning/milestones/v1.4-pilot-readiness/SCOPE.md`
+Last session: 2026-05-24 — Phase 22 plan execution started. 22-03 (brand foundation) shipped: 6 color CSS vars + 3 radii in styles.css, Tailwind extended with brand keys + type scale, 35 logo assets copied, favicon/touch-icon/mask-icon swapped to mark-gradient, title/meta updated to brand voice. 3 atomic commits + metadata commit. Build green throughout. 22-01 (Lakera track) executing in parallel.
+Stopped at: 22-03 complete. Ready for 22-04 (Marketing Layout & Copy) which will mount lockup-gradient-ink.svg in Navbar and audit/swap remaining hex literals to brand tokens.
+Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/22-lakera-and-brand-refresh/22-04-PLAN.md`
