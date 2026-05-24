@@ -12,8 +12,11 @@ export default {
         tangerine: "var(--tangerine)",
         cobalt: "var(--cobalt)",
         cream: "var(--cream)",
-        // Legacy tokens — retained until 22-04 surface audit replaces them
-        canvas: "#FBF7EF",
+        // canvas was a legacy cream token; remapped to brand lavender after
+        // post-22-04 audit revealed 6 sections (Signals, StartupWorkflow,
+        // StartupContext, StartupHiring, StartupHowItWorks, LegalNavbar) still
+        // resolving bg-canvas to cream, breaking the lavender-anchor rule.
+        canvas: "var(--lavender)",
         "ink-legacy": "#111111",
         "ink-secondary": "#555555",
         "accent-blue": "#111111",
