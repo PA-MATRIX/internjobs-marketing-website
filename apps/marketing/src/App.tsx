@@ -20,6 +20,7 @@ import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion"
 import { siDiscord, siImessage, siWhatsapp } from "simple-icons";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { ChannelsGrid, RequestAccessForm } from "./components/StartupAccessSection";
 
 type ChatMessage = {
   author: "agent" | "student";
@@ -1900,6 +1901,7 @@ function StartupPage() {
     >
       <StartupNavbar />
       <StartupHeroSection />
+      <ChannelsGrid />
       <ResumePileSection />
       <StartupWorkflowSection />
       <StartupSignalsSection />
@@ -2467,53 +2469,26 @@ function StartupRolePanel() {
 }
 
 function StartupAccessSection() {
-  const fields = ["Company", "Website", "Team size", "Hiring for", "Work type", "Email"];
-
   return (
     <section id="startup-access" className="waitlist-band relative overflow-hidden px-5 py-24 text-white sm:px-6 lg:px-8">
       <div className="cta-spectrum" aria-hidden="true" />
       <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div>
           <BrandMark size="lg" />
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">Startup access</p>
-          <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl">Get startup access.</h2>
-          <p className="mt-5 max-w-md leading-7 text-white/74">Meet ambitious students before everyone else does.</p>
+          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">request access</p>
+          <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl lowercase">
+            hire interns by text<span className="accent-dot">.</span>
+          </h2>
+          <p className="mt-5 max-w-md leading-7 text-white/74">
+            ridhi runs concierge onboarding for the first cohort. tell us who you are and what you're hiring for; we'll text the install snippet.
+          </p>
           <p className="mt-6 max-w-md text-sm leading-6 text-white/54">
-            internjobs.ai works inside the channels your team already uses.
+            works with claude, chatgpt, cursor, cline. mcp install in one command.
           </p>
         </div>
-        <form
-          className="rounded-lg border border-white/10 bg-white/[0.075] p-5 backdrop-blur-xl sm:p-6"
-          onSubmit={(event) => {
-            event.preventDefault();
-            window.location.href = "mailto:hello@internjobs.ai?subject=Join%20internjobs.ai%20Startup%20Access";
-          }}
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {fields.map((field) => (
-              <label key={field} className={field === "Email" ? "sm:col-span-2" : ""}>
-                <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-white/48">{field}</span>
-                <input className="startup-input" type={field === "Email" ? "email" : field === "Website" ? "url" : "text"} placeholder={field} />
-              </label>
-            ))}
-          </div>
-          <button
-            type="submit"
-            className="mt-5 inline-flex h-[3.35rem] w-full items-center justify-center px-7 lowercase"
-            style={{
-              background: "var(--lavender)",
-              color: "var(--cobalt)",
-              borderRadius: "var(--radius-pill)",
-              fontWeight: 700,
-              gap: "0.5rem",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            post a role
-            <ArrowRight className="size-4" />
-          </button>
-        </form>
+        <div className="rounded-lg border border-white/10 bg-white/[0.075] p-5 backdrop-blur-xl sm:p-6">
+          <RequestAccessForm />
+        </div>
       </div>
     </section>
   );
