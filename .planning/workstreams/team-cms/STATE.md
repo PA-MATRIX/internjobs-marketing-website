@@ -5,7 +5,7 @@ milestone: "v1.4"
 current_phase: 28.5
 plan_total: 5
 status: in_progress
-last_activity: "2026-05-25"  # 28.5-03 shipped (live dashboard + role form + thread reply UI + Pages Function route mapping); deploy → DEFER-28.5-02-A
+last_activity: "2026-05-25"  # 28.5-04 shipped (per-startup agent email — migration 0013 + slug.ts + inbound Worker email() handler + admin extension w/ Clerk invite + welcome email; 4 Fly endpoints); deploy → DEFER-28.5-04-A..C
 ---
 
 # team-cms Workstream State
@@ -26,13 +26,14 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 28.5 wave 3 plan 28.5-03 shipped (live founder dashboard wired to /api/me + /api/roles + /api/threads, role creation form with MCP-schema parity, candidate-thread view + optimistic reply send, lightweight shadcn-shaped UI primitives in-tree, Pages Function per-route mapping with server-side startup_id resolution); deploy → DEFER-28.5-02-A (blocked by DEFER-28.5-01-C)
+Status: In progress — Phase 28.5 wave 3 plan 28.5-04 shipped (per-startup agent email: migration 0013 startups.agent_email TEXT UNIQUE; apps/startup/workers/lib/slug.ts with mintSlug + reserveUniqueSlug + 16-test node:test suite; apps/startup/workers/routes/email.ts catch-all CF Email Routing handler via postal-mime; apps/startup/workers/routes/admin.ts extended with provisionAgentEmail + sendClerkInvite + sendWelcomeStartupEmail helpers — POST /admin/startups/new response now includes agent_email + agent_email_error; 4 new Fly endpoints in infra/startup-api/src/index.mjs: GET check-slug, PATCH agent-email, GET channels/resolve, POST messages/inbound); deploy → DEFER-28.5-04-A..C (Clerk secret bind + migration apply + Fly+Worker redeploy)
 Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: 28.5-03 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-04 (apps/startup/ Worker email handler + migration 0013 — peer's wave-3 territory) and 28.5-05 (Clerk webhook)
-Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A (see PHASE-28.5-DEFERRED-OPS.md)
+Current plan: 28.5-04 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-05 (Clerk webhook → user.created handler with Svix signature verify + work-email blocklist + startup_members.clerk_user_id UPDATE)
+Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A + DEFER-28.5-04-A..D (see PHASE-28.5-DEFERRED-OPS.md)
 Deferred to v1.5:
 - `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
 - `DEFER-28.5-01-A..G` — Clerk #3 wrangler secret injection, Clerk frontend-api CNAME, CF Pages project + custom domain, CF Email Routing domain verify (SPF/DKIM/DMARC), catch-all → Worker, Clerk webhook signing secret, DNS propagation check. See `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/PHASE-28.5-DEFERRED-OPS.md`.
+- `DEFER-28.5-04-A..D` — STARTUPS_CLERK_SECRET_KEY wrangler bind, migration 0013 apply to Fly Postgres, Fly proxy + apps/startup Worker redeploy, Pages Function consumer note. See PHASE-28.5-DEFERRED-OPS.md.
 
 ### Plan 24-01 completion (2026-05-25)
 
@@ -68,7 +69,7 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 
 ## Remaining phases (team-cms)
 
-- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 3/5 plans shipped)*
+- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 4/5 plans shipped)*
 - **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
 
 ## Phase 28.5 plan summary
@@ -78,8 +79,63 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 | 28.5-01 | Clerk app #3 + DNS + Email Routing bootstrap (STARTUPS_CLERK_* wrangler stubs + PHASE-28.5-DEFERRED-OPS.md backlog) | 1 | none | ✓ Shipped 2026-05-25 (auto portion; 7-step external-ops checkpoint → DEFERRED-OPS.md) |
 | 28.5-02 | apps/startups Vite+React+Clerk scaffold + sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint | 2 | 28.5-01 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
 | 28.5-03 | Live founder dashboard + role form + thread reply UI + Pages Function route mapping (per-route /api/me, /api/roles, /api/threads, /api/threads/:id/reply with server-side startup_id resolution) | 3 | 28.5-02 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
-| 28.5-04 | apps/startup/ Worker email handler + migration 0013 + slug assignment (peer's wave-3 parallel territory) | 3 | 28.5-02 | In progress (peer executor-28.5-04) |
-| 28.5-05 | Clerk webhook (user.created → startup_members.clerk_user_id) | 4 | 28.5-03 + 28.5-04 | Planned |
+| 28.5-04 | Per-startup agent email — migration 0013 + slug.ts + inbound email() Worker handler + admin extension w/ Clerk invite + welcome email + 4 Fly endpoints | 3 | 28.5-02 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-04-A..C) |
+| 28.5-05 | Clerk webhook (user.created → startup_members.clerk_user_id; work-email blocklist; Svix signature verify) | 4 | 28.5-03 + 28.5-04 | Planned |
+
+### Plan 28.5-04 completion (2026-05-25)
+
+Two-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `bc33973` `feat(28.5-04)`: foundation layer — 6 files
+  - `apps/app/db/migrations/0013_v1_4_startup_agent_email.sql` (new): idempotent
+    `ALTER startups ADD COLUMN agent_email text UNIQUE` + partial index.
+  - `apps/startup/workers/lib/slug.ts` (new, 102 LOC): `mintSlug()` pure +
+    `reserveUniqueSlug()` HTTP-loop with 10-attempt max + length-safe collision
+    expansion + Bearer auth + AbortSignal timeout.
+  - `apps/startup/workers/lib/slug.test.ts` (new, 218 LOC, 16 cases): node:test
+    runner via `npx tsx --test`; covers mintSlug (9: punctuation/whitespace/unicode/
+    length/determinism/empty/numeric/dangling-hyphen) + reserveUniqueSlug (7:
+    404-first/collision-advance/max-attempts/non-2xx/empty-base/Bearer header/
+    long-base length safety). All 16 pass in ~150ms.
+  - `apps/startup/workers/types.ts`: `EMAIL?: SendEmail` + 4 `STARTUPS_CLERK_*?`
+    optionals on `Env`.
+  - `apps/startup/wrangler.jsonc`: extended send_email binding doc comment.
+  - `apps/startup/tsconfig.json`: exclude `**/*.test.ts`.
+
+- `0347803` `feat(28.5-04)`: runtime wiring — 6 files / 784 insertions
+  - `apps/startup/workers/routes/email.ts` (new, 289 LOC): catch-all CF Email
+    Routing `handleInboundEmail(ForwardableEmailMessage, env, ctx)` — slug
+    extract → channels/resolve → postal-mime parse → messages/inbound insert.
+    setReject on unknown slug; silent drop on infra failure; full
+    structured-JSON logging.
+  - `apps/startup/workers/app.ts`: added `email()` export on default export.
+  - `apps/startup/workers/routes/admin.ts` (+288 LOC): 3 new helpers
+    (provisionAgentEmail synchronous + sendClerkInvite waitUntil +
+    sendWelcomeStartupEmail waitUntil w/ log-body fallback) + route handler
+    injection. Response now includes `{agent_email, agent_email_error}`.
+  - `apps/startup/package.json`: +postal-mime ^2.6.1 (same as parrot).
+  - `infra/startup-api/src/index.mjs` (+182 LOC): 4 new endpoints — `GET
+    /v1/startups/check-slug` + `PATCH /v1/startups/:id/agent-email` + `GET
+    /v1/channels/resolve` + `POST /v1/messages/inbound`. Bearer-gated;
+    ON CONFLICT DO NOTHING on inbound dedupe via 0003b's partial index.
+
+Verification: tsc --noEmit clean; wrangler dry-run clean w/ all bindings
+present (EMAIL/AI/STARTUP_API_URL/STARTUPS_CLERK_*); node --check on
+index.mjs clean; 16/16 unit tests pass. Live deploy + migration apply
++ Clerk secret bind all → DEFER-28.5-04-A..C per "don't wait on me" rule.
+
+Deviations (Rule 1 — frontmatter drift, all auto-fixed):
+1. Migration path `apps/app/db/migrations/0013_*.sql` (NOT `infra/startup-api/
+   migrations/` which doesn't exist; the migrate.mjs runner reads from the
+   former).
+2. Fly endpoints added to `infra/startup-api/src/index.mjs` (NOT `src/routes/
+   startups.ts` + `routes/admin.ts` — the proxy is a flat 884-line single-file
+   Hono app).
+3. Welcome email uses `env.EMAIL.send({from,to,subject,text})` object shape
+   (NOT `new EmailMessage().setContent()` — that's a different SDK; parrot +
+   agentic-inbox both use the object shape).
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-04-SUMMARY.md`
 
 ### Plan 28.5-03 completion (2026-05-25)
 
