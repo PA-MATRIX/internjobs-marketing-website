@@ -4,7 +4,7 @@ team: "team-cms"
 milestone: "v1.4"
 current_phase: 24
 plan_total: 2
-status: planned
+status: in-progress
 last_activity: "2026-05-25"
 ---
 
@@ -26,10 +26,22 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: Planned — Phase 24 next (2 plans ready for execution)
+Status: In progress — Phase 24 wave 1 executing (24-02 shipped, 24-01 running in parallel)
 Current phase: 24 (Neon-Exit Closeout)
-Current plan: — (planned, not yet executing)
+Current plan: 24-02 ✓ shipped (docs refresh); 24-01 in flight (parallel)
 Blockers: None
+
+### Plan 24-02 completion (2026-05-25)
+
+Docs refresh shipped: HANDOFF.md §4 (post-Neon-exit topology), ROADMAP.md
+Phase 24 plan list (TBD → 2 plans), infisical-project memory (5 post-exit
+secrets). NEONEX-DOC-01..03 all PASS. Status-row + checkbox updates in
+ROADMAP.md intentionally deferred to orchestrator at phase close.
+
+Commits: `23a683c` (HANDOFF.md), `0e9e876` (ROADMAP.md). Memory file (outside
+repo) updated via filesystem write — no git commit needed.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout/24-02-SUMMARY.md`
 
 ## Completed phases (team-cms)
 
