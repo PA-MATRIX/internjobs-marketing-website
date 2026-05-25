@@ -96,4 +96,35 @@
 	//                                   28.5-04 does not race the secret.
 	//                                   Set via `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET`.
 	//                                   Infisical key: STARTUPS_CLERK_WEBHOOK_SECRET.
+	//
+	// v1.4 Phase 29 TELNYX_* — Telnyx SMS + Voice AI secrets.
+	// See .planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/
+	// PHASE-29-DEFERRED-OPS.md for the secret-binding backlog (DEFER-29-01-E..H).
+	// Routes/telnyx.ts and lib/telnyx.ts both guard on these being unbound —
+	// the Worker won't 500, it logs a warning per-request instead.
+	//   TELNYX_WEBHOOK_PUBLIC_KEY  — Ed25519 public key from Telnyx portal
+	//                                (Messaging -> Webhooks). When unbound,
+	//                                routes/telnyx.ts skips sig verification
+	//                                and logs a warning (ops-deferred mode).
+	//                                Set via `wrangler secret put TELNYX_WEBHOOK_PUBLIC_KEY`.
+	//                                Infisical: /internjobs-ai/TELNYX_WEBHOOK_PUBLIC_KEY.
+	//   TELNYX_VOICE_AGENT_TOKEN   — Bearer token for Voice AI agent MCP calls
+	//                                (Phase 29-02). Distinct from per-startup install
+	//                                tokens — this is a single agent-wide token.
+	//                                Set via `wrangler secret put TELNYX_VOICE_AGENT_TOKEN`.
+	//                                Infisical: /internjobs-ai/TELNYX_VOICE_AGENT_TOKEN.
+	//   TELNYX_USE_MCP_INTEGRATION — 'true' | 'false'. Gates MCP vs webhook-tool
+	//                                path in Voice AI routes (Phase 29-02).
+	//                                Default off; flip on after confirming MCP
+	//                                tab is available on the Telnyx plan tier.
+	//
+	// Phase 29-03 — uncomment when TOUCHBASE_CURSORS KV namespace is created via
+	// `wrangler kv namespace create TOUCHBASE_CURSORS`. Stores per-phone weekly
+	// touchbase cursors (TTL ~48h) so "reply 1/2/3" maps to a candidate uuid.
+	// "kv_namespaces": [{ "binding": "TOUCHBASE_CURSORS", "id": "" }],
+	//
+	// Phase 29-02 — uncomment when internjobs-voice-audit R2 bucket is created
+	// via `wrangler r2 bucket create internjobs-voice-audit`. Stores call
+	// recordings + transcripts from Voice AI agent post-call webhook.
+	// "r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-voice-audit" }],
 }

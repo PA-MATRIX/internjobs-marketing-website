@@ -28,6 +28,7 @@ import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
 import { handleInboundEmail } from "./routes/email";
 import { handleClerkWebhook } from "./routes/webhooks";
+import { telnyxRouter } from "./routes/telnyx";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -122,6 +123,20 @@ app.route("/api", apiRouter);
 // secret extraction + `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET` is
 // DEFER-28.5-05-B. Until both close, this endpoint returns 503.
 app.post("/webhooks/clerk", (c) => handleClerkWebhook(c.req.raw, c.env));
+
+// ── Telnyx SMS inbound webhook (Phase 29-01 STARTUP-TELNYX-01..06) ───────────
+// POST /webhooks/telnyx/sms — Telnyx messaging profile (DEFER-29-01-D)
+// delivers inbound message events here. Handler ordering (load-bearing):
+//   1) STOP keyword check (BEFORE sig verify, per TCPA)
+//   2) Ed25519 signature verify (skipped with warning if
+//      TELNYX_WEBHOOK_PUBLIC_KEY unbound — DEFER-29-01-F)
+//   3) Parse 'message.received' event
+//   4) resolveChannelLink(env, 'telnyx-sms', from_phone) → invite if unknown
+//   5) classifyIntent(body, env) → regex fast-path or LLM fallback
+//   6) Dispatch to handleSearch() or handleExecute()
+//   7) formatForSms(result) + sendSms() reply
+// All branches write a startup_action_log row with channel='telnyx-sms'.
+app.route("/", telnyxRouter);
 
 // ── Root ─────────────────────────────────────────────────────────────────────
 app.get("/", (c) =>
