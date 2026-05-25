@@ -20,7 +20,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 
 - [ ] **Phase 22: Lakera Verification + Marketing Brand Refresh** — *team-cms*. Verify Lakera (Cisco AI Defense) v2 schema in production + run 3 student-SMS-path safety tests live + apply v1.0 brand system to `apps/marketing/` (lavender anchor + ink + lime/tangerine/cobalt accents + Inter type + new logo pack + voice rewrites)
 - [ ] **Phase 23: Workspace Pilot Closeouts** — *team-workspace*. closeTodoFact writer + Workspace email Lakera test + attachment download + agent-lift authenticated UAT
-- [ ] **Phase 24: Neon-Exit Closeout** — *team-cms*. End-to-end verification of new student-app `/internal/safety-events` API + planning doc refresh
+- [x] **Phase 24: Neon-Exit Closeout** — *team-cms* — SHIPPED 2026-05-25 (2/2 plans). End-to-end verification of new student-app `/internal/safety-events` API + planning doc refresh.
 - [ ] **Phase 25: SSO Activation + Admin UX** — *team-workspace*. Mattermost OIDC SSO activation + frontend admin page with capability toggles + orphan Neon dep cleanup
 - [ ] **Phase 26: Knowledge Graph + GenZ Polish** — *team-workspace*. FalkorDB `:Employee` namespace reuse for Workspace agent + Mattermost GIF picker + canvas-confetti micro-animations
 - [ ] **Phase 27: Polish + Test Floor** — *team-workspace*. Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes
@@ -121,8 +121,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 24-01-PLAN.md — E2E safety_events API verification + negative tests (NEONEX-VER-01..04)
-- [ ] 24-02-PLAN.md — Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03)
+- [x] 24-01-PLAN.md — E2E safety_events API verification + negative tests (NEONEX-VER-01..04)
+- [x] 24-02-PLAN.md — Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03)
 
 **Research flags**: Unlikely (verification work; no new tech)
 
@@ -386,7 +386,7 @@ Plans:
 |-------|-----------|-------|----------------|--------|-----------|
 | 22. Lakera Verification + Marketing Brand Refresh | v1.4 | team-cms | 0/5 | In progress (4/5 plans ✓ shipped + brand patches) | — |
 | 23. Workspace Pilot Closeouts | v1.4 | team-workspace | 0/TBD | Not started | — |
-| 24. Neon-Exit Closeout | v1.4 | team-cms | 0/TBD | Not started | — |
+| 24. Neon-Exit Closeout | v1.4 | team-cms | 2/2 | ✓ Shipped | 2026-05-25 |
 | 25. SSO Activation + Admin UX | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 26. Knowledge Graph + GenZ Polish | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 27. Polish + Test Floor | v1.4 | team-workspace | 0/TBD | Not started | — |

@@ -381,8 +381,8 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | SAFETY-VERIFY-LIVE-04 | Phase 23 | team-workspace | Pending |
 | ATTACH-DOWN-01..03 | Phase 23 | team-workspace | Pending |
 | AGENT-UAT-01..03 | Phase 23 | team-workspace | Pending |
-| NEONEX-VER-01..04 | Phase 24 | team-cms | Pending |
-| NEONEX-DOC-01..03 | Phase 24 | team-cms | Pending |
+| NEONEX-VER-01..04 | Phase 24 | team-cms | Complete |
+| NEONEX-DOC-01..03 | Phase 24 | team-cms | Complete |
 | MMSSO-01..03 | Phase 25 | team-workspace | Pending |
 | ADMIN-UX-01..04 | Phase 25 | team-workspace | Pending |
 | NEONEX-DEP-01 | Phase 25 | team-workspace | Pending |
