@@ -3,11 +3,9 @@
 // Lifted from apps/agentic-inbox/app/components/EmailAttachmentList.tsx
 // but rewritten in Tailwind (no @cloudflare/kumo). The attachment URL
 // shape mirrors agentic-inbox — /api/inbox/messages/:emailId/attachments/:id
-// — but Parrot doesn't expose that endpoint yet (Wave 1 wrote attachments
-// to R2 but never wired a GET endpoint). This component is therefore
-// "ready" but its links 404 until the matching endpoint ships. For now
-// it's used as a read-only display of attachment metadata, which is
-// enough to confirm storeAttachments() ran correctly.
+// — and v1.4 Phase 23-03 ATTACH-DOWN-01..03 finally ships the matching
+// GET endpoint on the Workspace Worker (apps/parrot/workers/routes/attachments.ts).
+// The chip below is now a fully functional <a href download> anchor.
 
 import { FileText, Image as ImageIcon, Paperclip } from "lucide-react";
 import type { Attachment } from "~/lib/api";
@@ -55,6 +53,7 @@ export function EmailAttachmentList({
 						<a
 							key={att.id}
 							href={url}
+							download={att.filename}
 							target="_blank"
 							rel="noopener noreferrer"
 							className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 no-underline transition-colors hover:bg-slate-50"
