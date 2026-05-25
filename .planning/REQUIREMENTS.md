@@ -217,7 +217,7 @@ First scalable channel for startup-initiated interaction with internjobs.ai. Sta
 **Concierge admin onboarding (Ridhi-managed for pilot):**
 
 - [ ] **STARTUP-ADMIN-01**: `POST /admin/startups/new({company, founder_email, founder_phone})` endpoint — auth-protected (Ridhi only); inserts `startups` + `startup_members` rows + generates per-startup MCP install token
-- [ ] **STARTUP-ADMIN-02**: Admin endpoint SMS-sends the install snippet to the founder's phone via Telnyx/Spectrum: `claude mcp add internjobs https://mcp.internjobs.ai/{token}` (also shown formatted for Cursor + Cline + ChatGPT)
+- [ ] **STARTUP-ADMIN-02**: Admin endpoint SMS-sends the install snippet to the founder's phone via Telnyx/Spectrum: `claude mcp add --transport http internjobs https://mcp.internjobs.ai/mcp --header "Authorization: Bearer {TOKEN}"` (token in Authorization header per Phase 28 research — URL-path tokens leak in CF access logs). Same shape works for Cursor + Cline + ChatGPT GPT-5.
 
 **Channel-adapter schema + docs:**
 

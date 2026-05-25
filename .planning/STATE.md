@@ -1,16 +1,16 @@
 ---
 schema_version: 2
 milestone: "v1.4"
-phase: 22
-phase_name: "Lakera Verification + Marketing Brand Refresh"
+phase: 28
+phase_name: "Startup MCP Server + Channel-Adapter Core"
 phase_total: 8
-plan: 5
+plan: 0
 plan_total: 5
-status: "complete"
+status: "ready_to_execute"
 progress: 5
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
-resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-01-PLAN.md"
 blockers: []
 ---
 
