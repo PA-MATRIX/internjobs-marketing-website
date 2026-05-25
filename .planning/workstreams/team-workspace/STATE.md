@@ -3,7 +3,7 @@ schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
 status: "in_progress"
-last_activity: "2026-05-26"
+last_activity: "2026-05-26 (23-03 code-complete-with-deferral)"
 ---
 
 # team-workspace Workstream State
@@ -24,10 +24,10 @@ Phases: 23 (active), 25, 26, 27 (queued)
 
 ## Current Position
 
-Status: In progress — 23-01 shipped + live-smoke verified; 23-02 code-complete with deferred live-verify
+Status: In progress — 23-01 shipped + live-smoke verified; 23-02 + 23-03 code-complete with shared deferred live-verify
 Current phase: 23 (Workspace Pilot Closeouts)
-Current plan: 23-01 complete; 23-02 code-complete-with-deferral; 23-03 / 23-04 ready
-Blockers: None for code work. Pending operator step for SAFETY-VERIFY-LIVE-04 live evidence — see Open Items below.
+Current plan: 23-01 complete; 23-02 + 23-03 code-complete-with-deferral; 23-04 ready
+Blockers: None for code work. Pending operator step for 23-02 SAFETY-VERIFY-LIVE-04 + 23-03 ATTACH-DOWN-01..03 live evidence — see Open Items below (consolidated single operator deploy unblocks both plans).
 
 ## Phase 23 Plan Status
 
@@ -35,18 +35,24 @@ Blockers: None for code work. Pending operator step for SAFETY-VERIFY-LIVE-04 li
 |------|-----------|------|--------|
 | 23-01 | closeTodoFact Cypher helper + reply path integration | 1 | **complete** (1b0b509 + d6681d7; deploy + smoke PASS 2026-05-26) |
 | 23-02 | SAFETY-VERIFY-LIVE-04 — email injection test | 1 | **code-complete / live-verify-deferred** (c7973ca + 9ec84db + 3be2e53 — 2026-05-26) |
-| 23-03 | Attachment download route + EmailPanel wire-up | 1 | ready |
+| 23-03 | Attachment download route + EmailPanel wire-up | 1 | **code-complete / browser-verify-deferred** (f00e388 + cff5234 + 1345769 — 2026-05-26) |
 | 23-04 | 14-step authenticated agent-lift UAT | 1 | ready |
 
-All 4 plans are Wave 1 — fully parallel (no file overlap between plans). 23-01 and 23-02 closed in isolation; the remaining two remain non-overlapping with closed plans' modified files.
+All 4 plans are Wave 1 — fully parallel (no file overlap between plans). 23-01, 23-02, and 23-03 all closed in isolation; 23-04 remains non-overlapping with the closed plans' modified files.
 
 ## Open Items (operator follow-up)
 
-- **SAFETY-VERIFY-LIVE-04 live evidence — pending operator with prod CF deploy access.** Code-side shipped in 23-02 (`source_id` field on email-path safety_events rows). Live test (4 emails + SQL row verify + Sent-folder check) blocked on two operator steps:
+Both 23-02 and 23-03 share the SAME operator-credential blocker — a single
+deploy window unblocks both plans' live-verify halves at once.
+
+- **23-02 SAFETY-VERIFY-LIVE-04 live evidence — pending operator with prod CF deploy access.** Code-side shipped (`source_id` field on email-path safety_events rows). Live test (4 emails + SQL row verify + Sent-folder check) blocked on operator steps below.
+
+- **23-03 ATTACH-DOWN browser verify pending (Chrome + Safari, deployed Worker).** Code-side shipped (handleAttachmentDownload route + EmailAttachmentList chip wire). Live test (Chrome click → download, Safari click → download, curl 403 non-owner, curl 404 missing attachmentId) blocked on the SAME operator steps. Deferral consolidated with 23-02.
+
+**Shared operator runbook (unblocks both 23-02 and 23-03):**
   1. Rotate `CLOUDFLARE_BROAD_API_TOKEN` in Infisical at `/internjobs-ai/CLOUDFLARE_BROAD_API_TOKEN` — current value is rejected by Cloudflare `/user/tokens/verify` as invalid (`code:1000`). Scopes for replacement: Workers Scripts:Edit + KV:Edit + R2:Edit + Account Settings:Read + Zone Workers Routes:Edit on internjobs.ai.
   2. Run `cd apps/parrot && npm run deploy` with the rotated token.
-
-  Full runbook + 4 test-email payloads + verification SQL captured at `apps/parrot/test/safety-email-verify.md` "What remains" section.
+  3. Run the 23-02 test set (`apps/parrot/test/safety-email-verify.md` "What remains") AND the 23-03 test set (`apps/parrot/test/attachment-download-verify.md` "What remains"). Append results to both evidence files.
 
 ## 23-01 Decisions Captured
 
