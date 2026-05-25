@@ -2,7 +2,9 @@
 schema_version: 1
 team: "team-cms"
 milestone: "v1.4"
-status: "in_progress"
+current_phase: 24
+plan_total: 2
+status: planned
 last_activity: "2026-05-25"
 ---
 
@@ -24,9 +26,9 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 22 + 28 shipped, Phase 28.5 next
-Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: — (not yet planned)
+Status: Planned — Phase 24 next (2 plans ready for execution)
+Current phase: 24 (Neon-Exit Closeout)
+Current plan: — (planned, not yet executing)
 Blockers: None
 
 ## Completed phases (team-cms)
@@ -36,9 +38,20 @@ Blockers: None
 
 ## Remaining phases (team-cms)
 
-- **Phase 24** — Neon-Exit Closeout (skipped in execution order — both already verified through ad-hoc work; may collapse into a docs-only pass)
-- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(next)*
+- **Phase 24** — Neon-Exit Closeout *(current — 2 plans planned)* — verification + docs refresh; no code changes expected
+- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email
 - **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
+
+## Phase 24 plan summary
+
+| Plan | Objective | Wave | Deps |
+|------|-----------|------|------|
+| 24-01 | E2E safety_events API verification + negative tests (NEONEX-VER-01..04) | 1 | none |
+| 24-02 | Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03) | 1 | none |
+
+Both plans are wave 1 and independent — can execute in either order or in
+parallel if two executor contexts are available. 24-01 is verification work
+(curl probes against live prod); 24-02 is docs-only.
 
 ## Notes
 
