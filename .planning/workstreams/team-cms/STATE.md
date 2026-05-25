@@ -5,7 +5,7 @@ milestone: "v1.4"
 current_phase: 29
 plan_total: 3
 status: in_progress
-last_activity: "2026-05-25"  # Phase 29-02 + 29-03 shipped (Wave 2 parallel). Phase 29 = 3/3 plans code-complete, ops-deferred.
+last_activity: "2026-05-25"  # Phase 29-03 SUMMARY shipped. Phase 29 = 3/3 plans code-complete, ops-deferred (DEFER-29-01-A..K + 29-02-A..F + 29-03-A..E).
 ---
 
 # team-cms Workstream State
@@ -39,7 +39,7 @@ Next action: Awaiting orchestrator phase-close after DEFER-29-01-A..K + DEFER-29
 |------|-----------|------|------|--------|
 | 29-01 | SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 [STARTUP-TELNYX-01..06] | 1 | none | ✓ Shipped 2026-05-25 |
 | 29-02 | Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md [STARTUP-VOICE-01..04] | 2 | 29-01 | ✓ Shipped 2026-05-25 (code-complete; ops → DEFER-29-02-A..F) |
-| 29-03 | Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02] | 2 | 29-01 | ✓ Shipped 2026-05-25 (executor-29-03; see their commits) |
+| 29-03 | Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02] | 2 | 29-01 | ✓ Shipped 2026-05-25 (code-complete; ops → DEFER-29-03-A..E; 101 unit tests pass) |
 
 ### Plan 29-01 completion (2026-05-25)
 
@@ -189,6 +189,108 @@ Deviations from plan:
    (DEFER-29-02-A..F) captured in PHASE-29-DEFERRED-OPS.md.
 
 Summary: `.planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/29-02-SUMMARY.md`
+
+### Plan 29-03 completion (2026-05-25)
+
+Four-commit ship on branch `rrr/v1.4/team-cms` (parallel Wave 2 with executor-29-02):
+
+- `4fea3c6` `feat(29-03)`: weekly touchbase cron + Fly proxy endpoints — 5 files / 558 insertions.
+  - `apps/startup/workers/routes/scheduled.ts` (new, ~250 LOC): CF Worker
+    `scheduled()` handler + `runWeeklyTouchbase(env)` (testable export) +
+    `composeTouchbaseSms(founder, startup_name, candidates)` pure function.
+    Per-startup try/catch — one bad row doesn't halt the batch; function
+    itself never throws. Guards: `!env.TELNYX_API_KEY` → silent no-op;
+    `!env.STARTUP_API_URL` → silent no-op; `!env.TOUCHBASE_CURSORS` →
+    skip KV write but still send SMS.
+  - `apps/startup/wrangler.jsonc`: `triggers.crons: ["0 14 * * 1"]`
+    (Mon 14:00 UTC = 9am EST, 10am EDT in summer; 1h drift accepted for
+    v1.4 per-startup tz = v1.5).
+  - `apps/startup/workers/app.ts`: imported `scheduled as scheduledHandler`
+    + wired into default export.
+  - `infra/startup-api/src/index.mjs` (+180 LOC): 4 new endpoints —
+    GET `/v1/touchbase/due-startups` (eligibility query; SELECT WHERE
+    opt_in_flags->>'weekly_touchbase'='true' AND last_touchbase_at < NOW()
+    - 7d, LIMIT 100), PATCH `/v1/channel-links/:id/touchbase-sent`,
+    PATCH `/v1/channel-links/:id/opt-in-touchbase` (jsonb || merge), GET
+    `/v1/startups/:startup_id/fresh-candidates` (top 3 most recent inbound).
+  - `.planning/.../PHASE-29-DEFERRED-OPS.md`: appended DEFER-29-03-A..E
+    (KV namespace creation, migration apply mirror, worker redeploy,
+    `wrangler dev --test-scheduled` smoke test, end-to-end pilot run).
+- `2d66192` `fix(29-03)`: re-apply scheduled() export after 29-02 merge.
+  Peer's `031f7dd feat(29-02)` rewrote app.ts and dropped my just-committed
+  scheduled wire-up. Re-added — pure merge reconciliation, no code change.
+- `01e1e31` `feat(29-03)`: touchbase fast-paths + channel_link_id +
+  CHANNELS.md live + PILOT-EVIDENCE.md — 6 files / 389 insertions.
+  - `apps/startup/workers/routes/telnyx.ts` (+130 LOC): two fast-paths
+    between identity resolution (step 4) and intent classifier (step 5):
+    (a) numeric reply `^([1-9])$` → KV cursor lookup at
+    `touchbase:cursor:<phone>` → `handleExecute('show_candidate', {position,
+    thread_id})` → formatForSms reply. KV miss/expired falls through.
+    (b) opt-in `^(yes|y)$` (case-insensitive) → PATCH `/v1/channel-links/
+    :id/opt-in-touchbase` + `"you're in!"` confirmation SMS. Requires
+    `ctx.channel_link_id` (returned by the Phase 29-03 extended resolve
+    endpoint); pre-29-03 deploys fall through gracefully. Both write
+    `startup_action_log` audit rows.
+  - `apps/startup/workers/types.ts`: `StartupContext.channel_link_id?:
+    string` added as OPTIONAL — `/mcp` Bearer auth path (which doesn't
+    go through `resolveChannelLink`) stays unaffected.
+  - `apps/startup/workers/lib/resolveChannelLink.ts`: populate
+    `channel_link_id` from extended Fly response.
+  - `infra/startup-api/src/index.mjs`: existing GET `/v1/channel-links/
+    resolve` extended to return `channel_link_id` in response body
+    (additive — older callers ignore the new field).
+  - `apps/startup/CHANNELS.md`: replaced both Phase 29 SKETCHES with
+    `(live — phase 29-01 + 29-03)` and `(live — phase 29-02)` headers
+    citing actual file paths (routes/telnyx.ts ordering, scheduled.ts
+    cron, voice.ts triple-endpoint set, VOICE_AGENT_CONFIG.md portal
+    config).
+  - `.planning/.../PILOT-EVIDENCE.md` (new, 200 LOC): 7-section evidence
+    checklist + sign-off table for STARTUP-MULTICHAN-02 — voice intake
+    onboarding, opt-in "yes" confirmation, weekly touchbase cron, numeric
+    reply, natural-language SMS, STOP / TCPA, START re-subscribe. Each
+    section includes SQL queries + CLI commands inline + a code block
+    for paste-in of screenshots/output.
+- `3a9580d` `test(29-03)`: 25-case unit suite — 2 files / 491 insertions.
+  - `apps/startup/workers/routes/scheduled.test.ts` (new, 11 cases):
+    `composeTouchbaseSms` pure-function shape (5: 3/1/0 candidates +
+    null+whitespace founder fallback); `runWeeklyTouchbase` end-to-end
+    with mocked env (6: TELNYX_API_KEY unbound silent / empty due-list
+    quick-exit / happy path 1-startup-2-candidates with KV+Telnyx+PATCH
+    contracts / 0-candidate variant / KV unbound graceful / cursor JSON
+    shape contract). KV stub + globalThis.fetch stub patterns re-usable
+    for future Worker scheduled tests.
+  - `apps/startup/workers/routes/telnyx.test.ts` (+14 cases, total 48):
+    numeric fast-path regex (6 — '1'/'  3  '/'9'/'0'/'10'/'1 candidate'),
+    opt-in fast-path regex (7 — yes/YES/y/  yes  /yes please/no/yellow),
+    KV cursor JSON shape reader-side pin (1).
+
+Verification: `cd apps/startup && npx tsc --noEmit` clean; `node --check
+infra/startup-api/src/index.mjs` clean; all 101 unit tests pass (slug 16
++ webhooks 26 + telnyx 48 + scheduled 11); all 7 plan-verification grep
+checks pass.
+
+Deviations from plan:
+1. (Rule 3 — blocking) Mid-execution, peer (executor-29-02) committed
+   `031f7dd feat(29-02)` which rewrote `apps/startup/workers/app.ts` to
+   add `voiceRouter` mount, accidentally dropping my just-committed
+   `scheduled` import + default-export entry. Resolved with `2d66192`
+   re-apply commit (pure merge reconciliation, no code change). Note for
+   v1.5 wave-mode: `app.ts` should be declared a wave-shared file in
+   the orchestrator config when multiple plans add new routes/exports.
+2. (Rule 2 — missing critical) Extended `/v1/channel-links/resolve` to
+   ALSO return `channel_link_id` (was missing; plan note flagged the
+   possibility). Three-step fix: Fly response augmented, lib resolver
+   propagates, types.ts adds optional field — `/mcp` Bearer path
+   unaffected (still resolves via mcp_token_hash).
+3. (Rule 2 — missing critical) Cursor JSON strips `summary` field before
+   KV write — plan said `{ thread_id, candidate_name, role_title }`
+   exactly; upstream `fresh-candidates` returns `summary` too (used in
+   the SMS body). Cron drops it on cursor write for KV value-size hygiene.
+4. (Plan-anticipated; Rule 4 pre-approved) `checkpoint:human-verify`
+   Task 1 wholesale DEFERRED per active session rule. 5 entries
+   (DEFER-29-03-A..E) captured in PHASE-29-DEFERRED-OPS.md.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/29-03-SUMMARY.md`
 
 ### Previous position: Phase 28.5 CODE-COMPLETE (2026-05-25)
 
