@@ -2,8 +2,8 @@
 schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
-status: "planning_complete"
-last_activity: "2026-05-25"
+status: "in_progress"
+last_activity: "2026-05-26"
 ---
 
 # team-workspace Workstream State
@@ -24,21 +24,29 @@ Phases: 23 (active), 25, 26, 27 (queued)
 
 ## Current Position
 
-Status: Planning complete — Phase 23 plans ready for execution
+Status: In progress — 23-01 shipped + live-smoke verified on graph-api Fly proxy
 Current phase: 23 (Workspace Pilot Closeouts)
-Current plan: —
+Current plan: 23-01 complete; 23-02 / 23-03 / 23-04 ready
 Blockers: None (Phase 22 shipped 2026-05-24; unblocks SAFETY-VERIFY-LIVE-04)
 
 ## Phase 23 Plan Status
 
 | Plan | Objective | Wave | Status |
 |------|-----------|------|--------|
-| 23-01 | closeTodoFact Cypher helper + reply path integration | 1 | ready |
+| 23-01 | closeTodoFact Cypher helper + reply path integration | 1 | **complete** (1b0b509 + d6681d7; deploy + smoke PASS 2026-05-26) |
 | 23-02 | SAFETY-VERIFY-LIVE-04 — email injection test | 1 | ready |
 | 23-03 | Attachment download route + EmailPanel wire-up | 1 | ready |
 | 23-04 | 14-step authenticated agent-lift UAT | 1 | ready |
 
-All 4 plans are Wave 1 — fully parallel (no file overlap between plans).
+All 4 plans are Wave 1 — fully parallel (no file overlap between plans). 23-01 closed in isolation; the other three remain non-overlapping with 23-01's modified files.
+
+## 23-01 Decisions Captured
+
+- RFC-5322 threadId (from buildReferencesChain) is NOT the :Todo key — `c.req.param('id')` (DO-internal UUID) is what recordTodoFact stored as source_id. Documented inline in reply-forward.ts.
+- ACK regex intentionally loose (`got it / fixed / done / sent / shipped`, case-insensitive). False positives acceptable; false negatives not.
+- closeTodoFact is fail-soft (returns null on any error). The reply 202 must succeed even when the graph layer is down — graph state is best-effort.
+- graph-api Cypher uses `SET t.valid_to = timestamp()` (no datetime() / duration() — FalkorDB doesn't implement those openCypher temporal functions). The 5-minute grace window is enforced cron-side.
+- Worker deploy (`cd apps/parrot && wrangler deploy`) deferred to coordinator integration — graph-api side ships standalone and is live.
 
 ## Key Context
 
