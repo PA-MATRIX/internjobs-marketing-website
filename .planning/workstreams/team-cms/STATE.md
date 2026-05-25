@@ -26,10 +26,25 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 24 wave 1 executing (24-02 shipped, 24-01 running in parallel)
+Status: In progress — Phase 24 wave 1 complete (24-01 and 24-02 both shipped); awaiting orchestrator phase-close
 Current phase: 24 (Neon-Exit Closeout)
-Current plan: 24-02 ✓ shipped (docs refresh); 24-01 in flight (parallel)
+Current plan: 24-01 ✓ shipped (verification), 24-02 ✓ shipped (docs refresh)
 Blockers: None
+Deferred to v1.5: `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md "User Setup Required"). Code-verified PASS; live-HTTP confirmation needs a browser session.
+
+### Plan 24-01 completion (2026-05-25)
+
+E2E safety_events API verification PASS for all 4 NEONEX-VER requirements:
+
+- **NEONEX-VER-01:** Direct probe 200 `{ok:true}` + organic Worker write evidence (9 email rows with `employee_id`, last 2026-05-24T18:37Z) — both API-layer and full-E2E confirmed.
+- **NEONEX-VER-02 / 04:** Code-verified via `apps/parrot/workers/routes/ops-safety.ts` (callStudentApi proxy + reason_label mapping + fail-soft null-return guard). Worker bindings `STUDENT_API_URL` (var) and `STUDENT_API_SECRET` (secret) both present on deployed version `93c9c1e6-...`. Live HTTP probe deferred to v1.5 (Clerk JWT required).
+- **NEONEX-VER-03:** Wrong Bearer returns 401 `{error:"unauthorized"}`, student app `/healthz` still `database:true` after; Worker side fail-soft confirmed by code inspection.
+
+Side effect (Rule 2 - missing critical): mirrored `STUDENT_API_SECRET` and `STUDENT_API_URL` into Infisical at `/internjobs-ai` env=`prod` — they were on the Worker but not in the canonical secrets store, contradicting RESEARCH.md's topology table.
+
+No code commits (pure verification). Phase 24 probe row `8eefa4c9-2b57-4504-9080-f33bda4cf380` left in DB as live evidence for the deferred v1.5 Worker probe.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout/24-01-SUMMARY.md`
 
 ### Plan 24-02 completion (2026-05-25)
 
@@ -56,14 +71,22 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 
 ## Phase 24 plan summary
 
-| Plan | Objective | Wave | Deps |
-|------|-----------|------|------|
-| 24-01 | E2E safety_events API verification + negative tests (NEONEX-VER-01..04) | 1 | none |
-| 24-02 | Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03) | 1 | none |
+| Plan | Objective | Wave | Deps | Status |
+|------|-----------|------|------|--------|
+| 24-01 | E2E safety_events API verification + negative tests (NEONEX-VER-01..04) | 1 | none | ✓ Shipped 2026-05-25 (live Worker JWT probe deferred to v1.5) |
+| 24-02 | Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03) | 1 | none | ✓ Shipped 2026-05-25 |
 
-Both plans are wave 1 and independent — can execute in either order or in
-parallel if two executor contexts are available. 24-01 is verification work
-(curl probes against live prod); 24-02 is docs-only.
+Both plans were wave 1 and independent — executed in parallel by two
+executor contexts. 24-01 was verification work (curl probes against live
+prod); 24-02 was docs-only. Phase 24 ready for orchestrator close.
+
+## 24-01 verification artifacts (for 24-02 docs cite-back if needed)
+
+- Parrot Worker version live in prod: `93c9c1e6-71db-40db-a73a-8e93dad27185` (deployed 2026-05-21T19:14, no re-deploys).
+- Student app `INTERNAL_API_SECRET` Fly digest: `6a3910702a318b0e`; canonical value in Infisical at `/internjobs-ai` env=`prod`.
+- Infisical now also contains `STUDENT_API_SECRET` and `STUDENT_API_URL` (added by 24-01 as a Rule 2 fix; RESEARCH.md topology table is now reality-aligned).
+- Organic E2E evidence: 9 email-channel safety_events rows with `employee_id` set, most recent at 2026-05-24T18:37:14Z (Worker write path confirmed on the current deployment).
+- Phase 24 verification probe row id (still in DB): `8eefa4c9-2b57-4504-9080-f33bda4cf380`, preview "Phase 24 verification probe", created 2026-05-25T17:31:27Z, `reviewed=false`. This row is what the deferred v1.5 Worker probe should see in `/api/ops/safety`.
 
 ## Notes
 
