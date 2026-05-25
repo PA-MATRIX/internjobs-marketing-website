@@ -5,7 +5,7 @@ milestone: "v1.4"
 current_phase: 28.5
 plan_total: 5
 status: in_progress
-last_activity: "2026-05-25"
+last_activity: "2026-05-25"  # 28.5-02 shipped (Vite scaffold + sign-in + dashboard + Pages Function); deploy → DEFER-28.5-02-A
 ---
 
 # team-cms Workstream State
@@ -26,10 +26,10 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 28.5 wave 1 plan 28.5-01 shipped (auto portion); 7-step external-dashboard checkpoint deferred to PHASE-28.5-DEFERRED-OPS.md per user "don't wait on me" (2026-05-25)
+Status: In progress — Phase 28.5 wave 2 plan 28.5-02 shipped (apps/startups Vite scaffold + Clerk sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint); deploy → DEFER-28.5-02-A (blocked by DEFER-28.5-01-C)
 Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: 28.5-01 ✓ shipped (auto + deferred-ops doc); next is 28.5-02 (Vite scaffold)
-Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G entries (see PHASE-28.5-DEFERRED-OPS.md)
+Current plan: 28.5-02 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-03 (founder dashboard real data wiring)
+Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A (see PHASE-28.5-DEFERRED-OPS.md)
 Deferred to v1.5:
 - `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
 - `DEFER-28.5-01-A..G` — Clerk #3 wrangler secret injection, Clerk frontend-api CNAME, CF Pages project + custom domain, CF Email Routing domain verify (SPF/DKIM/DMARC), catch-all → Worker, Clerk webhook signing secret, DNS propagation check. See `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/PHASE-28.5-DEFERRED-OPS.md`.
@@ -76,8 +76,8 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 | Plan | Objective | Wave | Deps | Status |
 |------|-----------|------|------|--------|
 | 28.5-01 | Clerk app #3 + DNS + Email Routing bootstrap (STARTUPS_CLERK_* wrangler stubs + PHASE-28.5-DEFERRED-OPS.md backlog) | 1 | none | ✓ Shipped 2026-05-25 (auto portion; 7-step external-ops checkpoint → DEFERRED-OPS.md) |
-| 28.5-02 | TBD — Vite scaffold | - | 28.5-01 | Planned |
-| 28.5-03 | TBD — routing | - | 28.5-02 | Planned |
+| 28.5-02 | apps/startups Vite+React+Clerk scaffold + sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint | 2 | 28.5-01 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
+| 28.5-03 | TBD — routing / dashboard real data wiring | - | 28.5-02 | Planned |
 | 28.5-04 | TBD — startup Worker email handler | - | 28.5-03 | Planned |
 | 28.5-05 | TBD — Clerk webhook | - | 28.5-04 | Planned |
 
@@ -98,6 +98,40 @@ all the phases" (2026-05-25 session). All 7 sub-steps are captured in DEFERRED-O
 fidelity loss.
 
 Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-SUMMARY.md`
+
+### Plan 28.5-02 completion (2026-05-25)
+
+Two-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `f49197f` `feat(28.5-02)`: scaffolded `apps/startups/` (12 files) — Vite+React+TS+Tailwind
+  with brand-v1 CSS vars, mirrors `apps/marketing/` stack. Added `@clerk/clerk-react`,
+  `react-router-dom`, `svix`, `@cloudflare/workers-types`. `npm run build` passes (dist:
+  259.45 kB JS gzipped to 80.23 kB).
+- `72a13cc` `feat(28.5-02)`: source files + Pages Function + Fly identity endpoint.
+  ClerkProvider in `main.tsx`; 6 routes in `App.tsx` with `ProtectedRoute` gating;
+  Clerk sign-in widget centered on lavender bg; dashboard skeleton with 3 placeholder
+  cards + sign-out + "post a role" CTA; `useApi()` hook with Clerk-JWT attachment;
+  CF Pages Function `functions/api/[[path]].ts` catch-all proxy that swaps Clerk-JWT
+  `Authorization` for shared-secret Bearer + forwards JWT as `X-Clerk-Token`; new
+  `POST /v1/startups/identity-by-clerk-id` endpoint on the Fly proxy.
+
+Deviations (all documented in summary):
+
+- **Rule 1 — Bug:** Plan referenced `@clerk/react` (not a real npm package); used
+  `@clerk/clerk-react ^5.61.6` instead (matches parrot's version). Would have failed
+  `npm install` silently.
+- **Rule 1 — Bug:** Pages Function plan example used `X-Startup-Api-Secret` header,
+  but Fly's `verifyBearer` expects `Authorization: Bearer`. Fixed to match the existing
+  contract; Clerk JWT now forwarded as `X-Clerk-Token` instead.
+- **Rule 3 — Blocking:** Added `src/vite-env.d.ts` (typing for `ImportMetaEnv.VITE_*`)
+  because `tsc -b` blocked the build without it.
+
+Deploy step deferred to **DEFER-28.5-02-A** (linked to DEFER-28.5-01-A/B/C — the upstream
+Clerk + Pages-project + DNS ops). Code is deploy-ready: bundle audit confirms
+`STARTUP_API_SECRET` is absent from `dist/` and `VITE_CLERK_PUBLISHABLE_KEY` is the only
+Clerk credential in the static build.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-02-SUMMARY.md`
 
 ## Phase 24 plan summary
 

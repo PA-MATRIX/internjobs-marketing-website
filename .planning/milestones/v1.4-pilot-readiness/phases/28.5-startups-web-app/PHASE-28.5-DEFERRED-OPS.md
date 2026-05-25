@@ -167,6 +167,74 @@ Phase 28.5 as "code-complete, ops-incomplete" when computing pilot-readiness.
 
 ---
 
+## From plan 28.5-02 (Vite scaffold + sign-in + dashboard + Pages Function)
+
+The auto portion of 28.5-02 (apps/startups code + Fly identity endpoint) shipped on 2026-05-25
+(commits `f49197f` + `72a13cc`). The deploy step is deferred — it is blocked by DEFER-28.5-01-C
+(CF Pages project + custom domain).
+
+### DEFER-28.5-02-A — Deploy apps/startups to CF Pages
+
+Status: **Code-ready, deploy-blocked.** `npm run build` passes locally with a clean
+`dist/` (index.html + 7.21 kB CSS + 259.45 kB JS gzipped to 80.23 kB). Bundle audit confirms
+`VITE_CLERK_PUBLISHABLE_KEY` is present but `STARTUP_API_SECRET` is absent (the secret only
+flows through the Pages Function runtime).
+
+Remaining action (after DEFER-28.5-01-A + B + C are checked off):
+
+1. Mirror the Vite-time publishable key from Infisical into the Pages project:
+   ```bash
+   # The value lives in Infisical at STARTUPS_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY but the Vite
+   # build expects VITE_CLERK_PUBLISHABLE_KEY (Vite uses VITE_*, NOT NEXT_PUBLIC_*).
+   wrangler pages secret put VITE_CLERK_PUBLISHABLE_KEY --project-name internjobs-startups
+   # paste the value when prompted (or pipe via heredoc from `infisical secrets get ...`)
+   ```
+   Note: CF Pages treats env vars marked as "build-time" differently from secrets — for the
+   publishable key (which is public), you can also set it via the CF Pages dashboard
+   "Environment variables (Production) → build" tab.
+
+2. Set the two Pages Function runtime secrets (Fly proxy URL + Bearer secret):
+   ```bash
+   wrangler pages secret put STARTUP_API_URL --project-name internjobs-startups
+   # value: https://internjobs-startup-api.fly.dev
+   wrangler pages secret put STARTUP_API_SECRET --project-name internjobs-startups
+   # value: pull from Infisical /internjobs-ai env=prod key=STARTUP_API_SECRET
+   ```
+
+3. Deploy:
+   ```bash
+   cd apps/startups
+   npm run deploy
+   # = npm run build && wrangler pages deploy dist --project-name internjobs-startups --branch main
+   ```
+
+4. Verify:
+   ```bash
+   curl -I https://startups.internjobs.ai
+   # Must return 200 (or 304/200 redirect chain ending at the sign-in landing).
+   ```
+
+Acceptance:
+- `wrangler pages deployment list --project-name internjobs-startups` shows a successful
+  deployment.
+- Visiting `https://startups.internjobs.ai/` in a browser renders the Clerk sign-in widget
+  without JS errors.
+- Unauthenticated `https://startups.internjobs.ai/dashboard` redirects back to `/`
+  (ProtectedRoute working).
+- Signed-in session (test Google OAuth) lands on `/dashboard` skeleton with the placeholder
+  cards visible (real data lands in 28.5-03).
+- Browser devtools network tab on the dashboard shows `STARTUP_API_SECRET` is NOT visible in
+  any client-side payload or env var dump.
+
+Blocks: 28.5-03 (founder dashboard real data wiring) cannot iterate without a live deploy
+target; the executor will either race the deploy or scaffold against `wrangler pages dev` if
+DEFER-28.5-01-C is still open when 28.5-03 starts.
+
+Linked deferrals: DEFER-28.5-01-A (Clerk secret), DEFER-28.5-01-B (Clerk domain CNAME),
+DEFER-28.5-01-C (Pages project + custom domain).
+
+---
+
 ## Future additions (placeholder)
 
 Subsequent 28.5-0[2-5] plan executions in this session may append more deferred entries below.
