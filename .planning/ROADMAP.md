@@ -24,7 +24,8 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - [ ] **Phase 25: SSO Activation + Admin UX** — *team-workspace*. Mattermost OIDC SSO activation + frontend admin page with capability toggles + orphan Neon dep cleanup
 - [ ] **Phase 26: Knowledge Graph + GenZ Polish** — *team-workspace*. FalkorDB `:Employee` namespace reuse for Workspace agent + Mattermost GIF picker + canvas-confetti micro-animations
 - [ ] **Phase 27: Polish + Test Floor** — *team-workspace*. Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes
-- [ ] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms*. New `apps/startup-mcp/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
+- [ ] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms*. New `apps/startup-mcp/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
+- [ ] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms*. Inserted between Phase 28 and Phase 29 on 2026-05-25 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
 - [ ] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms*. Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
 
 ## Phase Details
@@ -277,6 +278,55 @@ Plans:
 
 ---
 
+### Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email
+
+**Goal**: Stand up the third Clerk application + `startups.internjobs.ai` subdomain so founders can self-serve sign in via web (no Claude/Cursor/ChatGPT required), and provision a per-startup agent email address (`<startup-slug>@startups.internjobs.ai`) that the agent uses to send candidate outreach. Mirrors the Workspace pattern (Ridhi → `ridhi@internjobs.ai` → her agent) for the startup side. This is the third leg of the auth tripod alongside the Student app (`app.internjobs.ai` Clerk #1, LinkedIn) and Workspace (`workspace.internjobs.ai` Clerk #2, phone OTP). Inserted between Phase 28 (MCP) and Phase 29 (Telnyx) because the MCP API layer + admin endpoint from Phase 28 are the backend this web app will USE — both surfaces talk to the same Fly proxy + same `startups`/`startup_members`/`roles` schema, just with different identity layers (Clerk session vs. MCP Bearer).
+
+**Team owner**: `team-cms`
+**Branch**: `rrr/v1.4/team-cms`
+**Depends on**: Phase 28 (admin endpoint + MCP server + Fly proxy must be live before the web app can call them)
+
+**Requirements**: STARTUP-WEB-AUTH-01..04 + STARTUP-WEB-DASH-01..03 + STARTUP-AGENT-EMAIL-01..04 + STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01 *(~13 total)*
+
+**Architecture:**
+
+| Component | What | Notes |
+|---|---|---|
+| Subdomain | `startups.internjobs.ai` | New Cloudflare custom-domain record on the web Worker / Fly host. |
+| Clerk app #3 | "InternJobs Startups" application in Clerk dashboard, mounted at `clerk.startups.internjobs.ai` | New PublishableKey + SecretKey in Infisical at `/internjobs-ai/STARTUPS_CLERK_*`. Distinct from `app.internjobs.ai` Clerk #1 and `workspace.internjobs.ai` Clerk #2. |
+| Auth methods | Google OAuth + email magic-link, **work-email-only restriction** | Block personal-domain emails (gmail.com, yahoo.com, hotmail.com, outlook.com, icloud.com, aol.com, proton.me, gmx.*) on both OAuth callback and magic-link send. Use Clerk's `allowed_email_domains` if available on tier; otherwise a `user.created` webhook that deletes users with disallowed domains. |
+| Web app | New `apps/startups/` Vite+React app (mirrors `apps/marketing/` stack); deployed to `startups.internjobs.ai` | Routes: `/` (sign-in landing), `/dashboard` (post-auth), `/roles/new`, `/roles/:id`, `/candidates/:id`, `/thread/:id`. Talks to the 28-01 Fly proxy via the same `STARTUP_API_SECRET` Bearer that the MCP Worker uses. |
+| Per-startup agent email | When a startup is created (via Phase 28 admin endpoint OR via web sign-up), mint a slug like `acme` and reserve `acme@startups.internjobs.ai` as that startup's agent email. Stored on `startups.agent_email`. | Cloudflare Email Routing receives at `*@startups.internjobs.ai` → catch-all → Worker resolves slug → routes to per-startup agent inbox. Outbound via `env.EMAIL.send()` binding (same pattern as `apps/parrot/workers/lib/email.ts`). Migration 0013 adds `startups.agent_email`. |
+| Subdomain email sender verification | SPF + DKIM + DMARC records on `startups.internjobs.ai` so outbound from `<slug>@startups.internjobs.ai` doesn't go to spam | Generated by Cloudflare Email Service when the domain is added; you (Raj) add to DNS once. |
+| Admin endpoint extension | Phase 28's `POST /admin/startups/new` extended (28.5-04) to ALSO mint a Clerk invite for the founder email + reserve the agent-email slug + send a welcome email FROM `welcome@startups.internjobs.ai` | Backwards-compatible: the MCP install snippet still gets SMS'd (existing Phase 28 path), but now ALSO produces a Clerk sign-up link. |
+| Marketing page CTA | `/startups` CTA changes from "request access" to "**sign up**" → links to `https://startups.internjobs.ai/` | Folds into 28-05 if 28-05 hasn't shipped yet, otherwise as a separate small touch-up here. |
+
+**Success Criteria** (what must be TRUE):
+
+1. `startups.internjobs.ai` resolves with valid TLS; `https://startups.internjobs.ai/` renders the sign-in landing page
+2. Clerk app #3 mounted; Google OAuth + email magic-link both work end-to-end
+3. **Work-email restriction enforced**: a sign-up attempt from gmail/yahoo/hotmail/outlook/icloud is rejected with a clear error; a sign-up from a custom domain (e.g., `founder@acme.io`) succeeds
+4. Authenticated founder lands on `/dashboard` showing: their startup name, their role count, their agent email address (e.g., "your agent: acme@startups.internjobs.ai"), and a list of recent candidate threads
+5. Founder can create a new role from `/roles/new` → row appears in `roles` table (same row schema as MCP `execute('post_role')` writes — no fragmentation)
+6. Founder can open a candidate thread and send a reply → outbound email goes FROM `<slug>@startups.internjobs.ai`, candidate sees that as the From address
+7. Candidate replies to the agent email → inbound webhook on the startups Worker → row appears in `inbound_messages` with `channel='email'` and resolves to the correct `(startup_id, member_id)` via the `startup_channel_links` table (channel_type='email', channel_external_id=`<slug>@startups.internjobs.ai`)
+8. `welcome@startups.internjobs.ai` send-from is verified — first welcome email from Ridhi's concierge flow lands in a real inbox without spam-folder
+9. The agent_email per startup is unique, lowercased, conflict-checked against existing slugs (no two startups can collide on the same slug)
+10. Migration 0013 applied: `startups.agent_email` column exists with UNIQUE constraint
+
+**Plans**: TBD (likely 5)
+
+Plans:
+- [ ] 28.5-01: DNS + Clerk app #3 setup + secrets bootstrap (Cloudflare custom-domain for `startups.internjobs.ai` + `clerk.startups.internjobs.ai`; Clerk app created in dashboard; PublishableKey + SecretKey + Webhook Secret saved to Infisical; work-email allowlist policy configured)
+- [ ] 28.5-02: `apps/startups/` Vite+React scaffold with Clerk SDK + sign-in landing + dashboard skeleton; deploys to `startups.internjobs.ai`
+- [ ] 28.5-03: Founder dashboard — roles list + create role + candidate thread view + reply send; talks to 28-01 Fly proxy with `STARTUP_API_SECRET` Bearer (work-email session → resolves to startup_id via Clerk publicMetadata)
+- [ ] 28.5-04: Per-startup agent email — migration 0013 (startups.agent_email UNIQUE), Cloudflare Email Routing catch-all → Worker inbound webhook, outbound send via `env.EMAIL.send()` binding; extends Phase 28's `/admin/startups/new` to mint Clerk invite + reserve agent slug + send welcome
+- [ ] 28.5-05: Work-email enforcement + marketing /startups CTA flip + welcome email template + first founder E2E test (sign-up → dashboard → post role → agent emails candidate → candidate replies → founder sees reply)
+
+**Research flags**: Likely on STARTUP-WORK-EMAIL-01 (verify Clerk's `allowed_email_domains` feature tier; build webhook fallback if not available) and STARTUP-AGENT-EMAIL-01..04 (Cloudflare Email Routing catch-all + Worker inbound — need to verify the per-domain catch-all syntax and the `send_email` binding's behavior with a custom verified domain)
+
+---
+
 ### Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
 
 **Goal**: Catch the non-MCP / non-tech startup founder who'd rather talk than type. Provision a toll-free Telnyx number (skips A2P 10DLC wait), wire SMS inbound to the MCP `execute()` core, configure a Telnyx Voice AI Agent to call our MCP tools directly, and ship a **voice-intake onboarding flow** where a founder calls → AI greets and collects company/role/contact → activated in 30 seconds + receives SMS install link. Add a weekly text-touchbase scheduled task ("3 new candidates this week — reply 1/2/3"). This is the *"feel heard, no work"* channel.
@@ -324,7 +374,7 @@ Plans:
 
 **Execution Order (team-aware):**
 
-- `team-cms`: Phase 22 → Phase 24 → Phase 28 → Phase 29 (sequential on `rrr/v1.4/team-cms`)
+- `team-cms`: Phase 22 → Phase 24 → Phase 28 → Phase 28.5 → Phase 29 (sequential on `rrr/v1.4/team-cms`)
 - `team-workspace`: Phase 23 → Phase 25 → Phase 26 → Phase 27 (sequential on `rrr/v1.4/team-workspace`)
 
 **Cross-team dependencies:**
@@ -340,7 +390,8 @@ Plans:
 | 25. SSO Activation + Admin UX | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 26. Knowledge Graph + GenZ Polish | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 27. Polish + Test Floor | v1.4 | team-workspace | 0/TBD | Not started | — |
-| 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 0/TBD | Not started | — |
+| 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 2/5 | In progress (Wave 1 + Wave 2 shipped) | — |
+| 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 0/TBD | Not started | — |
 | 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 0/TBD | Not started | — |
 
 <details>
