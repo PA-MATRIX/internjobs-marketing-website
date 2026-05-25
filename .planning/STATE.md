@@ -4,13 +4,13 @@ milestone: "v1.4"
 phase: 28
 phase_name: "Startup MCP Server + Channel-Adapter Core"
 phase_total: 8
-plan: 0
+plan: 1
 plan_total: 5
-status: "ready_to_execute"
-progress: 5
+status: "in_progress"
+progress: 6
 last_activity: "2026-05-24"
 session_last: "2026-05-24"
-resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-01-PLAN.md"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-02-PLAN.md"
 blockers: []
 ---
 
@@ -29,17 +29,17 @@ See: .planning/team-mode.json (RRR team mode: team-cms + team-workspace)
 See: .planning/WORKSTREAMS.md (team assignments)
 
 **Core value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current focus:** Phase 22 — Lakera Verification + Marketing Brand Refresh (team-cms)
+**Current focus:** Phase 28 — Startup MCP Server + Channel-Adapter Core (team-cms)
 
 ## Current Position
 
 Milestone: v1.4 Pilot Readiness
-Phase: 22 of 29 (Lakera Verification + Marketing Brand Refresh — team-cms) — **COMPLETE**
-Plan: 22-01 + 22-02 + 22-03 + 22-04 + 22-05 all complete (Lakera v2 schema fix + Lakera live-prod verification + brand foundation + brand surface apply + brand audit + visual QA evidence trail)
-Status: Phase 22 complete — Lakera + brand both fully verified; team-cms ready for Phase 24; team-workspace unblocked for Phase 23
-Last activity: 2026-05-24 — 22-05 executed: built apps/marketing/scripts/verify-brand.mjs (269 lines, 0 deps, 44 checks across 11 BRAND-* requirements); script caught 1 regression (channel-chip active text was literal "white" → swapped to var(--lavender)) auto-fixed under Rule 2; WCAG contrast verified programmatically for 4 color pairs (ink/lavender 14.20:1 AAA; ink/lime 15.71:1 AA; lavender/cobalt 4.14:1 AA-large; ink/cream 17.04:1 AAA); inline-span audit confirms accent-comma/dot are real spans not background-image; visual QA satisfied via 7-commit user-iterative-refinement trail (e83d122 → ae1f5cb) instead of a separate checkpoint round-trip. BRAND-VERIFY-01/02/03 all PASS. 2 atomic commits + metadata.
+Phase: 28 of 29 (Startup MCP Server + Channel-Adapter Core — team-cms) — **IN PROGRESS (1/5 plans complete)**
+Plan: 28-01 complete (internjobs-startup-api Fly proxy deployed + migrations 0011/0012 applied); 28-02..05 unblocked
+Status: 28-01 deployed and smoke-verified end-to-end (13/13 PASS in prod); ready to execute 28-02 (startup-mcp Cloudflare Worker scaffold)
+Last activity: 2026-05-24 — 28-01 executed: Hono/Node Fly proxy at internjobs-startup-api.fly.dev with 11 Bearer-authed endpoints; migrations 0011 (mcp_token_hash + startup_channel_links + startup_action_log + outbound_messages) + 0012 (inbound_messages.startup_mark) applied live to internjobs-student-db; B2 UPSERT invariant verified in prod (re-POST /v1/channel-links → opt_in_flags + updated_at both advance). 6 deviations all auto-fixed (5x Rule 1 schema-mismatch bugs realigning to actual DB; 1x Rule 3 missing outbound_messages table created in 0011). 2 atomic commits + this metadata commit.
 
-Progress: ███░░░░░░░ 7% (5/68 requirements done; BRAND-VERIFY-01/02/03 closed by 22-05; 17 brand-layout/logo/copy reqs by 22-04; 8 brand foundation reqs by 22-03; LAKERA-V2-01/02/03 by 22-01; SAFETY-VERIFY-LIVE-01/02 by 22-02 — -03 deferred to v1.5)
+Progress: ███░░░░░░░ 9% (6/68 requirements done; STARTUP-MCP-01..02 + STARTUP-CHANNEL-01 closed by 28-01; BRAND-VERIFY-01/02/03 closed by 22-05; 17 brand-layout/logo/copy reqs by 22-04; 8 brand foundation reqs by 22-03; LAKERA-V2-01/02/03 by 22-01; SAFETY-VERIFY-LIVE-01/02 by 22-02 — -03 deferred to v1.5)
 
 ## Team Mode
 
@@ -73,6 +73,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 | 25 | 0 | TBD | — |
 | 26 | 0 | TBD | — |
 | 27 | 0 | TBD | — |
+| 28 | 1 | 5 | ~11 min (28-01: ~11 min) |
 
 ## Accumulated Context
 
@@ -122,14 +123,24 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - **Telnyx toll-free over A2P 10DLC** for Phase 29 to skip 4-week registration; local-number A2P migration is v1.5 candidate.
 - **No iMessage for startups** — iMessage (BlueBubbles) is exclusively student-side. Telnyx covers startup SMS/voice.
 - **`/startups` channels grid (STARTUP-MARKETING-02):** Claude/ChatGPT, Voice, SMS, Email as primary tier; Slack/Discord/Teams labeled "coming soon" — sets pilot expectation that MCP + Telnyx are first-class while Slack waits for v1.5.
+- **28-01: outbound_messages table created in migration 0011** (not pre-existing as plan assumed). The Phase 04 `drafts` table is the v1.2 approval-queue (pending_review → approved → sent through human operators); the Phase 28 MCP `reply_to_candidate` action is a direct-send path (founder authored the message themselves via their LLM), so a clean `outbound_messages` log per-channel makes more sense. Phase 29 Telnyx SMS will append rows with `channel='telnyx-sms'` (same table, no schema change).
+- **28-01: Embeddings via separate `*_embeddings` tables, not `roles.embedding` column.** Per migration 0005 lock (vector(768), bge-base-en-v1.5). /v1/roles UPSERTs role_embeddings keyed by role_id; /v1/search/candidates joins student_embeddings keyed by student_id. The plan-as-written assumed an inline `embedding` column on `roles` — that doesn't exist.
+- **28-01: Concierge clerk_user_id placeholder pattern.** `startup_members.clerk_user_id` is NOT NULL UNIQUE in real schema. /v1/startups synthesizes `'concierge:<16-byte hex>'` placeholder so Ridhi-led pilot onboarding (28-04 admin endpoint) can issue install tokens BEFORE the founder completes Clerk org provisioning. When the founder later signs into workspace.internjobs.ai, the row's clerk_user_id is UPDATEd to the real Clerk user id. Format is sortable + debuggable. v1.5 backlog item: build a `migrate_concierge_to_real_user` admin endpoint.
+- **28-01: STARTUP_API_SECRET — Infisical sync follow-up.** The user's `infisical` CLI is logged into the Projecta org and got 403 against the internjobs workspace (correct workspace ID = `26995afd-9a6f-4690-912f-01cbcebb76d5`, NOT the stale `2c12f042` in MEMORY.md). Secret was set directly on Fly via `flyctl secrets set`; the plaintext is at `/tmp/startup_api_secret.txt` for the user to copy into Infisical at `/internjobs-ai/STARTUP_API_SECRET`. Not blocking 28-02..05 (the MCP Worker reads its own copy from `wrangler secret put`).
+- **28-01: pgvector cast pattern locked.** Pass embeddings as `[n1,n2,...]` text literal + `::vector` cast in SQL — avoids needing a custom node-postgres oid parser. 768-dim hard-validated server-side; dim mismatch returns 400 `embedding_dim_mismatch`.
+- **28-01: /v1/threads/:id/mark uses a 3-way OR match** because `inbound_messages` has no first-class `thread_id` column (threading lives in `student_threads.thread_key` joined via `conversations`). Matches on `id::text`, `metadata->>'thread_id'`, or `metadata->>'student_thread_id'`. rowCount=0 returns `{ok:true, updated:0}` (idempotent-friendly; doesn't leak thread existence via 404). v1.5 hygiene: add a real `thread_id` column once threading model stabilizes.
+- **28-01: infra/{name}-api/ Fly Hono/Node proxy pattern formalized.** Both `infra/graph-api/` (v1.3) and `infra/startup-api/` (v1.4) follow identical shape: package.json + Dockerfile + fly.toml + src/index.mjs + smoke.mjs, Bearer auth via node:crypto timingSafeEqual, min_machines_running=1 (always-warm), shared-cpu-1x/256mb, primary_region=ord. Any future CF-Worker-needs-Fly-DB phase ships its own infra/{name}-api/ rather than fattening the others.
 
 ### Pending Todos
 
+- **Persist STARTUP_API_SECRET to Infisical** — value at `/tmp/startup_api_secret.txt`, target path `/internjobs-ai/STARTUP_API_SECRET` env `prod` workspace `26995afd-9a6f-4690-912f-01cbcebb76d5`. Will require `infisical login` against the internjobs org first.
+- **Update MEMORY.md infisical-project.md** — replace stale workspace ID `2c12f042...` with correct `26995afd-9a6f-4690-912f-01cbcebb76d5` (the value in repo `.infisical.json`).
+- Execute 28-02 (startup-mcp Cloudflare Worker scaffold + 4 MCP tools)
 - Optional: `/rrr:assign-phases` to formalize team assignments in `.planning/team-mode.json`
-- `/rrr:plan-phase 22` to draft Phase 22 plans (team-cms first to unblock 23)
-- `/rrr:dispatch-team --team team-workspace` once 22 is in plan stage so team-workspace can start work on phase 23 prep
 - CODEOWNERS file at `.github/CODEOWNERS` per the team scope split (deferred — drafted in earlier session, not yet committed)
 - Branch protection on `main` requiring CODEOWNERS approval
+- v1.5 backlog: `migrate_concierge_to_real_user` admin endpoint to flip 28-01's `clerk_user_id='concierge:<hex>'` placeholders to real Clerk user ids once founders complete workspace.internjobs.ai sign-in
+- v1.5 backlog: `inbound_messages.thread_id` first-class column to replace 28-01's metadata-fallback 3-way OR match in /v1/threads/:id/mark
 
 ### Blockers/Concerns
 
@@ -144,6 +155,6 @@ Pre-existing TS error in `apps/parrot/workers/types.ts:55` (`STUDENT_API_URL` di
 
 ## Session Continuity
 
-Last session: 2026-05-24 — 22-05 (Marketing Brand Verification) complete. Built `apps/marketing/scripts/verify-brand.mjs` (269 lines, zero npm deps, exit-code contract), 44 checks across 11 BRAND-* requirements. First run caught 3 issues — 2 were script-regex bugs (single-quote-only letterSpacing, magic-number threshold for legal-text title-case) self-fixed before first commit; 1 was a real regression (channel-chip active text was literal "white") auto-fixed inline per Rule 2 by swapping to var(--lavender). WCAG contrast PASS on all 4 brand color pairs: ink/lavender 14.20:1 (AAA), ink/lime 15.71:1 (AA), lavender/cobalt 4.14:1 (AA large-display per BRAND-V1.md §1), ink/cream 17.04:1 (AAA legal pages). Inline-span audit confirms accent-comma/dot are real <span> elements in App.tsx + styles.css with no background-image fallback. Visual QA evidence packaged as 7-commit user-iterative-refinement citation trail (e83d122 → ae1f5cb) — user already refined the production deploy through 7 rounds between 22-04 close and 22-05 open, so SUMMARY cites those commits as BRAND-VERIFY-02 evidence rather than issuing a redundant checkpoint. Marketing build (`tsc -b && vite build`) clean after the one-line App.tsx fix. 2 atomic task commits + metadata. **Phase 22 COMPLETE (5/5 plans).**
-Stopped at: Phase 22 complete. team-cms can proceed to Phase 24 (Neon-Exit Closeout). team-workspace already unblocked by 22-02 for Phase 23 (Workspace Pilot Closeouts).
-Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/` (team-workspace) or `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout/` (team-cms)
+Last session: 2026-05-24 — 28-01 (internjobs-startup-api Fly proxy + migrations 0011/0012) complete. Hono/Node REST proxy at `https://internjobs-startup-api.fly.dev` deployed in `ord` (2 shared-cpu-1x machines, min_machines_running=1, auto_stop=off). 11 endpoints, all Bearer-authed via node:crypto timingSafeEqual: GET /health, POST /v1/startups/token, POST /v1/startups, PATCH /v1/startups/:id/token, POST /v1/roles, POST /v1/messages, POST /v1/channel-links (UPSERT DO UPDATE), POST /v1/action-log, POST /v1/search/candidates (768-dim bge embeddings), PATCH /v1/roles/:id (ownership-checked), PATCH /v1/threads/:id/mark (3-way OR match). Migration 0011 added 3 columns to startups (mcp_token_hash + 2 timestamps), 3 tables (startup_channel_links, startup_action_log, outbound_messages — last is a deviation, not pre-existing), 6 indexes. Migration 0012 added inbound_messages.startup_mark + partial index. Smoke suite 13/13 PASS against prod URL. Load-bearing B2 UPSERT invariant verified directly in DB: two POST /v1/channel-links with same key tuple + different opt_in_flags → second value sticks and updated_at advances (psql probe returned opt_in_flags=true + metadata="re-post" + updated_advanced=t). 6 deviations all auto-fixed under Rule 1 (5x schema-mismatch bugs) + Rule 3 (1x missing outbound_messages table). 2 atomic task commits (f0c6bda migration, 05c39b4 proxy) + this metadata commit. STARTUP_API_SECRET live on Fly; Infisical sync flagged as user-setup follow-up (CLI in wrong org).
+Stopped at: 28-01 complete. Plans 28-02..05 all unblocked — the proxy + schema is the load-bearing dependency for the startup-mcp Cloudflare Worker (28-02), channel-adapter pattern (28-03), admin/onboarding endpoint (28-04), and marketing MCP install page (28-05).
+Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-02-PLAN.md`
