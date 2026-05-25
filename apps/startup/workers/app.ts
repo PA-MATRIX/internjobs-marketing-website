@@ -26,6 +26,7 @@ import { buildMcpHandler } from "./server";
 import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
+import { handleInboundEmail } from "./routes/email";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -121,4 +122,19 @@ app.get("/", (c) =>
 	}),
 );
 
-export default { fetch: app.fetch };
+// v1.4 Phase 28.5 Plan 04 STARTUP-AGENT-EMAIL-02 — add `email()` export so
+// Cloudflare Email Routing (catch-all on startups.internjobs.ai) delivers
+// inbound mail into the Worker. The catch-all rule is configured in the
+// CF dashboard separately (see DEFER-28.5-01-E). Routing is independent
+// of the Worker's `fetch` HTTP surface, so the existing /mcp + /admin +
+// /api routes are unaffected.
+export default {
+	fetch: app.fetch,
+	async email(
+		message: ForwardableEmailMessage,
+		env: Env,
+		ctx: ExecutionContext,
+	): Promise<void> {
+		return handleInboundEmail(message, env, ctx);
+	},
+};

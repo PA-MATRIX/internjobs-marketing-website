@@ -877,6 +877,188 @@ app.patch("/v1/threads/:id/mark", async (c) => {
   }
 });
 
+// ── v1.4 Phase 28.5 Plan 04 — per-startup agent email endpoints ──────────────
+//
+// Five endpoints land in this block:
+//   • GET   /v1/startups/check-slug?agent_email=<addr>  — slug-uniqueness probe
+//   • PATCH /v1/startups/:id/agent-email                — write agent_email column
+//   • GET   /v1/channels/resolve?email=<addr>           — recipient → startup_id
+//   • POST  /v1/messages/inbound                        — write inbound_messages row
+//   • (existing) POST /v1/channel-links — reused by the admin endpoint to insert
+//                                          the channel_type='email' row
+//
+// All five sit behind the same Authorization: Bearer STARTUP_API_SECRET gate
+// from the /v1/* middleware at the top of this file.
+
+// ── GET /v1/startups/check-slug ──────────────────────────────────────────────
+// Query: ?agent_email=<addr>
+// Returns 200 { exists: true, startup_id } if the address is already in use;
+// returns 404 { error: "not_found" } if it's free.
+// Used by apps/startup/workers/lib/slug.ts::reserveUniqueSlug to advance
+// through "-1", "-2", … on collision.
+app.get("/v1/startups/check-slug", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const agentEmail = c.req.query("agent_email");
+  if (!agentEmail) return c.json({ error: "agent_email_required" }, 400);
+  try {
+    const { rows } = await pool.query(
+      `SELECT id FROM startups WHERE lower(agent_email) = lower($1) LIMIT 1`,
+      [agentEmail],
+    );
+    if (rows.length === 0) return c.json({ error: "not_found" }, 404);
+    return c.json({ exists: true, startup_id: rows[0].id });
+  } catch (err) {
+    return c.json({ error: "lookup_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── PATCH /v1/startups/:id/agent-email ───────────────────────────────────────
+// Body: { agent_email: string }
+// Sets startups.agent_email. Returns 200 { ok, agent_email } on success,
+// 404 if the startup doesn't exist, 409 if the agent_email collides (UNIQUE
+// constraint trip — this can happen if a parallel onboarding raced past
+// check-slug; caller should re-run with a fresh slug).
+app.patch("/v1/startups/:id/agent-email", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const startupId = c.req.param("id");
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const { agent_email } = body ?? {};
+  if (!agent_email || typeof agent_email !== "string") {
+    return c.json({ error: "agent_email_required" }, 400);
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE startups SET agent_email = $1 WHERE id = $2 AND status IN ('active', 'onboarding')`,
+      [agent_email, startupId],
+    );
+    if (!rowCount) return c.json({ error: "startup_not_found" }, 404);
+    return c.json({ ok: true, agent_email });
+  } catch (err) {
+    // 23505 = unique_violation (Postgres) — surface as 409 so caller can
+    // re-mint a slug rather than logging a generic 500.
+    if (err?.code === "23505") {
+      return c.json({ error: "agent_email_conflict", detail: err?.message }, 409);
+    }
+    return c.json({ error: "update_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── GET /v1/channels/resolve ─────────────────────────────────────────────────
+// Query: ?email=<addr>
+// Returns 200 { startup_id, member_id } if a startup_channel_links row exists
+// with channel_type='email' and channel_external_id matching (case-insensitive).
+// Returns 404 if no row matches.
+// Used by the catch-all email handler in apps/startup/workers/routes/email.ts
+// to route inbound mail to the correct startup.
+app.get("/v1/channels/resolve", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const email = c.req.query("email");
+  if (!email) return c.json({ error: "email_required" }, 400);
+  try {
+    const { rows } = await pool.query(
+      `SELECT startup_id, member_id
+         FROM startup_channel_links
+        WHERE channel_type = 'email'
+          AND lower(channel_external_id) = lower($1)
+          AND status = 'active'
+        LIMIT 1`,
+      [email],
+    );
+    if (rows.length === 0) return c.json({ error: "not_found" }, 404);
+    return c.json({
+      startup_id: rows[0].startup_id,
+      member_id: rows[0].member_id,
+    });
+  } catch (err) {
+    return c.json({ error: "lookup_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── POST /v1/messages/inbound ────────────────────────────────────────────────
+// Body: { provider, provider_event_id?, channel_type, channel_address,
+//         startup_id, member_id?, direction?, from_address?, subject?, body,
+//         body_text?, body_html?, metadata? }
+//
+// Inserts an inbound_messages row. Mirrors the schema from migration 0003b
+// (provider/channel_type/channel_address/startup_id/student_id/direction/body
+// /metadata). The optional from_address + subject + body_text + body_html
+// fields are stuffed into metadata for v1.4 since the canonical schema only
+// has a single body column (the threading code in v1.5 can promote them to
+// first-class columns via a follow-up migration).
+//
+// Idempotency: when provider_event_id is supplied (RFC Message-ID for
+// 'cloudflare-email'), the partial UNIQUE index on
+// (provider, provider_event_id) WHERE provider_event_id IS NOT NULL
+// dedupes resends. ON CONFLICT DO NOTHING returns 200 on dupe so the
+// caller doesn't see noise on retries.
+app.post("/v1/messages/inbound", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const {
+    provider,
+    provider_event_id,
+    channel_type,
+    channel_address,
+    startup_id,
+    direction = "inbound",
+    from_address,
+    subject,
+    body: messageBody,
+    body_text,
+    body_html,
+    metadata = {},
+  } = body ?? {};
+  if (!provider || !channel_type || !startup_id || messageBody == null) {
+    return c.json({
+      error: "provider_channel_type_startup_id_body_required",
+    }, 400);
+  }
+  // Fold from/subject/text/html into metadata so we can persist them
+  // without a schema change.
+  const fullMetadata = {
+    ...metadata,
+    from_address: from_address ?? null,
+    subject: subject ?? null,
+    body_text: body_text ?? null,
+    body_html: body_html ?? null,
+  };
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO inbound_messages
+         (provider, provider_event_id, channel_type, channel_address,
+          startup_id, direction, body, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+       ON CONFLICT (provider, provider_event_id)
+         WHERE provider_event_id IS NOT NULL DO NOTHING
+       RETURNING id, created_at`,
+      [
+        provider,
+        provider_event_id ?? null,
+        channel_type,
+        channel_address ?? null,
+        startup_id,
+        direction,
+        messageBody,
+        JSON.stringify(fullMetadata),
+      ],
+    );
+    if (rows.length === 0) {
+      // ON CONFLICT path — duplicate provider_event_id. Return ok with a
+      // duplicate flag so the caller knows it's a no-op resend.
+      return c.json({ ok: true, duplicate: true });
+    }
+    return c.json({ ok: true, id: rows[0].id, created_at: rows[0].created_at });
+  } catch (err) {
+    return c.json({ error: "insert_failed", detail: err?.message }, 500);
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
