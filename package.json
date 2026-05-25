@@ -7,7 +7,8 @@
     "apps/*",
     "packages/*",
     "!apps/agentic-inbox",
-    "!apps/parrot"
+    "!apps/parrot",
+    "!apps/startup"
   ],
   "scripts": {
     "dev": "npm run dev:marketing",

@@ -1,0 +1,34 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	// v1.4 Phase 28 STARTUP-MCP-01..10: Startup MCP Server.
+	// Exposes the Stainless-style search/execute/me/discover_actions MCP surface
+	// at mcp.internjobs.ai. Founders install via:
+	//   claude mcp add --transport http internjobs https://mcp.internjobs.ai/mcp --header "Authorization: Bearer {TOKEN}"
+	"name": "internjobs-startup-mcp",
+	"compatibility_date": "2025-11-28",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "./workers/app.ts",
+	"observability": { "enabled": true },
+	// mcp.internjobs.ai custom domain — Workers Custom Domain auto-creates the DNS
+	// record + provisions a Cloudflare-managed cert on first `wrangler deploy`.
+	"routes": [
+		{
+			"pattern": "mcp.internjobs.ai",
+			"custom_domain": true
+		}
+	],
+	"vars": {
+		// HTTPS URL of the internjobs-startup-api Fly proxy (Phase 28 Plan 01).
+		// Not a secret — it's an internet-facing HTTPS hostname.
+		"STARTUP_API_URL": "https://internjobs-startup-api.fly.dev"
+	}
+	// Secrets (set via `wrangler secret put`):
+	//   STARTUP_API_SECRET       — Bearer token for internjobs-startup-api proxy.
+	//                              Value is the 64-hex secret minted by 28-01;
+	//                              copy from /tmp/startup_api_secret.txt or
+	//                              (preferred long-term) Infisical /internjobs-ai/STARTUP_API_SECRET.
+	//   STARTUP_MCP_ADMIN_SECRET — Ridhi's admin endpoint auth (long random string).
+	//                              Used by Plan 28-04. Generate via
+	//                              `openssl rand -hex 32` and persist in Infisical
+	//                              /internjobs-ai/STARTUP_MCP_ADMIN_SECRET.
+}
