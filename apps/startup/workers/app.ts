@@ -25,6 +25,7 @@ import { cors } from "hono/cors";
 import { buildMcpHandler } from "./server";
 import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
+import { apiRouter } from "./routes/api";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -104,8 +105,11 @@ app.get("/healthz", (c) =>
 // (separate from per-startup install tokens that gate /mcp).
 app.route("/admin", adminRouter);
 
-// ── API stub (Plan 28-05 — marketing CTA receiver will mount here) ───────────
-app.all("/api/*", (c) => c.json({ error: "not_yet_implemented" }, 503));
+// ── API router (Plan 28-05 — marketing CTA receiver) ─────────────────────────
+// POST /api/request-access — receives the /startups form (name, email, phone,
+// what_hiring_for) and emails Ridhi / logs the lead. CORS-restricted to
+// internjobs.ai. NO auth — public marketing endpoint.
+app.route("/api", apiRouter);
 
 // ── Root ─────────────────────────────────────────────────────────────────────
 app.get("/", (c) =>
