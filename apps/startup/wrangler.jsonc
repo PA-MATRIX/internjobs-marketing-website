@@ -133,8 +133,12 @@
 	// touchbase cursors (TTL ~48h) so "reply 1/2/3" maps to a candidate uuid.
 	// "kv_namespaces": [{ "binding": "TOUCHBASE_CURSORS", "id": "" }],
 	//
-	// Phase 29-02 — uncomment when internjobs-voice-audit R2 bucket is created
-	// via `wrangler r2 bucket create internjobs-voice-audit`. Stores call
-	// recordings + transcripts from Voice AI agent post-call webhook.
+	// Phase 29-02 R2 binding — uncomment after running DEFER-29-02-B:
+	//   wrangler r2 bucket create internjobs-voice-audit
+	// Stores call recordings (mp3) + transcripts (json) from the Voice AI
+	// agent's post-call insights webhook (routes/voice.ts voice-postprocess).
+	// R2 layout:
+	//   recordings/<startup_id>/<call_control_id>.mp3
+	//   transcripts/<startup_id>/<call_control_id>.json
 	// "r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-voice-audit" }],
 }
