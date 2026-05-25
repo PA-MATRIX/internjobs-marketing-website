@@ -99,23 +99,10 @@ a {
  * the BrandMark component now renders /logo/mark-gradient.svg directly per
  * BRAND-V1.md §3. Old CSS used non-brand pink/cyan/yellow gradient colors. */
 
-@keyframes party-text {
-  from {
-    background-position: 0% 50%;
-  }
-
-  to {
-    background-position: 100% 50%;
-  }
-}
-
-.text-party-gradient {
-  background: linear-gradient(90deg, #111111 0%, #ff4d8d 30%, #007aff 68%, #111111 100%);
-  background-size: 140% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
+/* Legacy .text-party-gradient + @keyframes party-text removed 2026-05-25:
+ * the channels-section h2 was the last consumer; replaced with a
+ * solid text-ink + accent-dot span per BRAND-V1.md §1 (no multi-color
+ * text gradients). verify-brand.mjs now enforces this. */
 
 .primary-party-button {
   background: var(--ink);

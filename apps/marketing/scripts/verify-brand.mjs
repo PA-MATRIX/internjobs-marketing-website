@@ -51,23 +51,63 @@ check("--radius-mark: 8px",   stylesCss.includes("--radius-mark: 8px"));
 console.log("\n[BRAND-LAYOUT-05] No forbidden hex literals in App.tsx (marketing surfaces)");
 // UI-mock components (phone demo internals) simulate real-world apps, not
 // marketing surfaces — they are exempt per BRAND-LAYOUT-05's mock-exception clause.
+// Widened 2026-05-25: use a sliding window so multi-line object literals
+// (e.g. `{ name: "iMessage", color: "#007AFF" }` where the color is on a
+// different line than the name) stay exempt.
+// Mockup-function patterns. Lines INSIDE any function whose name matches one
+// of these prefixes are exempt from the hex-literal rule. Anything else is
+// a "marketing surface" and must use brand-token colors.
+const MOCKUP_FN_RX = /^function (Slack|WhatsApp|Discord|[Ii]Message|Phone|Channel|Platform|ChatStream|Hero|Live|Typing|Message|Agent|Tiny|StartupSlack|StartupChat)/;
+const FN_DECL_RX = /^function (\w+)/;
 const appLines = appTsx.split("\n");
-const marketingLines = appLines.filter((line) => {
+// Walk lines and track which function each line belongs to via last-seen
+// function declaration. We deliberately do NOT do brace counting because
+// the destructured-param + type-annotation pattern
+// `function X({ y }: { y?: string })` confuses depth tracking and exits
+// the function scope prematurely. Instead: a line is "in function X" from
+// X's declaration until the next top-level `^function` declaration.
+const mockupFlag = new Array(appLines.length).fill(false);
+let currentFnIsMockup = false;
+for (let i = 0; i < appLines.length; i++) {
+  const line = appLines[i];
+  if (FN_DECL_RX.test(line)) {
+    currentFnIsMockup = MOCKUP_FN_RX.test(line);
+  }
+  mockupFlag[i] = currentFnIsMockup;
+}
+// Also flag lines inside top-level mockup-data arrays (channels, heroMessages)
+// at the file top — these declare platform brand colors. Detect via a +/- 12
+// line window for `name: "<platform>"` sentinels.
+const PLATFORM_NAME_RX = /name:\s*"(imessage|whatsapp|slack|discord|phone call|call|sms|email|cursor|claude|chatgpt|microsoft teams|teams)"/i;
+const platformNameLines = new Set();
+for (let i = 0; i < appLines.length; i++) {
+  if (PLATFORM_NAME_RX.test(appLines[i])) platformNameLines.add(i);
+}
+const isNearPlatformName = (i) => {
+  for (let j = Math.max(0, i - 12); j < Math.min(appLines.length, i + 13); j++) {
+    if (platformNameLines.has(j)) return true;
+  }
+  return false;
+};
+const marketingLines = appLines.filter((line, i) => {
   const lower = line.toLowerCase();
-  return (
-    !lower.includes("whatsapp") &&
-    !lower.includes("slack") &&
-    !lower.includes("discord") &&
-    !lower.includes("iphone") &&
-    !lower.includes("phonecall") &&
-    !lower.includes("imessage") &&
-    !lower.includes("startup-slack") &&
-    !lower.includes("startup-chat") &&
-    !lower.includes("channel.color") &&
-    !lower.includes("channel.soft") &&
-    !lower.startsWith("//") &&
-    !lower.trim().startsWith("* ")
-  );
+  if (lower.startsWith("//") || lower.trim().startsWith("* ")) return false;
+  if (mockupFlag[i]) return false;
+  if (isNearPlatformName(i)) return false;
+  // Lines that reference mockup styling vars / channel data
+  if (
+    lower.includes("channel.color") ||
+    lower.includes("channel.soft") ||
+    lower.includes("startup-slack") ||
+    lower.includes("startup-chat") ||
+    lower.includes("whatsapp") ||
+    lower.includes("imessage") ||
+    lower.includes("iphone") ||
+    lower.includes("phonecall")
+  ) {
+    return false;
+  }
+  return true;
 });
 const marketingSrc = marketingLines.join("\n");
 
@@ -82,6 +122,29 @@ check(
   "No #000 / #000000 in marketing components",
   !hasPureBlack,
   "Found pure-black hex literal in App.tsx marketing surface"
+);
+
+// Tightened 2026-05-25: ANY hex literal in a non-mockup surface is a
+// violation — not just #fff/#000. The prior audit missed text-[#070707],
+// text-[#5F6368], bg-[#F6F4EE] and others that slipped through the
+// channels section. Brand colors must reference CSS vars or Tailwind
+// brand keys (text-ink / text-ink-secondary / bg-cream / etc.).
+const hexLiteralMatches = (marketingSrc.match(/#[0-9A-Fa-f]{3,6}\b/g) || [])
+  .filter((m) => m.length === 4 || m.length === 7); // valid #abc or #aabbcc
+check(
+  "No arbitrary hex literals in marketing components",
+  hexLiteralMatches.length === 0,
+  `Found ${hexLiteralMatches.length} hex literal(s) in App.tsx marketing surface (excluding mockup contexts): ${[...new Set(hexLiteralMatches)].slice(0, 8).join(", ")}. Use Tailwind brand keys (text-ink / text-ink-secondary / bg-cream / bg-lavender / text-cobalt) or CSS vars.`
+);
+
+// .text-party-gradient is the legacy rainbow gradient class (pink + blue
+// + black). Brand voice forbids multi-color text gradients — text is solid
+// ink with optional accent-dot/comma on punctuation per BRAND-V1.md §1.
+const hasPartyGradient = /text-party-gradient/.test(appTsx);
+check(
+  "No text-party-gradient class usage in App.tsx",
+  !hasPartyGradient,
+  "text-party-gradient produces a non-brand pink/blue/black rainbow on text. Use solid text-ink with accent-dot/accent-comma spans on punctuation instead."
 );
 
 // ─── BRAND-VERIFY-03: Punctuation accents as inline spans ───────────────────

@@ -1574,11 +1574,11 @@ function ChannelSection() {
       <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.95fr_1.05fr]">
         <div>
           <Reveal>
-            <h2 className="max-w-[42rem] text-[2.55rem] font-black leading-[1.05] text-[#070707] sm:text-[4.75rem]">
-              Built for where <span className="text-party-gradient">students already talk.</span>
+            <h2 className="max-w-[42rem] text-[2.55rem] font-black leading-[1.05] lowercase text-ink sm:text-[4.75rem]">
+              built for where students already talk<span className="accent-dot">.</span>
             </h2>
-            <p className="mt-5 max-w-xl text-xl leading-8 text-[#5F6368]">
-              internjobs.ai works in iMessage, with WhatsApp, Slack, Discord, and call coming soon. No separate tab to keep checking.
+            <p className="mt-5 max-w-xl text-xl leading-8 text-ink-secondary">
+              internjobs.ai works in iMessage, with WhatsApp, Slack, Discord, and call coming soon. no separate tab to keep checking.
             </p>
           </Reveal>
 
@@ -1639,11 +1639,11 @@ function HumanAgentCard({ icon, title, copy }: { icon: ReactNode; title: string;
         <div className="flex items-center gap-3">
           <div className="portrait-frame grid size-12 place-items-center rounded-lg text-white">{icon}</div>
           <div className="min-w-0">
-            <h3 className="text-base font-black text-[#070707]">{title}</h3>
-            <p className="text-sm text-[#5F6368]">{title === "You" ? "Still in control" : "Keeps looking"}</p>
+            <h3 className="text-base font-black text-ink">{title}</h3>
+            <p className="text-sm text-ink-secondary">{title === "You" ? "still in control" : "keeps looking"}</p>
           </div>
         </div>
-        <p className="mt-4 flex-1 text-sm leading-6 text-[#5F6368]">{copy}</p>
+        <p className="mt-4 flex-1 text-sm leading-6 text-ink-secondary">{copy}</p>
       </div>
     </Reveal>
   );
@@ -1765,7 +1765,7 @@ function EmployerSection() {
                   ["Built a waitlist for a student app", "Worth a look"],
                   ["Runs a Discord for builders", "Relevant"],
                 ].map(([student, tag]) => (
-                  <div key={student} className="flex items-center gap-3 rounded-lg bg-[#F6F4EE] p-3">
+                  <div key={student} className="flex items-center gap-3 rounded-lg bg-cream p-3">
                     <BrandMark size="sm" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-black text-ink">{student}</p>
@@ -1829,7 +1829,7 @@ function WaitlistSection() {
         <div className="relative z-10 text-left">
           <BrandMark size="lg" />
           <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">internjobs.ai</p>
-          <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl">Join Early Access</h2>
+          <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl lowercase">join early access<span className="accent-dot" style={{ color: "var(--lime)" }}>.</span></h2>
           <p className="mt-5 max-w-md leading-7 text-white/75">
             Get the first text when we open up. Built for students who would rather text than fill out another giant form.
           </p>
@@ -2453,7 +2453,7 @@ function StartupRolePanel() {
               ["Built a waitlist for a student app", "Strong fit"],
               ["Runs a Discord for builders", "Probably a fit"],
             ].map(([student, tag]) => (
-              <div key={student} className="flex items-center gap-3 rounded-lg bg-[#F6F4EE] p-3">
+              <div key={student} className="flex items-center gap-3 rounded-lg bg-cream p-3">
                 <BrandMark size="sm" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-black text-ink">{student}</p>
