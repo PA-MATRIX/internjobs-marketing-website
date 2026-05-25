@@ -30,7 +30,6 @@ import { handleInboundEmail } from "./routes/email";
 import { handleClerkWebhook } from "./routes/webhooks";
 import { telnyxRouter } from "./routes/telnyx";
 import { voiceRouter } from "./routes/voice";
-import { scheduled as scheduledHandler } from "./routes/scheduled";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -166,14 +165,6 @@ app.get("/", (c) =>
 // CF dashboard separately (see DEFER-28.5-01-E). Routing is independent
 // of the Worker's `fetch` HTTP surface, so the existing /mcp + /admin +
 // /api routes are unaffected.
-//
-// v1.4 Phase 29-03 STARTUP-TOUCHBASE-01..02 — add `scheduled()` export so
-// the weekly touchbase cron dispatches via the wrangler.jsonc `triggers.crons`
-// schedule (Monday 14:00 UTC). The cron handler queries the Fly proxy for
-// startups whose `opt_in_flags.weekly_touchbase=true` and whose
-// `last_touchbase_at` is null/older than 7 days, then sends the SMS through
-// the shared `lib/telnyx.ts` sendSms helper. Cron is gated on TELNYX_API_KEY
-// being bound (DEFER-29-01-E) — silent no-op otherwise.
 export default {
 	fetch: app.fetch,
 	async email(
@@ -183,5 +174,4 @@ export default {
 	): Promise<void> {
 		return handleInboundEmail(message, env, ctx);
 	},
-	scheduled: scheduledHandler,
 };
