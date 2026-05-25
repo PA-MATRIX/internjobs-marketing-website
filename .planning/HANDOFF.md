@@ -103,7 +103,7 @@ Verified with:
 - **Parrot acts as an OIDC provider** for Mattermost. Mattermost uses its "GitLab" OAuth slot (Team Edition has no generic OIDC slot) pointed at Parrot's `/oidc/*`. Client id `mm-adf4e352b196b075`. The registered redirect URI is the Worker secret `MATTERMOST_OIDC_REDIRECT_URI` = `https://chat.internjobs.ai/signup/gitlab/complete` (updated this session).
 - **Mattermost config is env-var-driven** (`MM_*` Fly secrets). `flyctl secrets set` WITHOUT `--stage` to apply immediately; `--stage` only stages. SiteURL is now `https://chat.internjobs.ai`.
 - **FalkorDB Cypher dialect**: use `timestamp()` (ms epoch), NOT `datetime()`/`duration()` — FalkorDB doesn't implement those.
-- **One Neon database** (`neondb`) for everything; safety_events lives there. Per-employee mailbox data is in `EmployeeMailboxDO` SQLite (8 migrations, latest `8_resolution_source`).
+- **Student app DB is self-hosted Fly Postgres** (`internjobs-student-db`, Postgres 17 + pgvector), internal-only at `internjobs-student-db.internal:5432`. `safety_events` lives there. The Workspace Worker cannot reach Fly-internal Postgres, so it calls the student app's `/internal/safety-events` Bearer-authed API (env: `STUDENT_API_URL` + `STUDENT_API_SECRET` on the Worker; `INTERNAL_API_SECRET` on the student app — same value, different name on each side). The three Neon projects were deleted 2026-05-21. See `infra/NEON-EXIT.md` for the full migration record. Per-employee mailbox data is in `EmployeeMailboxDO` SQLite (8 migrations, latest `8_resolution_source`).
 - `apps/agentic-inbox/` is the DONOR repo (Maya's single-tenant MCP mailbox) — left untouched; Parrot lifts code FROM it. A proper `packages/inbox-core/` shared-package extraction is deferred to v1.4.
 
 ---
