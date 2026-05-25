@@ -118,11 +118,11 @@ Plans:
 4. Unreviewed-count badge in Workspace updates correctly via `/internal/safety-events/unreviewed-count`
 5. `HANDOFF.md §4`, `ROADMAP.md`, and `infisical-project` memory all reflect the post-migration topology
 
-**Plans**: TBD (likely 2)
+**Plans**: 2 plans
 
 Plans:
-- [ ] 24-01: End-to-end safety_events API verification + negative tests (NEONEX-VER-01..04)
-- [ ] 24-02: Docs refresh — HANDOFF.md, ROADMAP.md note, infisical-project memory (NEONEX-DOC-01..03)
+- [ ] 24-01-PLAN.md — E2E safety_events API verification + negative tests (NEONEX-VER-01..04)
+- [ ] 24-02-PLAN.md — Docs refresh — HANDOFF.md, ROADMAP.md, infisical-project memory (NEONEX-DOC-01..03)
 
 **Research flags**: Unlikely (verification work; no new tech)
 
