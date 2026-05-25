@@ -15,10 +15,28 @@ feat(v1.4-phase-23): Workspace pilot closeouts — closeTodoFact + Lakera email 
 
 ---
 
-## Open the draft PR
+## Open the draft PR (correct order — don't run `gh pr create` first)
+
+GitHub PRs need at least one commit difference between base and head, so
+**do not** run `gh pr create` on a freshly-created branch — it will error
+with `No commits between main and rrr/v1.4/team-workspace`.
+
+Step-by-step:
 
 ```bash
-# From repo root, after your first commit on the branch
+# 1. Make sure your working tree is clean. If `git status` shows files
+#    you didn't touch (likely team-cms WIP that leaked in from a shared
+#    checkout), stash them on a SEPARATE stash so they don't end up on
+#    your PR:
+git stash push --include-untracked -m "out-of-scope-wip" -- apps/app/ apps/marketing/ apps/startup/
+git status   # should now be clean
+
+# 2. Run plan-phase. This is your FIRST commit-producing action — it
+#    creates 23-01-PLAN.md..23-04-PLAN.md (and the discuss/research
+#    artifacts if applicable) and commits them automatically.
+/rrr:plan-phase 23 --team team-workspace
+
+# 3. Now you have at least one commit on the branch. Push + open the PR:
 git push -u origin rrr/v1.4/team-workspace
 
 gh pr create \
@@ -28,7 +46,19 @@ gh pr create \
   --body-file .planning/workstreams/team-workspace/PHASE-23-PR.md
 ```
 
-(The body the command sends is THIS FILE — fine to leave the “DRAFT PR template” header in the rendered PR; reviewers know to skim past it.)
+(The body the command sends is THIS FILE — fine to leave the "DRAFT PR template" header in the rendered PR; reviewers know to skim past it.)
+
+If you really want the PR open BEFORE running plan-phase (e.g. to invite
+early review), make a marker commit instead:
+
+```bash
+# Touch your workstream STATE.md to bump last_activity → produces a
+# minimal commit you can open the PR on top of.
+sed -i '' "s/^last_activity:.*/last_activity: \"$(date +%Y-%m-%d)\"/" \
+  .planning/workstreams/team-workspace/STATE.md
+git add .planning/workstreams/team-workspace/STATE.md
+git commit -m "chore(team-workspace): start phase 23 workstream"
+```
 
 ---
 
