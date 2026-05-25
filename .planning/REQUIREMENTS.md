@@ -437,11 +437,11 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | STARTUP-CHANNEL-01..02 | Phase 28 | team-cms | Complete |
 | STARTUP-MARKETING-01..02 | Phase 28 | team-cms | Complete |
 | STARTUP-PILOT-01 | Phase 28 | team-cms | Deferred → v1.5 STARTUP-PILOT-LIVE-01 |
-| STARTUP-WEB-AUTH-01..04 | Phase 28.5 | team-cms | Pending |
-| STARTUP-WEB-DASH-01..03 | Phase 28.5 | team-cms | Pending |
-| STARTUP-AGENT-EMAIL-01..04 | Phase 28.5 | team-cms | Pending |
-| STARTUP-WEB-CTA-01 | Phase 28.5 | team-cms | Pending |
-| STARTUP-WORK-EMAIL-01 | Phase 28.5 | team-cms | Pending |
+| STARTUP-WEB-AUTH-01..04 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
+| STARTUP-WEB-DASH-01..03 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
+| STARTUP-AGENT-EMAIL-01..04 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
+| STARTUP-WEB-CTA-01 | Phase 28.5 | team-cms | Complete |
+| STARTUP-WORK-EMAIL-01 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
 | STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Pending |
 | STARTUP-VOICE-01..04 | Phase 29 | team-cms | Pending |
 | STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Pending |

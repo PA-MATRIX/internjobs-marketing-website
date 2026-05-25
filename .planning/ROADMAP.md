@@ -25,7 +25,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - [ ] **Phase 26: Knowledge Graph + GenZ Polish** — *team-workspace*. FalkorDB `:Employee` namespace reuse for Workspace agent + Mattermost GIF picker + canvas-confetti micro-animations
 - [ ] **Phase 27: Polish + Test Floor** — *team-workspace*. Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes
 - [x] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01 per explicit user decision). New `apps/startup/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
-- [ ] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms*. Inserted between Phase 28 and Phase 29 on 2026-05-25 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
+- [x] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms* — CODE-COMPLETE 2026-05-25 (5/5 plans; ops-config deferred to PHASE-28.5-DEFERRED-OPS.md — 12 user-action steps including DNS, Email Routing domain verification, wrangler secret put for STARTUPS_CLERK_*, Clerk webhook registration). Inserted between Phase 28 and Phase 29 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
 - [ ] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms*. Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
 
 ## Phase Details
@@ -317,11 +317,11 @@ Plans:
 **Plans**: 5 plans, 4 waves
 
 Plans:
-- [ ] 28.5-01-PLAN.md — DNS + Clerk app #3 bootstrap + secrets to Infisical + Email Routing domain verification [STARTUP-WEB-AUTH-01] (Wave 1)
-- [ ] 28.5-02-PLAN.md — `apps/startups/` Vite+React+Clerk scaffold + sign-in landing + dashboard skeleton + Pages Function proxy; deploys to startups.internjobs.ai [STARTUP-WEB-AUTH-01..02, STARTUP-WEB-DASH-01 partial] (Wave 2)
-- [ ] 28.5-03-PLAN.md — Founder dashboard live data + role creation form + candidate thread view + reply send [STARTUP-WEB-DASH-01..03] (Wave 3, parallel with 28.5-04)
-- [ ] 28.5-04-PLAN.md — Migration 0013 (agent_email UNIQUE) + slug algorithm + catch-all email Worker inbound + admin endpoint extension (Clerk invite + slug + welcome email) [STARTUP-AGENT-EMAIL-01..04] (Wave 3, parallel with 28.5-03)
-- [ ] 28.5-05-PLAN.md — Work-email enforcement webhook + marketing CTA flip + Playwright E2E test [STARTUP-WORK-EMAIL-01, STARTUP-WEB-CTA-01, STARTUP-WEB-AUTH-03..04] (Wave 4)
+- [x] 28.5-01-PLAN.md — DNS + Clerk app #3 bootstrap + secrets to Infisical + Email Routing domain verification [STARTUP-WEB-AUTH-01] (Wave 1)
+- [x] 28.5-02-PLAN.md — `apps/startups/` Vite+React+Clerk scaffold + sign-in landing + dashboard skeleton + Pages Function proxy; deploys to startups.internjobs.ai [STARTUP-WEB-AUTH-01..02, STARTUP-WEB-DASH-01 partial] (Wave 2)
+- [x] 28.5-03-PLAN.md — Founder dashboard live data + role creation form + candidate thread view + reply send [STARTUP-WEB-DASH-01..03] (Wave 3, parallel with 28.5-04)
+- [x] 28.5-04-PLAN.md — Migration 0013 (agent_email UNIQUE) + slug algorithm + catch-all email Worker inbound + admin endpoint extension (Clerk invite + slug + welcome email) [STARTUP-AGENT-EMAIL-01..04] (Wave 3, parallel with 28.5-03)
+- [x] 28.5-05-PLAN.md — Work-email enforcement webhook + marketing CTA flip + Playwright E2E test [STARTUP-WORK-EMAIL-01, STARTUP-WEB-CTA-01, STARTUP-WEB-AUTH-03..04] (Wave 4)
 
 **Research flags**: Resolved — 28.5-RESEARCH.md confirmed (1) CF Email Routing catch-all → Worker is supported, (2) Clerk blocklist is paid-tier; webhook fallback is the v1.4 implementation, (3) Vite+Pages Function proxy pattern confirmed.
 
@@ -391,7 +391,7 @@ Plans:
 | 26. Knowledge Graph + GenZ Polish | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 27. Polish + Test Floor | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 5/5 | ✓ Shipped (live pilot test deferred to v1.5) | 2026-05-25 |
-| 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 0/TBD | Not started | — |
+| 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 5/5 | ✓ Code-complete (ops deferred) | 2026-05-25 |
 | 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 0/TBD | Not started | — |
 
 <details>
