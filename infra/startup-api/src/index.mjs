@@ -187,6 +187,52 @@ app.post("/v1/startups/token", async (c) => {
   }
 });
 
+// ── POST /v1/startups/identity-by-clerk-id ───────────────────────────────────
+// Body: { clerk_user_id: string }
+// Returns: { startup_id, member_id, startup_name, role } or 404 not_found.
+//
+// Added in 28.5-02 to support the apps/startups CF Pages Function identity
+// resolution path. The Pages Function forwards a Clerk session JWT as
+// X-Clerk-Token, and 28.5-03 will add JWKS verification on the Fly side
+// that calls this endpoint after extracting `sub` from the verified JWT.
+//
+// Why a dedicated endpoint instead of overloading /v1/startups/token: the
+// MCP path is keyed on `mcp_token_hash` (the MCP install token), while the
+// web path is keyed on `clerk_user_id` set during signup (28.5-05 webhook).
+// Two distinct lookups, two distinct routes — explicit > clever.
+app.post("/v1/startups/identity-by-clerk-id", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const { clerk_user_id } = body ?? {};
+  if (!clerk_user_id || typeof clerk_user_id !== "string") {
+    return c.json({ error: "clerk_user_id_required" }, 400);
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.id AS startup_id, sm.id AS member_id,
+              s.name AS startup_name, sm.role
+         FROM startup_members sm
+         JOIN startups s ON s.id = sm.startup_id
+        WHERE sm.clerk_user_id = $1
+          AND s.status IN ('active', 'onboarding')
+        ORDER BY sm.created_at ASC
+        LIMIT 1`,
+      [clerk_user_id],
+    );
+    if (!rows[0]) return c.json({ error: "not_found" }, 404);
+    return c.json(rows[0]);
+  } catch (err) {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "startup_api_identity_lookup_failed",
+      error: err?.message,
+    }));
+    return c.json({ error: "query_failed" }, 500);
+  }
+});
+
 // ── POST /v1/startups ────────────────────────────────────────────────────────
 // Body: { company: string, founder_email: string, founder_name?: string,
 //         founder_phone?: string (ignored — schema has no phone column) }
