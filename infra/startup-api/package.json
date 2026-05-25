@@ -1,0 +1,16 @@
+{
+  "name": "internjobs-startup-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "node --watch src/index.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.7.11",
+    "pg": "^8.13.3"
+  }
+}

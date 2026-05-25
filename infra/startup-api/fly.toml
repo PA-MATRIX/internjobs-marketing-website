@@ -1,0 +1,43 @@
+# infra/startup-api/fly.toml
+# Thin Hono/Node REST proxy fronting internjobs-student-db for the
+# startup-mcp Cloudflare Worker (Phase 28) and the Phase 29 Telnyx
+# SMS/voice adapter. The Worker cannot reach internjobs-student-db.internal
+# directly (CF Workers cannot open TCP to Fly private network), so this
+# bridge accepts HTTPS calls from CF and forwards narrow SQL to Postgres.
+#
+# Sizing: shared-cpu-1x / 256mb mirrors infra/graph-api. min_machines_running=1
+# because the Phase 28 install snippet round-trips on the install path
+# (founder runs `claude mcp add ...` → MCP handshake → /v1/startups/token
+# lookup) — a cold start would add ~1s to the very first connect.
+#
+# CRITICAL: auto_stop_machines = "off"
+# Pilot cadence is sparse (5–10 founders, sporadic activity), but the
+# extra ~$2/mo is worth NOT making a founder wait through a cold boot the
+# first time they invoke an MCP tool.
+
+app = "internjobs-startup-api"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
