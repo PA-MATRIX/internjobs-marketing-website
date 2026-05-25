@@ -17,7 +17,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { requireOperatorAuth, setDevSessionCookie } from "./auth.mjs";
+import {
+  requireOperatorAuth,
+  setDevSessionCookie,
+  deriveLinkedInUrlFromClerkUser,
+  tryDeriveLinkedInProfileUrl,
+} from "./auth.mjs";
 import { signValue } from "./http.mjs";
 
 // ─── Test harness ────────────────────────────────────────────────────────────
@@ -225,6 +230,139 @@ test("requireOperatorAuth: real Clerk session with publicMetadata.userType=stude
   // header-dev → dev branch → spy not invoked. That's correct behavior:
   // dev sessions never hit Clerk Backend API.
   assert.equal(getUserCalled, false, "dev/header-dev sessions must NOT call Clerk Backend API");
+});
+
+// ─── deriveLinkedInUrlFromClerkUser ─────────────────────────────────────────
+//
+// Best-effort LinkedIn URL derivation from the Clerk user payload's
+// external_accounts. Lets /auth/callback skip the /linkedin/profile-url
+// prompt when Clerk has surfaced the vanity slug. Falls through to "" when
+// LinkedIn's OIDC scope didn't return one (the common case in modern setups).
+
+test("deriveLinkedIn: returns URL from external_account.username", () => {
+  const user = {
+    external_accounts: [
+      { provider: "oauth_linkedin_oidc", username: "raj-rentala" },
+    ],
+  };
+  assert.equal(
+    deriveLinkedInUrlFromClerkUser(user),
+    "https://www.linkedin.com/in/raj-rentala/",
+  );
+});
+
+test("deriveLinkedIn: returns URL from public_metadata.profile_url when present", () => {
+  const user = {
+    external_accounts: [
+      {
+        provider: "oauth_linkedin_oidc",
+        username: "",
+        public_metadata: { profile_url: "https://www.linkedin.com/in/custom-handle/" },
+      },
+    ],
+  };
+  assert.equal(
+    deriveLinkedInUrlFromClerkUser(user),
+    "https://www.linkedin.com/in/custom-handle/",
+  );
+});
+
+test("deriveLinkedIn: prefers public_metadata.profile_url over username", () => {
+  const user = {
+    external_accounts: [
+      {
+        provider: "oauth_linkedin_oidc",
+        username: "slug-from-clerk",
+        public_metadata: { profile_url: "https://www.linkedin.com/in/canonical/" },
+      },
+    ],
+  };
+  assert.equal(
+    deriveLinkedInUrlFromClerkUser(user),
+    "https://www.linkedin.com/in/canonical/",
+  );
+});
+
+test("deriveLinkedIn: returns '' when LinkedIn returned no slug", () => {
+  const user = {
+    external_accounts: [{ provider: "oauth_linkedin_oidc", username: "" }],
+  };
+  assert.equal(deriveLinkedInUrlFromClerkUser(user), "");
+});
+
+test("deriveLinkedIn: returns '' when no LinkedIn external_account", () => {
+  const user = {
+    external_accounts: [
+      { provider: "oauth_google", username: "raj" },
+      { provider: "oauth_github", username: "raj" },
+    ],
+  };
+  assert.equal(deriveLinkedInUrlFromClerkUser(user), "");
+});
+
+test("deriveLinkedIn: returns '' on missing/empty external_accounts", () => {
+  assert.equal(deriveLinkedInUrlFromClerkUser({}), "");
+  assert.equal(deriveLinkedInUrlFromClerkUser({ external_accounts: [] }), "");
+  assert.equal(deriveLinkedInUrlFromClerkUser(null), "");
+});
+
+test("deriveLinkedIn: rejects username with invalid characters", () => {
+  const user = {
+    external_accounts: [
+      { provider: "oauth_linkedin_oidc", username: "evil/path?injection" },
+    ],
+  };
+  assert.equal(deriveLinkedInUrlFromClerkUser(user), "");
+});
+
+test("deriveLinkedIn: rejects non-LinkedIn URL in public_metadata.profile_url", () => {
+  const user = {
+    external_accounts: [
+      {
+        provider: "oauth_linkedin_oidc",
+        username: "",
+        public_metadata: { profile_url: "https://evil.example.com/in/raj/" },
+      },
+    ],
+  };
+  assert.equal(deriveLinkedInUrlFromClerkUser(user), "");
+});
+
+test("tryDeriveLinkedInProfileUrl: returns '' (never throws) when Clerk API errors", async () => {
+  const failingClient = {
+    users: {
+      async getUser() {
+        throw new Error("clerk_backend_500");
+      },
+    },
+  };
+  const url = await tryDeriveLinkedInProfileUrl(
+    "user_x",
+    { clerk: { secretKey: "sk_test", backendApiUrl: "http://localhost" } },
+    failingClient,
+  );
+  assert.equal(url, "");
+});
+
+test("tryDeriveLinkedInProfileUrl: returns derived URL via injected mock client", async () => {
+  const client = {
+    users: {
+      async getUser(userId) {
+        assert.equal(userId, "user_abc");
+        return {
+          external_accounts: [
+            { provider: "oauth_linkedin_oidc", username: "abc-handle" },
+          ],
+        };
+      },
+    },
+  };
+  const url = await tryDeriveLinkedInProfileUrl(
+    "user_abc",
+    { clerk: { secretKey: "sk_test", backendApiUrl: "http://localhost" } },
+    client,
+  );
+  assert.equal(url, "https://www.linkedin.com/in/abc-handle/");
 });
 
 test("setDevSessionCookie: operator overrides produce an operator session", () => {

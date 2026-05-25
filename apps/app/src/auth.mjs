@@ -337,6 +337,48 @@ export async function requireOperatorAuth(req, res, config, clerkClient = defaul
   return { ...auth, userType: "operator" };
 }
 
+// Best-effort: derive a public LinkedIn profile URL from a Clerk user
+// payload's external_accounts. Returns "" if no LinkedIn account or no
+// vanity slug. LinkedIn's modern OIDC scope rarely returns the vanity
+// slug, but Clerk surfaces it as `username` on the external_account
+// when it is available; some setups also populate `public_metadata.profile_url`
+// via a Clerk Pipeline. Pure function — easy to unit test.
+export function deriveLinkedInUrlFromClerkUser(user) {
+  const accounts = Array.isArray(user?.external_accounts) ? user.external_accounts : [];
+  const linkedin = accounts.find(
+    (a) => a && typeof a.provider === "string" && a.provider.toLowerCase().includes("linkedin"),
+  );
+  if (!linkedin) return "";
+  const customUrl =
+    linkedin.public_metadata?.profile_url ||
+    linkedin.publicMetadata?.profile_url ||
+    "";
+  if (typeof customUrl === "string" && /^https:\/\/(www\.)?linkedin\.com\/in\//.test(customUrl)) {
+    return customUrl;
+  }
+  const username = typeof linkedin.username === "string" ? linkedin.username.trim() : "";
+  if (username && /^[A-Za-z0-9-]{3,100}$/.test(username)) {
+    return `https://www.linkedin.com/in/${username}/`;
+  }
+  return "";
+}
+
+// Best-effort fetch + derive. Swallows errors so a Clerk Backend API hiccup
+// never blocks sign-in — we just fall through to the explicit prompt page.
+export async function tryDeriveLinkedInProfileUrl(
+  userId,
+  config,
+  clerkClient = defaultClerkClient,
+) {
+  if (!userId || !config?.clerk?.secretKey) return "";
+  try {
+    const user = await clerkClient.users.getUser(userId, config);
+    return deriveLinkedInUrlFromClerkUser(user);
+  } catch {
+    return "";
+  }
+}
+
 // Default Clerk Backend API client — thin fetch wrapper mirroring the same
 // pattern as the /auth/callback handler in server.mjs. We don't pull in
 // @clerk/backend to keep deps minimal and to match how the rest of the

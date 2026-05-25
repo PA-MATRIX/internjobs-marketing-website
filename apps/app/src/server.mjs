@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getConfig, getMissingProviderConfig } from "./config.mjs";
-import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie, applyHandshakeOrContinue } from "./auth.mjs";
+import { getAuth, getSignInUrl, getStartupSignInUrl, requireStartupAuth, requireOperatorAuth as requireOperatorAuthImpl, setDevSessionCookie, clearDevSessionCookie, applyHandshakeOrContinue, tryDeriveLinkedInProfileUrl } from "./auth.mjs";
 import { readBody, readForm, redirect, sendHtml, sendJson, getClientIp } from "./http.mjs";
 import { createStore, hasLinkedInProfileUrl } from "./store.mjs";
 import { createWelcomeText } from "./messaging.mjs";
@@ -324,6 +324,19 @@ const server = createServer(async (req, res) => {
         redirect(res, "/startup/dashboard");
         return;
       }
+
+      // Best-effort: if the session JWT didn't carry a LinkedIn URL (it
+      // usually doesn't — Clerk session JWTs only ship `sub` by default,
+      // and LinkedIn's modern OIDC scope doesn't return a vanity slug),
+      // try to recover it from the Clerk user's external_accounts before
+      // prompting the student. Swallow all errors — this path NEVER
+      // blocks sign-in; falls through to the existing prompt page when
+      // we can't derive a URL.
+      if (!auth.linkedinProfileUrl && auth.provider === "linkedin" && config.clerk.secretKey) {
+        const derived = await tryDeriveLinkedInProfileUrl(auth.clerkUserId, config);
+        if (derived) auth.linkedinProfileUrl = derived;
+      }
+
       const student = await store.upsertStudentFromAuth(auth);
       if (!hasPairableLinkedIn(auth, student)) {
         redirect(res, "/linkedin/profile-url");
