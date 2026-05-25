@@ -27,6 +27,7 @@ import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
 import { handleInboundEmail } from "./routes/email";
+import { handleClerkWebhook } from "./routes/webhooks";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -111,6 +112,16 @@ app.route("/admin", adminRouter);
 // what_hiring_for) and emails Ridhi / logs the lead. CORS-restricted to
 // internjobs.ai. NO auth — public marketing endpoint.
 app.route("/api", apiRouter);
+
+// ── Clerk webhook (Plan 28.5-05 — work-email enforcement) ────────────────────
+// POST /webhooks/clerk — receives user.created events from Clerk app #3 with
+// Svix signature verification. Deletes any newly-created user whose primary
+// email is on the personal-domain blocklist (gmail/yahoo/etc.) via the Clerk
+// Backend API (DELETE /v1/users/:id). Work emails proceed unaffected.
+// Webhook registration in Clerk Dashboard is DEFER-28.5-05-A; the Svix signing
+// secret extraction + `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET` is
+// DEFER-28.5-05-B. Until both close, this endpoint returns 503.
+app.post("/webhooks/clerk", (c) => handleClerkWebhook(c.req.raw, c.env));
 
 // ── Root ─────────────────────────────────────────────────────────────────────
 app.get("/", (c) =>
