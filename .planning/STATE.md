@@ -4,13 +4,13 @@ milestone: "v1.4"
 phase: 28
 phase_name: "Startup MCP Server + Channel-Adapter Core"
 phase_total: 8
-plan: 1
+plan: 2
 plan_total: 5
 status: "in_progress"
-progress: 6
-last_activity: "2026-05-24"
-session_last: "2026-05-24"
-resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-02-PLAN.md"
+progress: 8
+last_activity: "2026-05-25"
+session_last: "2026-05-25"
+resume_file: ".planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-03-PLAN.md"
 blockers: []
 ---
 
@@ -34,12 +34,12 @@ See: .planning/WORKSTREAMS.md (team assignments)
 ## Current Position
 
 Milestone: v1.4 Pilot Readiness
-Phase: 28 of 29 (Startup MCP Server + Channel-Adapter Core — team-cms) — **IN PROGRESS (1/5 plans complete)**
-Plan: 28-01 complete (internjobs-startup-api Fly proxy deployed + migrations 0011/0012 applied); 28-02..05 unblocked
-Status: 28-01 deployed and smoke-verified end-to-end (13/13 PASS in prod); ready to execute 28-02 (startup-mcp Cloudflare Worker scaffold)
-Last activity: 2026-05-24 — 28-01 executed: Hono/Node Fly proxy at internjobs-startup-api.fly.dev with 11 Bearer-authed endpoints; migrations 0011 (mcp_token_hash + startup_channel_links + startup_action_log + outbound_messages) + 0012 (inbound_messages.startup_mark) applied live to internjobs-student-db; B2 UPSERT invariant verified in prod (re-POST /v1/channel-links → opt_in_flags + updated_at both advance). 6 deviations all auto-fixed (5x Rule 1 schema-mismatch bugs realigning to actual DB; 1x Rule 3 missing outbound_messages table created in 0011). 2 atomic commits + this metadata commit.
+Phase: 28 of 29 (Startup MCP Server + Channel-Adapter Core — team-cms) — **IN PROGRESS (2/5 plans complete)**
+Plan: 28-02 complete (internjobs-startup-mcp Cloudflare Worker live at mcp.internjobs.ai with 4-tool MCP surface); 28-03..05 unblocked
+Status: 28-02 deployed and smoke-verified end-to-end (MCP handshake + tools/list + me + discover_actions + search/execute stubs); ready to execute 28-03 (search/execute action handlers — fills the Wave 2 stubs)
+Last activity: 2026-05-25 — 28-02 executed: apps/startup/ CF Worker scaffold with createMcpHandler() stateless MCP surface at mcp.internjobs.ai (custom domain auto-provisioned). Bearer auth via SHA-256(raw_token) → POST /v1/startups/token to the 28-01 Fly proxy. 4 tools registered (me, discover_actions, search, execute) per Stainless pattern. me() returns {startup, member, role_count: 0, recent_activity}; discover_actions() returns 5 action schemas with snake_case input_schema; search/execute return {ok: true, placeholder: true} stubs (Plan 28-03 fills). 1 deviation auto-fixed (Rule 3: @modelcontextprotocol/sdk pin-exact 1.26.0 to dedupe with agents@0.7.9's nested copy — TS2345 type-identity error from dual-install). 2 atomic commits (scaffold + feat) + this metadata commit. STARTUP_API_SECRET (from 28-01) + new STARTUP_MCP_ADMIN_SECRET (openssl rand -hex 32, used by 28-04) both uploaded via wrangler secret put.
 
-Progress: ███░░░░░░░ 9% (6/68 requirements done; STARTUP-MCP-01..02 + STARTUP-CHANNEL-01 closed by 28-01; BRAND-VERIFY-01/02/03 closed by 22-05; 17 brand-layout/logo/copy reqs by 22-04; 8 brand foundation reqs by 22-03; LAKERA-V2-01/02/03 by 22-01; SAFETY-VERIFY-LIVE-01/02 by 22-02 — -03 deferred to v1.5)
+Progress: ████░░░░░░ 12% (8/68 requirements done; STARTUP-MCP-01..04 closed by 28-01+28-02; STARTUP-CHANNEL-01 closed by 28-01; BRAND-VERIFY-01/02/03 closed by 22-05; 17 brand-layout/logo/copy reqs by 22-04; 8 brand foundation reqs by 22-03; LAKERA-V2-01/02/03 by 22-01; SAFETY-VERIFY-LIVE-01/02 by 22-02 — -03 deferred to v1.5)
 
 ## Team Mode
 
@@ -73,7 +73,7 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 | 25 | 0 | TBD | — |
 | 26 | 0 | TBD | — |
 | 27 | 0 | TBD | — |
-| 28 | 1 | 5 | ~11 min (28-01: ~11 min) |
+| 28 | 2 | 5 | ~8.5 min (28-01: ~11 min, 28-02: ~6 min) |
 
 ## Accumulated Context
 
@@ -130,12 +130,20 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - **28-01: pgvector cast pattern locked.** Pass embeddings as `[n1,n2,...]` text literal + `::vector` cast in SQL — avoids needing a custom node-postgres oid parser. 768-dim hard-validated server-side; dim mismatch returns 400 `embedding_dim_mismatch`.
 - **28-01: /v1/threads/:id/mark uses a 3-way OR match** because `inbound_messages` has no first-class `thread_id` column (threading lives in `student_threads.thread_key` joined via `conversations`). Matches on `id::text`, `metadata->>'thread_id'`, or `metadata->>'student_thread_id'`. rowCount=0 returns `{ok:true, updated:0}` (idempotent-friendly; doesn't leak thread existence via 404). v1.5 hygiene: add a real `thread_id` column once threading model stabilizes.
 - **28-01: infra/{name}-api/ Fly Hono/Node proxy pattern formalized.** Both `infra/graph-api/` (v1.3) and `infra/startup-api/` (v1.4) follow identical shape: package.json + Dockerfile + fly.toml + src/index.mjs + smoke.mjs, Bearer auth via node:crypto timingSafeEqual, min_machines_running=1 (always-warm), shared-cpu-1x/256mb, primary_region=ord. Any future CF-Worker-needs-Fly-DB phase ships its own infra/{name}-api/ rather than fattening the others.
+- **28-02: createMcpHandler (stateless) over McpAgent (DO-backed) for 4-tool surfaces.** `apps/startup/` uses `createMcpHandler()` from `agents/mcp` + a fresh `McpServer` per request via `buildMcpHandler()` called inside the Hono route handler. No DO migration overhead, no per-session state needed for the search/execute/me/discover_actions catalog. `apps/agentic-inbox/` continues to use `McpAgent` because it has per-mailbox state. Future MCP surfaces on Workers should pick based on state needs (stateless → createMcpHandler; stateful per session → McpAgent).
+- **28-02: @modelcontextprotocol/sdk MUST be exact-pinned when consuming the `agents` package.** Caret ranges (`^1.26.0`) resolve to latest minor (1.29.0) while `agents@0.7.9` transitively pins exactly 1.26.0, producing a dual-install with distinct private-property type identities → TS2345 errors on `createMcpHandler(McpServer, ...)`. Pin-exact dedups to one hoisted copy. Inline comment in `apps/startup/package.json` documents the constraint; lockstep upgrade with `agents` when it bumps.
+- **28-02: Workers custom domain via `routes[]+custom_domain`** auto-provisions DNS + Cloudflare-managed SSL on first `wrangler deploy` — no separate DNS step. Matches `apps/parrot/wrangler.jsonc` pattern. Used for `mcp.internjobs.ai`.
+- **28-02: Bearer-in-header-only auth model.** `Authorization: Bearer <per-startup-token>` is the only path. URL-path tokens explicitly rejected (leak in logs, referrers, intermediate proxies). Worker SHA-256 hashes the raw token before any outbound call; raw token never logged. Constant-time comparison happens server-side at the Fly proxy.
+- **28-02: ChatGPT OAuth probe → 404 JSON** (not 200, not 500). 200 forces ChatGPT to expect RFC 8414 metadata; 500 marks the Worker as broken. 404 with `{error: "no_oauth", issuer: ...}` lets ChatGPT fall back cleanly to Bearer-header auth.
+- **28-02: Stainless `discover_actions` returns input_schema in snake_case.** Matches OpenAPI training-data distribution for LLM tool selection — do NOT switch to camelCase even though the Worker is TypeScript-native.
+- **28-02: Per-startup rate limiting deferred to 28-03.** Plan's must_have wasn't shipped because true token-bucket-per-startup needs a DO or KV namespace (expands scaffold scope). The Fly proxy at `/v1/startups/token` serves as the natural per-request bottleneck during Wave 2. Revisit once `search`/`execute` start firing real pilot load.
 
 ### Pending Todos
 
 - **Persist STARTUP_API_SECRET to Infisical** — value at `/tmp/startup_api_secret.txt`, target path `/internjobs-ai/STARTUP_API_SECRET` env `prod` workspace `26995afd-9a6f-4690-912f-01cbcebb76d5`. Will require `infisical login` against the internjobs org first.
+- **Persist STARTUP_MCP_ADMIN_SECRET to Infisical** — value at `/tmp/startup_mcp_admin_secret.txt` (64 hex chars; first 8: `aab8e96d`). Target: `/internjobs-ai/STARTUP_MCP_ADMIN_SECRET` env=prod. Already live on the Worker via `wrangler secret put`; Plan 28-04 reads it from the Worker, so Infisical is hygiene only.
 - **Update MEMORY.md infisical-project.md** — replace stale workspace ID `2c12f042...` with correct `26995afd-9a6f-4690-912f-01cbcebb76d5` (the value in repo `.infisical.json`).
-- Execute 28-02 (startup-mcp Cloudflare Worker scaffold + 4 MCP tools)
+- Execute 28-03 (search + execute action handlers fill in the Wave 2 stubs)
 - Optional: `/rrr:assign-phases` to formalize team assignments in `.planning/team-mode.json`
 - CODEOWNERS file at `.github/CODEOWNERS` per the team scope split (deferred — drafted in earlier session, not yet committed)
 - Branch protection on `main` requiring CODEOWNERS approval
@@ -155,6 +163,6 @@ Pre-existing TS error in `apps/parrot/workers/types.ts:55` (`STUDENT_API_URL` di
 
 ## Session Continuity
 
-Last session: 2026-05-24 — 28-01 (internjobs-startup-api Fly proxy + migrations 0011/0012) complete. Hono/Node REST proxy at `https://internjobs-startup-api.fly.dev` deployed in `ord` (2 shared-cpu-1x machines, min_machines_running=1, auto_stop=off). 11 endpoints, all Bearer-authed via node:crypto timingSafeEqual: GET /health, POST /v1/startups/token, POST /v1/startups, PATCH /v1/startups/:id/token, POST /v1/roles, POST /v1/messages, POST /v1/channel-links (UPSERT DO UPDATE), POST /v1/action-log, POST /v1/search/candidates (768-dim bge embeddings), PATCH /v1/roles/:id (ownership-checked), PATCH /v1/threads/:id/mark (3-way OR match). Migration 0011 added 3 columns to startups (mcp_token_hash + 2 timestamps), 3 tables (startup_channel_links, startup_action_log, outbound_messages — last is a deviation, not pre-existing), 6 indexes. Migration 0012 added inbound_messages.startup_mark + partial index. Smoke suite 13/13 PASS against prod URL. Load-bearing B2 UPSERT invariant verified directly in DB: two POST /v1/channel-links with same key tuple + different opt_in_flags → second value sticks and updated_at advances (psql probe returned opt_in_flags=true + metadata="re-post" + updated_advanced=t). 6 deviations all auto-fixed under Rule 1 (5x schema-mismatch bugs) + Rule 3 (1x missing outbound_messages table). 2 atomic task commits (f0c6bda migration, 05c39b4 proxy) + this metadata commit. STARTUP_API_SECRET live on Fly; Infisical sync flagged as user-setup follow-up (CLI in wrong org).
-Stopped at: 28-01 complete. Plans 28-02..05 all unblocked — the proxy + schema is the load-bearing dependency for the startup-mcp Cloudflare Worker (28-02), channel-adapter pattern (28-03), admin/onboarding endpoint (28-04), and marketing MCP install page (28-05).
-Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-02-PLAN.md`
+Last session: 2026-05-25 — 28-02 (apps/startup/ Cloudflare Worker MCP scaffold) complete. Worker `internjobs-startup-mcp` deployed at `https://mcp.internjobs.ai/mcp` (Version 07f2d90b-839e-4e94-8ee8-7509034b0cfc) via Workers Custom Domain (auto-provisioned DNS + Cloudflare-managed SSL on first wrangler deploy). 4-tool MCP surface via `createMcpHandler` from `agents@0.7.9` + `@modelcontextprotocol/sdk@1.26.0` (pinned exact to dedup with agents' transitive pin). Bearer auth middleware on `/mcp` + `/mcp/*` SHA-256-hashes the raw Authorization header and POSTs the hash to the 28-01 Fly proxy at `/v1/startups/token`; missing/wrong Bearer → 401 JSON. McpServer is created fresh per request via `buildMcpHandler(env, startupCtx)` called inside `app.all("/mcp")` (no module-level singleton — eliminates cross-startup state leak per SDK 1.26.0+ requirement). Tools: `me()` returns `{startup:{id,name},member:{id},role_count:0,recent_activity:<string>}` shape (role_count is documented placeholder until 28-03 adds `/v1/startups/:id/stats` on the Fly proxy); `discover_actions()` returns 5 action schemas with snake_case input_schema (post_role, reply_to_candidate, update_role, archive_role, mark_candidate); `search()` + `execute()` return stable-shape `{ok:true, placeholder:true, ..., _note:"...Plan 28-03"}` stubs. ChatGPT OAuth probe `/.well-known/oauth-authorization-server` returns 404 JSON with `{error:"no_oauth"}` so ChatGPT falls back to Bearer-header auth. `/healthz` → 200; `/admin/*` + `/api/*` → 503 stubs for Plans 28-04 + 28-05. Smoke verified end-to-end with a throwaway "smoke-28-02-mcp" startup: MCP initialize 200 (protocolVersion 2025-06-18); tools/list returns 4 tools; tools/call me + discover_actions + search + execute all return expected shapes. 1 deviation auto-fixed (Rule 3: SDK pin-exact 1.26.0 to eliminate dual-install with agents' nested copy; TS2345 type-identity error on McpServer._serverInfo private property). 2 atomic task commits (f471287 scaffold, 2ec06b6 server+tools+deploy) + this metadata commit. Two secrets uploaded via `wrangler secret put`: STARTUP_API_SECRET (from 28-01's /tmp file) + STARTUP_MCP_ADMIN_SECRET (newly minted via `openssl rand -hex 32`, stashed at /tmp/startup_mcp_admin_secret.txt). Per-startup rate limiting deferred (must_have not shipped — needs DO or KV; Fly proxy is the natural Wave 2 bottleneck).
+Stopped at: 28-02 complete. Plans 28-03..05 all unblocked — the Worker + auth surface is the load-bearing dependency for the search/execute action handlers (28-03), admin/onboarding endpoint (28-04), and marketing MCP install page (28-05). All three plans will mount handlers under existing 503 stubs without touching the MCP routes.
+Resume file: `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/28-03-PLAN.md`
