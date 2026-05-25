@@ -264,14 +264,16 @@ Documented in `apps/startup-mcp/CHANNELS.md` as part of this phase. Future chann
 7. `apps/startup-mcp/CHANNELS.md` documents the path from MCP-only to Telnyx SMS/Voice (Phase 29) and to Slack/Discord/Teams (v1.5) as transport adapters on the same core — proves multi-channel-ready
 8. The `/startups` marketing page has a "Request access — we'll text you the install" CTA that emails Ridhi the founder's details
 
-**Plans**: TBD (likely 3)
+**Plans**: 5 plans
 
 Plans:
-- [ ] 28-01: MCP server scaffold + auth + 4-tool surface (`me`, `discover_actions`, `search`, `execute`) + `startup_channel_links` + `startup_action_log` schema + 5 action handlers (STARTUP-MCP-01..10 + STARTUP-CHANNEL-01)
-- [ ] 28-02: Admin onboarding endpoint + per-startup token issuance + SMS install-snippet sender (STARTUP-ADMIN-01..02)
-- [ ] 28-03: Marketing CTA on `/startups` + channels-grid "how we work with you" section (Claude/ChatGPT/Voice/SMS/Email primary; Slack/Discord/Teams "coming soon") + `CHANNELS.md` architecture doc + first pilot install end-to-end + evidence committed (STARTUP-MARKETING-01..02 + STARTUP-CHANNEL-02 + STARTUP-PILOT-01)
+- [ ] 28-01-PLAN.md — `internjobs-startup-api` Fly REST proxy + SQL migration 0011 (mcp_token_hash + startup_channel_links + startup_action_log) [STARTUP-CHANNEL-01 + infrastructure for all MCP reqs]
+- [ ] 28-02-PLAN.md — `apps/startup/` CF Worker scaffold + Bearer auth + 4 tool stubs + deploys to `mcp.internjobs.ai` [STARTUP-MCP-01..04]
+- [ ] 28-03-PLAN.md — Full 5 action handlers + search() across 6 scopes + per-action authz + audit log [STARTUP-MCP-05..10]
+- [ ] 28-04-PLAN.md — `POST /admin/startups/new` concierge admin endpoint + SMS install-snippet sender [STARTUP-ADMIN-01..02]
+- [ ] 28-05-PLAN.md — Marketing CTA + channels grid + `apps/startup/CHANNELS.md` + first pilot E2E install [STARTUP-MARKETING-01..02 + STARTUP-CHANNEL-02 + STARTUP-PILOT-01]
 
-**Research flags**: Unlikely (Stainless pattern documented; existing v1.2 schema already has `startups`, `startup_members`, `roles`; existing student-app `/internal/*` API surface from Neon-exit is the write path)
+**Research flags**: Unlikely (Stainless pattern documented; existing v1.2 schema already has `startups`, `startup_members`, `roles`; `internjobs-graph-api` pattern from v1.3 Phase 18 is the template for the new `internjobs-startup-api` Fly proxy)
 
 ---
 
