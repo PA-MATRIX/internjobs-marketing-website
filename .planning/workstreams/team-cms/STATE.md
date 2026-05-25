@@ -4,7 +4,7 @@ team: "team-cms"
 milestone: "v1.4"
 current_phase: 28.5
 plan_total: 5
-status: planned
+status: in_progress
 last_activity: "2026-05-25"
 ---
 
@@ -26,11 +26,13 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 24 wave 1 complete (24-01 and 24-02 both shipped); awaiting orchestrator phase-close
-Current phase: 24 (Neon-Exit Closeout)
-Current plan: 24-01 ✓ shipped (verification), 24-02 ✓ shipped (docs refresh)
-Blockers: None
-Deferred to v1.5: `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md "User Setup Required"). Code-verified PASS; live-HTTP confirmation needs a browser session.
+Status: In progress — Phase 28.5 wave 1 plan 28.5-01 shipped (auto portion); 7-step external-dashboard checkpoint deferred to PHASE-28.5-DEFERRED-OPS.md per user "don't wait on me" (2026-05-25)
+Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
+Current plan: 28.5-01 ✓ shipped (auto + deferred-ops doc); next is 28.5-02 (Vite scaffold)
+Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G entries (see PHASE-28.5-DEFERRED-OPS.md)
+Deferred to v1.5:
+- `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
+- `DEFER-28.5-01-A..G` — Clerk #3 wrangler secret injection, Clerk frontend-api CNAME, CF Pages project + custom domain, CF Email Routing domain verify (SPF/DKIM/DMARC), catch-all → Worker, Clerk webhook signing secret, DNS propagation check. See `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/PHASE-28.5-DEFERRED-OPS.md`.
 
 ### Plan 24-01 completion (2026-05-25)
 
@@ -62,12 +64,40 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 
 - **Phase 22** — Lakera Verification + Marketing Brand Refresh (5/5 plans, shipped 2026-05-24)
 - **Phase 28** — Startup MCP Server + Channel-Adapter Core (5/5 plans, shipped 2026-05-25; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01)
+- **Phase 24** — Neon-Exit Closeout (2/2 plans shipped 2026-05-25; awaiting orchestrator phase-close)
 
 ## Remaining phases (team-cms)
 
-- **Phase 24** — Neon-Exit Closeout *(current — 2 plans planned)* — verification + docs refresh; no code changes expected
-- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email
+- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 1/5 plans shipped)*
 - **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
+
+## Phase 28.5 plan summary
+
+| Plan | Objective | Wave | Deps | Status |
+|------|-----------|------|------|--------|
+| 28.5-01 | Clerk app #3 + DNS + Email Routing bootstrap (STARTUPS_CLERK_* wrangler stubs + PHASE-28.5-DEFERRED-OPS.md backlog) | 1 | none | ✓ Shipped 2026-05-25 (auto portion; 7-step external-ops checkpoint → DEFERRED-OPS.md) |
+| 28.5-02 | TBD — Vite scaffold | - | 28.5-01 | Planned |
+| 28.5-03 | TBD — routing | - | 28.5-02 | Planned |
+| 28.5-04 | TBD — startup Worker email handler | - | 28.5-03 | Planned |
+| 28.5-05 | TBD — Clerk webhook | - | 28.5-04 | Planned |
+
+### Plan 28.5-01 completion (2026-05-25)
+
+Two-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `879c9a9` `feat(28.5-01)`: added 4 STARTUPS_CLERK_* references to `apps/startup/wrangler.jsonc`
+  (JWKS_URL + ISSUER as empty-string vars; SECRET_KEY + WEBHOOK_SECRET in secrets-comment block).
+  Pattern matches existing STARTUP_API_SECRET / TELNYX_API_KEY comments. No hardcoded values.
+- `9a8d470` `docs(28.5-01)`: created `PHASE-28.5-DEFERRED-OPS.md` (173 lines) capturing all 7
+  external-dashboard sub-steps as `DEFER-28.5-01-A..G` entries with exact acceptance criteria
+  and downstream-blocker lists.
+
+Deviation (Rule 4 — Architectural, user pre-approved): The `checkpoint:human-verify` task in the
+plan was deferred wholesale rather than executed, per user instruction "don't wait on me — finish
+all the phases" (2026-05-25 session). All 7 sub-steps are captured in DEFERRED-OPS.md with no
+fidelity loss.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-SUMMARY.md`
 
 ## Phase 24 plan summary
 
