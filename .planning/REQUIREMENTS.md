@@ -442,10 +442,10 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | STARTUP-AGENT-EMAIL-01..04 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
 | STARTUP-WEB-CTA-01 | Phase 28.5 | team-cms | Complete |
 | STARTUP-WORK-EMAIL-01 | Phase 28.5 | team-cms | Code-complete (ops deferred) |
-| STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Pending |
-| STARTUP-VOICE-01..04 | Phase 29 | team-cms | Pending |
-| STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Pending |
-| STARTUP-MULTICHAN-01..02 | Phase 29 | team-cms | Pending |
+| STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Code-complete (ops deferred) |
+| STARTUP-VOICE-01..04 | Phase 29 | team-cms | Code-complete (ops deferred) |
+| STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Code-complete (ops deferred) |
+| STARTUP-MULTICHAN-01..02 | Phase 29 | team-cms | Code-complete (ops deferred — pilot E2E deferred to v1.5 STARTUP-PILOT-LIVE-02) |
 
 **Coverage (v1.4):**
 - Active requirements: 109 total (46 original + 22 brand + 14 Startup MCP + 13 Startup Web/Email + 14 Startup Telnyx)

@@ -26,7 +26,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - [ ] **Phase 27: Polish + Test Floor** — *team-workspace*. Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes
 - [x] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01 per explicit user decision). New `apps/startup/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
 - [x] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms* — CODE-COMPLETE 2026-05-25 (5/5 plans; ops-config deferred to PHASE-28.5-DEFERRED-OPS.md — 12 user-action steps including DNS, Email Routing domain verification, wrangler secret put for STARTUPS_CLERK_*, Clerk webhook registration). Inserted between Phase 28 and Phase 29 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
-- [ ] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms*. Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
+- [x] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms* — CODE-COMPLETE 2026-05-25 (3/3 plans; ops-config deferred to PHASE-29-DEFERRED-OPS.md — 22 user-action steps spanning DEFER-29-01-A..K + 29-02-A..F + 29-03-A..E, including Telnyx account signup + BRN submission + number purchase + API key + Voice AI portal config + R2 bucket + KV namespace + cron deploy + first pilot E2E). Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
 
 ## Phase Details
 
@@ -362,9 +362,9 @@ Plans:
 **Plans**: 3 plans, 2 waves
 
 Plans:
-- [ ] 29-01-PLAN.md — SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 (Wave 1) [STARTUP-TELNYX-01..06]
-- [ ] 29-02-PLAN.md — Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md (Wave 2, parallel with 29-03) [STARTUP-VOICE-01..04]
-- [ ] 29-03-PLAN.md — Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md (Wave 2, parallel with 29-02) [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02]
+- [x] 29-01-PLAN.md — SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 (Wave 1) [STARTUP-TELNYX-01..06]
+- [x] 29-02-PLAN.md — Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md (Wave 2, parallel with 29-03) [STARTUP-VOICE-01..04]
+- [x] 29-03-PLAN.md — Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md (Wave 2, parallel with 29-02) [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02]
 
 **Research flags**: Resolved — 29-RESEARCH.md confirmed (1) toll-free Telnyx skips A2P 10DLC, BRN required for verification, (2) Voice AI MCP integration confirmed supported; may be plan-tier gated → TELNYX_USE_MCP_INTEGRATION feature flag codes both paths, (3) SMS webhook Ed25519-signed, inbound shape fully documented
 
@@ -392,7 +392,7 @@ Plans:
 | 27. Polish + Test Floor | v1.4 | team-workspace | 0/TBD | Not started | — |
 | 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 5/5 | ✓ Shipped (live pilot test deferred to v1.5) | 2026-05-25 |
 | 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 5/5 | ✓ Code-complete (ops deferred) | 2026-05-25 |
-| 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 0/TBD | Not started | — |
+| 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 3/3 | ✓ Code-complete (ops deferred) | 2026-05-25 |
 
 <details>
 <summary>✅ v1.3 Pilot Hardening (Phases 18-21) — SHIPPED partial 2026-05-19</summary>
