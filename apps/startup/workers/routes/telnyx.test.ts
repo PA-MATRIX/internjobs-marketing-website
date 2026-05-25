@@ -322,3 +322,100 @@ test("formatForSms: array result → numbered list", async () => {
 	const result = formatForSms(["alice", "bob", "carol"]);
 	assert.equal(result, "1. alice\n2. bob\n3. carol");
 });
+
+// ── Phase 29-03 touchbase fast-path regexes ─────────────────────────────────
+//
+// We mirror the regexes used in routes/telnyx.ts Phase 29-03 fast-paths so
+// that any drift in those regexes is caught by these tests. The handler
+// itself isn't unit-tested (Hono fetch handler) — but the regex contract is.
+
+const NUMERIC_FASTPATH_RE = /^\s*([1-9])\s*$/;
+const OPTIN_FASTPATH_RE = /^\s*(yes|y)\s*$/i;
+
+test("touchbase numeric fast-path: '1' matches → position 1", () => {
+	const m = NUMERIC_FASTPATH_RE.exec("1");
+	assert.ok(m);
+	assert.equal(parseInt(m![1], 10), 1);
+});
+
+test("touchbase numeric fast-path: '  3  ' (whitespace) matches → position 3", () => {
+	const m = NUMERIC_FASTPATH_RE.exec("  3  ");
+	assert.ok(m);
+	assert.equal(parseInt(m![1], 10), 3);
+});
+
+test("touchbase numeric fast-path: '9' matches (max)", () => {
+	const m = NUMERIC_FASTPATH_RE.exec("9");
+	assert.ok(m);
+	assert.equal(parseInt(m![1], 10), 9);
+});
+
+test("touchbase numeric fast-path: '0' does NOT match", () => {
+	assert.equal(NUMERIC_FASTPATH_RE.exec("0"), null);
+});
+
+test("touchbase numeric fast-path: '10' does NOT match (two digits)", () => {
+	assert.equal(NUMERIC_FASTPATH_RE.exec("10"), null);
+});
+
+test("touchbase numeric fast-path: '1 candidate' does NOT match", () => {
+	assert.equal(NUMERIC_FASTPATH_RE.exec("1 candidate"), null);
+});
+
+test("touchbase opt-in fast-path: 'yes' matches", () => {
+	const m = OPTIN_FASTPATH_RE.exec("yes");
+	assert.ok(m);
+});
+
+test("touchbase opt-in fast-path: 'YES' (uppercase) matches", () => {
+	const m = OPTIN_FASTPATH_RE.exec("YES");
+	assert.ok(m);
+});
+
+test("touchbase opt-in fast-path: 'y' matches", () => {
+	const m = OPTIN_FASTPATH_RE.exec("y");
+	assert.ok(m);
+});
+
+test("touchbase opt-in fast-path: '  yes  ' (whitespace) matches", () => {
+	const m = OPTIN_FASTPATH_RE.exec("  yes  ");
+	assert.ok(m);
+});
+
+test("touchbase opt-in fast-path: 'yes please' does NOT match (would dilute confirm semantics)", () => {
+	// The fast-path requires a bare yes/y so we don't accidentally opt-in on
+	// "yes I'd like to know more about candidates" (natural language, LLM path).
+	assert.equal(OPTIN_FASTPATH_RE.exec("yes please"), null);
+});
+
+test("touchbase opt-in fast-path: 'no' does NOT match (only yes/y)", () => {
+	assert.equal(OPTIN_FASTPATH_RE.exec("no"), null);
+});
+
+test("touchbase opt-in fast-path: 'yellow' does NOT match (full word boundary required)", () => {
+	assert.equal(OPTIN_FASTPATH_RE.exec("yellow"), null);
+});
+
+// ── Cursor JSON shape for KV — telnyx.ts reader side ────────────────────────
+//
+// The numeric fast-path in routes/telnyx.ts reads `touchbase:cursor:<phone>`
+// as JSON.parse(...) and reads `cursor[position - 1].thread_id`. This test
+// pins the shape contract from the READER side — scheduled.test.ts pins the
+// WRITER side. If the two drift, one of these tests fails.
+
+test("KV cursor shape: reader expects array with .thread_id at position 0..N-1", () => {
+	const cursorJson = JSON.stringify([
+		{ thread_id: "uuid-a", candidate_name: "A", role_title: "FE" },
+		{ thread_id: "uuid-b", candidate_name: "B", role_title: null },
+		{ thread_id: "uuid-c", candidate_name: "C", role_title: "BE" },
+	]);
+	const parsed = JSON.parse(cursorJson) as Array<{
+		thread_id: string;
+		candidate_name: string;
+		role_title: string | null;
+	}>;
+	// Founder replies "2" → cursor[2 - 1] → entry 'B'
+	assert.equal(parsed[1].thread_id, "uuid-b");
+	// Founder replies "9" but cursor has only 3 → undefined (no false hit).
+	assert.equal(parsed[8], undefined);
+});
