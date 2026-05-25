@@ -20,7 +20,16 @@
 	"vars": {
 		// HTTPS URL of the internjobs-startup-api Fly proxy (Phase 28 Plan 01).
 		// Not a secret — it's an internet-facing HTTPS hostname.
-		"STARTUP_API_URL": "https://internjobs-startup-api.fly.dev"
+		"STARTUP_API_URL": "https://internjobs-startup-api.fly.dev",
+		// v1.4 Phase 28.5 — Startups Clerk app #3.
+		// See .planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-PLAN.md
+		// for the dashboard checkpoint instructions. JWKS_URL + ISSUER are not
+		// secrets (they're public Clerk endpoints) — set them via `wrangler secret put`
+		// only if you want to keep them out of git; otherwise leave empty here and
+		// populate at deploy time from Infisical /internjobs-ai env=prod keys
+		// STARTUPS_CLERK_ISSUER + STARTUPS_CLERK_JWKS_URL.
+		"STARTUPS_CLERK_JWKS_URL": "",
+		"STARTUPS_CLERK_ISSUER": ""
 	},
 	// Workers AI binding (Phase 28 Plan 03). Used by lib/embed.ts to compute
 	// 768-dim bge-base-en-v1.5 vectors directly via env.AI.run() — NO dependency
@@ -57,4 +66,26 @@
 	//                                   Infisical /internjobs-ai/TELNYX_FROM_NUMBER.
 	//   TELNYX_MESSAGING_PROFILE_ID   — (optional) Telnyx messaging profile id.
 	//                                   Recommended for US production deliverability.
+	//
+	// v1.4 Phase 28.5 STARTUPS_CLERK_* — Startups Clerk app #3 secrets.
+	// See .planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-PLAN.md
+	// for checkpoint instructions. Canonical store is Infisical /internjobs-ai env=prod.
+	//   STARTUPS_CLERK_SECRET_KEY     — Backend secret key (sk_live_...) for the
+	//                                   "InternJobs Startups" Clerk application.
+	//                                   Used by the webhook handler added in 28.5-04
+	//                                   to verify Clerk-signed payloads server-side
+	//                                   and by JWT verification in routes that accept
+	//                                   founder sessions.
+	//                                   Set via `wrangler secret put STARTUPS_CLERK_SECRET_KEY`.
+	//                                   Infisical key: STARTUPS_CLERK_SECRET_KEY.
+	//   STARTUPS_CLERK_WEBHOOK_SECRET — Svix-style signing secret from the Clerk
+	//                                   dashboard Webhooks page. Used to verify the
+	//                                   user.created webhook delivered to the startup
+	//                                   Worker endpoint (registered in 28.5-02/05).
+	//                                   Value is empty until 28.5-05 finishes wiring
+	//                                   the webhook URL into the Clerk dashboard —
+	//                                   slot reserved here so `wrangler deploy` of
+	//                                   28.5-04 does not race the secret.
+	//                                   Set via `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET`.
+	//                                   Infisical key: STARTUPS_CLERK_WEBHOOK_SECRET.
 }
