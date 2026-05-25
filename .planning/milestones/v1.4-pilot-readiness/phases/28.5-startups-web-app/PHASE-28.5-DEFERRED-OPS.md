@@ -375,6 +375,194 @@ resolve" can find the consumer surface in one place.
 
 ---
 
+## From plan 28.5-05 (Work-email enforcement webhook + marketing CTA flip + E2E test)
+
+The auto portion of 28.5-05 (apps/startup/workers/routes/webhooks.ts + 26-test
+companion at workers/routes/webhooks.test.ts, apps/startup/workers/app.ts route
+mount, apps/marketing/src/App.tsx StartupAccessSection CTA flip, apps/startups/
+e2e/founder-flow.spec.ts + playwright.config.ts + @playwright/test devDep)
+shipped on 2026-05-25 (commits to be appended at phase close). Five external
+steps deferred — the `checkpoint:human-verify` task in 28.5-05-PLAN.md was
+also intentionally deferred per the active session rule ("don't wait on me —
+finish all the phases", user 2026-05-25). The checkpoint's Step 1 and Step 2
+map to the entries below; Step 3-5 (live work-email rejection test + welcome
+email deliverability check) belong to the post-deploy smoke pass.
+
+### DEFER-28.5-05-A — Register Clerk webhook endpoint in Clerk Dashboard
+
+Status: **Webhook handler code-ready (POST /webhooks/clerk on mcp.internjobs.ai),
+endpoint not yet registered in Clerk.** This is the same workflow as
+DEFER-28.5-01-F but with the URL now real (the 28.5-05 commit ships the route).
+
+Action:
+
+1. Clerk Dashboard → "InternJobs Startups" app → Webhooks → "Add endpoint":
+   - URL: `https://mcp.internjobs.ai/webhooks/clerk`
+   - Events: check `user.created` (only — handler ignores all other types)
+   - Click "Create".
+2. Copy the "Signing secret" Clerk displays (format: `whsec_...`).
+3. Save to Infisical: `/internjobs-ai` env=`prod` key `STARTUPS_CLERK_WEBHOOK_SECRET`.
+4. Proceed to DEFER-28.5-05-B (wrangler secret put).
+
+Acceptance:
+
+- Endpoint appears in Clerk Dashboard → Webhooks list with status "active".
+- "Send test event" button from the Clerk dashboard delivers a 200 to
+  `https://mcp.internjobs.ai/webhooks/clerk` after DEFER-28.5-05-B closes.
+
+Blocks: end-to-end work-email enforcement (the webhook can't fire without
+a registered endpoint).
+
+Linked: DEFER-28.5-01-F (same checkpoint, now consolidated here — close
+together with DEFER-28.5-05-B).
+
+### DEFER-28.5-05-B — `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET`
+
+Status: **Code reads `env.STARTUPS_CLERK_WEBHOOK_SECRET`; secret not yet
+bound.** Without the secret, `handleClerkWebhook()` short-circuits at the
+top and returns 503 ("webhook secret not configured") — Clerk will retry
+indefinitely, so close this defer ASAP after DEFER-28.5-05-A.
+
+Action:
+
+1. After DEFER-28.5-05-A produces the `whsec_...` value:
+   ```bash
+   wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET --config apps/startup/wrangler.jsonc
+   # paste the whsec_... value when prompted
+   ```
+   …or pipe from Infisical:
+   ```bash
+   STARTUPS_CLERK_WEBHOOK_SECRET=$(infisical secrets get STARTUPS_CLERK_WEBHOOK_SECRET \
+     --projectId 26995afd... --env prod --path /internjobs-ai --plain) \
+     wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET --config apps/startup/wrangler.jsonc \
+     <<<"$STARTUPS_CLERK_WEBHOOK_SECRET"
+   ```
+2. Redeploy the worker:
+   ```bash
+   cd apps/startup && npx wrangler deploy
+   ```
+
+Acceptance:
+
+- `wrangler secret list --config apps/startup/wrangler.jsonc` shows
+  `STARTUPS_CLERK_WEBHOOK_SECRET`.
+- `curl -X POST https://mcp.internjobs.ai/webhooks/clerk -H "Content-Type: application/json" -d '{}'`
+  returns HTTP 400 (`invalid signature`), NOT 503 — proves the secret is
+  bound and Svix verification is running.
+
+Blocks: same as DEFER-28.5-05-A — without the secret the handler returns
+503 on every request.
+
+### DEFER-28.5-05-C — Deploy startup worker + marketing site (28.5-05 code)
+
+Status: **Code shipped to git on rrr/v1.4/team-cms branch (commit
+`cc0fe9a`), neither runtime updated.**
+
+Action:
+
+1. Worker — deploys the `/webhooks/clerk` route + Svix dep:
+   ```bash
+   cd apps/startup && npx wrangler deploy
+   ```
+2. Marketing — deploys the CTA flip:
+   ```bash
+   cd apps/marketing && npm run build
+   wrangler pages deploy dist --project-name internjobs-ai --branch main
+   ```
+
+Acceptance:
+
+- `curl -I https://mcp.internjobs.ai/webhooks/clerk` returns headers (route
+  exists — likely 405 to GET; POST returns 400/503 depending on whether
+  DEFER-28.5-05-B has closed).
+- `curl -s https://internjobs.ai/startups | grep -c "startups.internjobs.ai"`
+  returns ≥ 1.
+
+Blocks: 28.5-05 verification (live work-email rejection) needs the worker
+deployed; 28.5 phase-close pilot-readiness needs the marketing site live
+with the new CTA.
+
+Linked: closes alongside DEFER-28.5-05-A and -B (deploy makes registration +
+secret-bind useful).
+
+### DEFER-28.5-05-D — Live work-email rejection smoke (checkpoint task Step 3+4)
+
+Status: **End-to-end smoke test deferred to ops session.** This is the
+post-deploy verification that the webhook actually enforces the blocklist
+in production with a real Clerk-Google OAuth flow.
+
+Action (after A + B + C close):
+
+1. **Personal-email rejection test:**
+   - In a browser (signed out), navigate to `https://startups.internjobs.ai`.
+   - Click "Continue with Google" using a `@gmail.com` account.
+   - Complete the Google OAuth flow.
+   - Within ~5 seconds, the user should be deleted by the webhook (Clerk
+     dashboard "Users" page should NOT show the gmail user, or it should
+     appear briefly and disappear after `user.created` webhook delivers).
+2. **Webhook delivery check:**
+   - Clerk Dashboard → Webhooks → endpoint → "Message attempts" — most
+     recent `user.created` should show HTTP 200 with body "ok".
+3. **Work-email success test:**
+   - Repeat step 1 with a non-blocked domain (e.g. `@yourstartup.io`
+     custom Google Workspace).
+   - User should successfully reach `/dashboard`.
+   - Clerk Dashboard → Users shows the work-email user persists.
+
+Acceptance:
+
+- `@gmail.com` signup attempt results in user deletion (visible in Clerk
+  dashboard or via `curl -H "Authorization: Bearer $STARTUPS_CLERK_SECRET_KEY"
+  https://api.clerk.com/v1/users?email_address=...@gmail.com` returning
+  empty).
+- Custom-domain signup persists in Clerk Users and reaches `/dashboard`.
+
+Blocks: pilot-readiness (we cannot let personal-email founders into the
+first cohort).
+
+Open known risk (from RESEARCH.md §5 + webhooks.ts inline TODO): the user
+has a ~1-3 second valid session before DELETE completes. v1.5 should
+migrate to Clerk paid-tier native blocklist to eliminate the race.
+
+### DEFER-28.5-05-E — Live Playwright run with PLAYWRIGHT_CLERK_TEST_TOKEN
+
+Status: **Test STRUCTURE shipped at `apps/startups/e2e/founder-flow.spec.ts`
+(7 tests). Unauthenticated tests (sign-in renders + marketing CTA + dashboard
+redirect) execute in CI without external state; the 4 auth-required tests
+are `test.skip()`'d when `PLAYWRIGHT_CLERK_TEST_TOKEN` is unset (current CI
+state).**
+
+Action (deferred to v1.5 or ops session):
+
+1. In Clerk Dashboard → "InternJobs Startups" app → Settings → Sessions →
+   "Sign in via Clerk Backend API" → mint a long-lived test token for a
+   pre-provisioned founder account (e.g. `e2e-founder@acme.io`).
+2. Store the token in CI secrets as `PLAYWRIGHT_CLERK_TEST_TOKEN`.
+3. Pre-provision the test startup via:
+   ```bash
+   curl -X POST https://mcp.internjobs.ai/admin/startups/new \
+     -H "Authorization: Bearer $STARTUP_MCP_ADMIN_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"company":"E2E Test Corp","founder_email":"e2e-founder@acme.io","founder_phone":"+15559990000"}'
+   ```
+   Capture the agent_email + startup_id from response.
+4. CI run:
+   ```bash
+   cd apps/startups
+   PLAYWRIGHT_CLERK_TEST_TOKEN=$TOKEN npx playwright test
+   ```
+   The 4 auth-required tests should now execute and pass.
+
+Acceptance:
+
+- Playwright run with the token set produces 7/7 pass (0 skipped).
+- Without the token, run produces 3 pass + 4 skip + 0 fail.
+
+Blocks: nothing live (the test structure exists; this just upgrades CI
+coverage from "smoke" to "full happy path").
+
+---
+
 ## Future additions (placeholder)
 
 Subsequent 28.5-0[2-5] plan executions in this session may append more deferred entries below.

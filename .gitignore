@@ -15,3 +15,9 @@ apps/mac-bridge/node_modules
 .planning/.cache/
 .planning/SCOPE_CACHE.md
 .planning/scope-cache.json
+
+# Playwright trace/screenshot output — local debug artifacts, never commit.
+test-results/
+playwright-report/
+**/playwright-report/
+**/test-results/
