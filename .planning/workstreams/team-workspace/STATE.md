@@ -24,21 +24,29 @@ Phases: 23 (active), 25, 26, 27 (queued)
 
 ## Current Position
 
-Status: In progress — 23-01 shipped + live-smoke verified on graph-api Fly proxy
+Status: In progress — 23-01 shipped + live-smoke verified; 23-02 code-complete with deferred live-verify
 Current phase: 23 (Workspace Pilot Closeouts)
-Current plan: 23-01 complete; 23-02 / 23-03 / 23-04 ready
-Blockers: None (Phase 22 shipped 2026-05-24; unblocks SAFETY-VERIFY-LIVE-04)
+Current plan: 23-01 complete; 23-02 code-complete-with-deferral; 23-03 / 23-04 ready
+Blockers: None for code work. Pending operator step for SAFETY-VERIFY-LIVE-04 live evidence — see Open Items below.
 
 ## Phase 23 Plan Status
 
 | Plan | Objective | Wave | Status |
 |------|-----------|------|--------|
 | 23-01 | closeTodoFact Cypher helper + reply path integration | 1 | **complete** (1b0b509 + d6681d7; deploy + smoke PASS 2026-05-26) |
-| 23-02 | SAFETY-VERIFY-LIVE-04 — email injection test | 1 | ready |
+| 23-02 | SAFETY-VERIFY-LIVE-04 — email injection test | 1 | **code-complete / live-verify-deferred** (c7973ca + 9ec84db + 3be2e53 — 2026-05-26) |
 | 23-03 | Attachment download route + EmailPanel wire-up | 1 | ready |
 | 23-04 | 14-step authenticated agent-lift UAT | 1 | ready |
 
-All 4 plans are Wave 1 — fully parallel (no file overlap between plans). 23-01 closed in isolation; the other three remain non-overlapping with 23-01's modified files.
+All 4 plans are Wave 1 — fully parallel (no file overlap between plans). 23-01 and 23-02 closed in isolation; the remaining two remain non-overlapping with closed plans' modified files.
+
+## Open Items (operator follow-up)
+
+- **SAFETY-VERIFY-LIVE-04 live evidence — pending operator with prod CF deploy access.** Code-side shipped in 23-02 (`source_id` field on email-path safety_events rows). Live test (4 emails + SQL row verify + Sent-folder check) blocked on two operator steps:
+  1. Rotate `CLOUDFLARE_BROAD_API_TOKEN` in Infisical at `/internjobs-ai/CLOUDFLARE_BROAD_API_TOKEN` — current value is rejected by Cloudflare `/user/tokens/verify` as invalid (`code:1000`). Scopes for replacement: Workers Scripts:Edit + KV:Edit + R2:Edit + Account Settings:Read + Zone Workers Routes:Edit on internjobs.ai.
+  2. Run `cd apps/parrot && npm run deploy` with the rotated token.
+
+  Full runbook + 4 test-email payloads + verification SQL captured at `apps/parrot/test/safety-email-verify.md` "What remains" section.
 
 ## 23-01 Decisions Captured
 
