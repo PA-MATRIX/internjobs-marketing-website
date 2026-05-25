@@ -10,8 +10,9 @@
 // falkordb npm client. The Worker calls this via HTTPS fetch().
 //
 // API surface (minimal by design):
-//   POST /query   — execute a Cypher query, return {data, stats}
-//   GET  /health  — liveness probe (also probes FalkorDB with RETURN 1)
+//   POST /query       — execute a Cypher query, return {data, stats}
+//   POST /close-todo  — set :Todo.valid_to = timestamp() for one source_id (v1.4 Phase 23-01)
+//   GET  /health      — liveness probe (also probes FalkorDB with RETURN 1)
 //
 // Auth: Authorization: Bearer <GRAPH_API_SECRET> (shared secret, constant-time
 // compare). CF Access is overkill for a Worker-to-Fly internal service call.
@@ -162,6 +163,73 @@ app.post("/query", async (c) => {
       error: err?.message ?? String(err),
     }));
     return c.json({ error: "query_failed", detail: err?.message }, 500);
+  }
+});
+
+// POST /close-todo — Phase 23-01 (CLOSETODO-01..04).
+// Sets :Todo.valid_to = timestamp() for the :Todo node(s) matching
+// (source_id=$thread_id, employee_id=$employee_id, valid_to IS NULL).
+// The runAutoClear cron in apps/parrot/workers/lib/auto-clear.ts picks
+// these up within 10 minutes (5-min grace window + up to 5-min cron interval)
+// and calls EmployeeMailboxDO.resolveTodo() to flip the SQLite row.
+//
+// Body: { thread_id: string, employee_id: string, resolution_text?: string }
+// Returns: { ok: true, closed_count: number } on success
+//
+// Multi-row note: if multiple :Todo nodes share the same (source_id, employee_id)
+// — possible on re-extraction runs — SET updates all of them. That's correct
+// behavior; all todos from the same source resolve together.
+app.post("/close-todo", async (c) => {
+  if (!verifyBearer(c.req.raw)) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const { thread_id, employee_id, resolution_text } = body ?? {};
+  if (!thread_id || typeof thread_id !== "string" || !employee_id || typeof employee_id !== "string") {
+    return c.json({ error: "thread_id_and_employee_id_required" }, 400);
+  }
+
+  const client = await getClient();
+  if (!client) {
+    return c.json({ error: "falkordb_unreachable" }, 503);
+  }
+
+  try {
+    const res = await client.selectGraph(GRAPH_NAME).query(
+      `MATCH (t:Todo)
+       WHERE t.source_id = $thread_id AND t.employee_id = $employee_id AND t.valid_to IS NULL
+       SET t.valid_to = timestamp()
+       RETURN count(t) AS closed_count`,
+      { params: { thread_id, employee_id } },
+    );
+    const rows = res?.data ?? [];
+    const row = rows[0];
+    let closedCount = 0;
+    if (row) {
+      const raw = Array.isArray(row)
+        ? row[0]
+        : row.closed_count ?? row["count(t)"];
+      const n = Number(raw);
+      if (Number.isFinite(n)) closedCount = n;
+    }
+    return c.json({ ok: true, closed_count: closedCount });
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "graph_api_close_todo_failed",
+      thread_id,
+      employee_id,
+      resolution_text_present: Boolean(resolution_text),
+      error: err?.message ?? String(err),
+    }));
+    return c.json({ error: "close_failed", detail: err?.message }, 500);
   }
 });
 
