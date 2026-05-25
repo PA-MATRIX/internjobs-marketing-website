@@ -314,16 +314,16 @@ Plans:
 9. The agent_email per startup is unique, lowercased, conflict-checked against existing slugs (no two startups can collide on the same slug)
 10. Migration 0013 applied: `startups.agent_email` column exists with UNIQUE constraint
 
-**Plans**: TBD (likely 5)
+**Plans**: 5 plans, 4 waves
 
 Plans:
-- [ ] 28.5-01: DNS + Clerk app #3 setup + secrets bootstrap (Cloudflare custom-domain for `startups.internjobs.ai` + `clerk.startups.internjobs.ai`; Clerk app created in dashboard; PublishableKey + SecretKey + Webhook Secret saved to Infisical; work-email allowlist policy configured)
-- [ ] 28.5-02: `apps/startups/` Vite+React scaffold with Clerk SDK + sign-in landing + dashboard skeleton; deploys to `startups.internjobs.ai`
-- [ ] 28.5-03: Founder dashboard — roles list + create role + candidate thread view + reply send; talks to 28-01 Fly proxy with `STARTUP_API_SECRET` Bearer (work-email session → resolves to startup_id via Clerk publicMetadata)
-- [ ] 28.5-04: Per-startup agent email — migration 0013 (startups.agent_email UNIQUE), Cloudflare Email Routing catch-all → Worker inbound webhook, outbound send via `env.EMAIL.send()` binding; extends Phase 28's `/admin/startups/new` to mint Clerk invite + reserve agent slug + send welcome
-- [ ] 28.5-05: Work-email enforcement + marketing /startups CTA flip + welcome email template + first founder E2E test (sign-up → dashboard → post role → agent emails candidate → candidate replies → founder sees reply)
+- [ ] 28.5-01-PLAN.md — DNS + Clerk app #3 bootstrap + secrets to Infisical + Email Routing domain verification [STARTUP-WEB-AUTH-01] (Wave 1)
+- [ ] 28.5-02-PLAN.md — `apps/startups/` Vite+React+Clerk scaffold + sign-in landing + dashboard skeleton + Pages Function proxy; deploys to startups.internjobs.ai [STARTUP-WEB-AUTH-01..02, STARTUP-WEB-DASH-01 partial] (Wave 2)
+- [ ] 28.5-03-PLAN.md — Founder dashboard live data + role creation form + candidate thread view + reply send [STARTUP-WEB-DASH-01..03] (Wave 3, parallel with 28.5-04)
+- [ ] 28.5-04-PLAN.md — Migration 0013 (agent_email UNIQUE) + slug algorithm + catch-all email Worker inbound + admin endpoint extension (Clerk invite + slug + welcome email) [STARTUP-AGENT-EMAIL-01..04] (Wave 3, parallel with 28.5-03)
+- [ ] 28.5-05-PLAN.md — Work-email enforcement webhook + marketing CTA flip + Playwright E2E test [STARTUP-WORK-EMAIL-01, STARTUP-WEB-CTA-01, STARTUP-WEB-AUTH-03..04] (Wave 4)
 
-**Research flags**: Likely on STARTUP-WORK-EMAIL-01 (verify Clerk's `allowed_email_domains` feature tier; build webhook fallback if not available) and STARTUP-AGENT-EMAIL-01..04 (Cloudflare Email Routing catch-all + Worker inbound — need to verify the per-domain catch-all syntax and the `send_email` binding's behavior with a custom verified domain)
+**Research flags**: Resolved — 28.5-RESEARCH.md confirmed (1) CF Email Routing catch-all → Worker is supported, (2) Clerk blocklist is paid-tier; webhook fallback is the v1.4 implementation, (3) Vite+Pages Function proxy pattern confirmed.
 
 ---
 

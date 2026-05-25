@@ -2,9 +2,9 @@
 schema_version: 1
 team: "team-cms"
 milestone: "v1.4"
-current_phase: 24
-plan_total: 2
-status: in-progress
+current_phase: 28.5
+plan_total: 5
+status: planned
 last_activity: "2026-05-25"
 ---
 
