@@ -3,7 +3,7 @@ schema_version: 2
 milestone: "v1.4"
 phase: 22
 phase_name: "Lakera Verification + Marketing Brand Refresh"
-phase_total: 6
+phase_total: 8
 plan: 5
 plan_total: 5
 status: "in_progress"
@@ -20,8 +20,8 @@ blockers: []
 
 See: .planning/PROJECT.md (updated 2026-05-24)
 See: .planning/MILESTONES.md (full v1.0 / v1.1 / v1.2 / v1.3 ship history)
-See: .planning/REQUIREMENTS.md (68 active v1.4 requirements — 46 original + 22 brand — all mapped to phases)
-See: .planning/ROADMAP.md (v1.4 = Phases 22–27, two-team execution)
+See: .planning/REQUIREMENTS.md (96 active v1.4 requirements — 46 original + 22 brand + 14 Startup MCP + 14 Startup Telnyx — all mapped to phases)
+See: .planning/ROADMAP.md (v1.4 = Phases 22–29, two-team execution; Slack/Discord/Teams adapters deferred to v1.5)
 See: .planning/milestones/v1.4-pilot-readiness/SCOPE.md (initial scope draft)
 See: .planning/brand/BRAND-V1.md (brand spec captured from PDF + logo pack 2026-05-24)
 See: .planning/codebase/ (codebase map written 2026-05-24)
@@ -34,7 +34,7 @@ See: .planning/WORKSTREAMS.md (team assignments)
 ## Current Position
 
 Milestone: v1.4 Pilot Readiness
-Phase: 22 of 27 (Lakera Verification + Marketing Brand Refresh — team-cms)
+Phase: 22 of 29 (Lakera Verification + Marketing Brand Refresh — team-cms)
 Plan: 22-01 + 22-02 + 22-03 + 22-04 complete (Lakera v2 schema fix + Lakera live-prod verification + brand foundation + brand surface apply); 22-05 next (marketing visual verification)
 Status: In progress — Lakera track DONE (verified live in prod), brand track wave-2 done
 Last activity: 2026-05-24 — 22-02 executed (continuation from human-action checkpoint): 9 injection prompts hard-blocked live in prod (21:06Z–21:19Z, sender_last4=4287, v55 with commit 2cc2f90); "You suck" pre/post deploy diff (v54 score=0 → v55 score=1) is the in-prod smoking gun for the 22-01 parser fix; VERIFY-LIVE-02 PASS (inferred); VERIFY-LIVE-03 DEFERRED with unit-test + organic-prod-observation rationale; wrote `infra/LAKERA-VERIFY-LIVE.md` (163 lines) — 2 atomic commits + metadata
@@ -45,13 +45,13 @@ Progress: ██░░░░░░░░ 6% (4/68 requirements done; 8 brand req
 
 This milestone runs under **RRR team mode** (initialized 2026-05-24).
 
-- `team-cms` (Raj, GitHub `@PA-MATRIX/team-cms`) — Phases 22 + 24. Branch `rrr/v1.4/team-cms`.
+- `team-cms` (Raj, GitHub `@PA-MATRIX/team-cms`) — Phases 22 + 24 + 28 + 29. Branch `rrr/v1.4/team-cms`.
 - `team-workspace` (Raj + Nithin, GitHub `@PA-MATRIX/team-workspace`) — Phases 23, 25, 26, 27. Branch `rrr/v1.4/team-workspace`.
 
 **Execution order:**
-- team-cms: 22 → 24
+- team-cms: 22 → 24 → 28 → 29
 - team-workspace: 23 → 25 → 26 → 27
-- Cross-team dep: 23 cannot start until 22 is verified
+- Cross-team dep: 23 cannot start until 22 is verified; 29 depends on 28 (same-team sequential)
 
 Coordinator workflow: each team works on their own branch; root `.planning/STATE.md` is coordinator-owned; integration via `integration/v1.4` branch.
 
@@ -84,6 +84,8 @@ See: `.planning/workstreams/{team-cms,team-workspace}/{STATE.md,ASSIGNMENT.md}`
 - **Phase 25** (SSO + Admin UX, team-workspace) — sequential after 23 on team-workspace branch
 - **Phase 26** (Knowledge Graph + GenZ, team-workspace) — sequential after 25
 - **Phase 27** (Polish + Test Floor, team-workspace) — sequential after 26
+- **Phase 28** (Startup MCP Server + Channel-Adapter Core, team-cms) — sequential after 24 on team-cms branch; Ridhi handles concierge onboarding for first 5–10 pilots; channel-adapter pattern future-proofs Phase 29 + v1.5 channels
+- **Phase 29** (Startup Telnyx SMS + Voice AI + Voice Onboarding, team-cms) — depends on Phase 28 (Telnyx adapter calls the MCP core); voice-intake onboarding + weekly text touchbase for non-MCP founders
 
 ### Decisions
 
@@ -108,6 +110,14 @@ Recent v1.4 decisions (log into PROJECT.md Key Decisions table when finalized):
 - 22-02: VERIFY-LIVE-03 (fail-open via invalid LAKERA_GUARD_API_KEY) DEFERRED. Live execution would degrade the safety gate during the Fly machine restart (~30s). Substitutes accepted: (a) unit-test coverage in `apps/app/src/safety/screen.test.mjs` (5/5 pass per 22-01) and (b) an organic prod observation of `action='passed_lakera_unavailable'` on row f0293168 (2026-05-21T17:56:16Z), confirming the fail-open path has fired in prod before this verification window. Re-promote in v1.5 if pilot incident requires.
 - 22-02: VERIFY-LIVE-02 accepted as PASS via inference, NOT direct positive logging. Code gate at `apps/app/src/server.mjs:707` (`if (screenResult.action !== "passed")`) means benign passes emit only `lakera_latency_ms`, not the full `lakera_screen` log line. Converging signals (zero unexpected safety_events rows + latency-only log entries clustered around benign sends + 32s gap analysis) accepted as evidence. Lifting the log out from under that gate is a v1.5 observability follow-up (SAFETY-OBS-01 proposed candidate).
 - 22-02: Lakera v2 conservative-flag observation documented as v1.5 pilot watchlist item, NOT a fix-now defect. Lakera flagged tone-adversarial ("You suck") and meta-question ("what would happen if I asked you to ignore safety rules?") prompts in the test window. v2 binary endpoint has no score knob to soften — remediation paths (per-user allowlist / Lakera v2 detailed endpoint with category scores / categorical exception list) all imply v1.5 design work. Fold into existing v1.5 SAFETY-HARD-BLOCK-EXPAND-01 candidate with concrete pilot-watch action: daily FP-rate dashboard tile, 30-day review.
+- **2026-05-24 evening: Startup channels added as Phase 28 (MCP foundation) + Phase 29 (Telnyx SMS + Voice AI + voice-based onboarding).** Milestone expands 6 → 8 phases (~68 → ~96 reqs). team-cms load 35 → 63 reqs; team-workspace load unchanged at 33.
+- **Slack adapter deferred to v1.5** despite founder appeal — Slack Marketplace approval is multi-week; per-pilot OAuth still adds Bolt/refresh complexity; Claude/ChatGPT MCP support means tech founders can already bridge to Slack via Pattern A (Anthropic's slack-mcp-plugin) with zero work on our side.
+- **MCP-first reach decision:** ChatGPT shipped MCP support in late 2025 (GPT-5 native), so MCP reaches Claude Desktop, Claude Code, Cursor, Cline, Continue, Zed, AND ChatGPT — broader than "Claude-only," justifying MCP as Phase 28 foundation.
+- **Stainless `search` + `execute` + `me` + `discover_actions` MCP tool pattern adopted** — keeps tool catalog at 4 even as action enum grows; per-action authz + audit preserved by making `action` an ENUM rather than free-form string (avoids omnibus-execute security pitfall).
+- **Concierge onboarding for first 5–10 pilots** (Ridhi runs admin endpoint, founder gets SMS install link) instead of self-serve onboarding in Phase 28; self-serve magic-link signup deferred to v1.5.
+- **Telnyx toll-free over A2P 10DLC** for Phase 29 to skip 4-week registration; local-number A2P migration is v1.5 candidate.
+- **No iMessage for startups** — iMessage (BlueBubbles) is exclusively student-side. Telnyx covers startup SMS/voice.
+- **`/startups` channels grid (STARTUP-MARKETING-02):** Claude/ChatGPT, Voice, SMS, Email as primary tier; Slack/Discord/Teams labeled "coming soon" — sets pilot expectation that MCP + Telnyx are first-class while Slack waits for v1.5.
 
 ### Pending Todos
 

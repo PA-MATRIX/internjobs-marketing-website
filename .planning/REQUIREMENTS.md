@@ -191,6 +191,75 @@ Biggest agent-quality win. Unblocked by v1.3 Phase 18 (graph proxy is live). Sam
 - [ ] **STAR-API-01**: `PATCH /api/inbox/messages/:id` with `{starred: bool}` persists to mailbox DO; `EmailPanel` star icon toggles visible state. *Team: team-workspace*
 - [ ] **DATES-01**: `formatQuotedDate` callers in `apps/agentic-inbox/` + `apps/parrot/` migrated to `packages/shared/src/dates`; 3 `@deprecated` re-exports deleted. *Shared (both teams)*
 
+### Group G — Startup MCP Server + Channel-Adapter Core (Phase 28, team-cms)
+
+First scalable channel for startup-initiated interaction with internjobs.ai. Stainless-style `search` + `execute` + `me` + `discover_actions` MCP surface — reaches every startup founder using Claude Desktop / Claude Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via admin endpoint that SMS-sends the MCP install link. Channel-adapter pattern + `startup_channel_links` schema future-proof Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams) as ~50–100 LOC adapters on the same core.
+
+**MCP surface (4 tools total):**
+
+- [ ] **STARTUP-MCP-01**: `apps/startup-mcp/` Cloudflare Worker MCP server scaffold; deploys to `mcp.internjobs.ai`; MCP handshake (protocol version, capabilities, server metadata per spec)
+- [ ] **STARTUP-MCP-02**: Bearer-token auth — per-startup install tokens issued at onboarding; rotated via internal student-app `/internal/*` API surface
+- [ ] **STARTUP-MCP-03**: `me()` tool — constant-time identity lookup; returns `{startup, member, role_count, recent_activity}`
+- [ ] **STARTUP-MCP-04**: `discover_actions()` tool — returns available action names + JSON schemas + descriptions (Stainless `list_api_endpoints` pattern; LLM grounding without preload bloat)
+- [ ] **STARTUP-MCP-05**: `search(scope, query, filters?)` tool — universal read; scope ∈ {`roles`, `candidates`, `threads`, `messages`, `members`, `startups`}; semantic via pgvector + structured filter; returns ID + summary list
+- [ ] **STARTUP-MCP-06**: `execute(action, params)` tool — universal write; action is ENUM (not free-form string) → per-action authz + per-action audit log row; per-action handler with schema validation; result envelope `{ok, data?, error?}`
+
+**5 action handlers (v1 enum):**
+
+- [ ] **STARTUP-MCP-07**: `execute('post_role', {role_spec})` handler — writes to `roles` table; semantic-indexes role description via pgvector for candidate matching
+- [ ] **STARTUP-MCP-08**: `execute('reply_to_candidate', {thread_id, message})` handler — writes to existing `inbound_messages` / `outbound_messages` schema (channel='mcp'); preserves single conversation log across all channels — no fragmentation
+- [ ] **STARTUP-MCP-09**: `execute('update_role', {role_id, patch})`, `execute('archive_role', {role_id})`, `execute('mark_candidate', {thread_id, mark})` — 3 more handlers per the v1 enum
+
+**Per-action authz + audit:**
+
+- [ ] **STARTUP-MCP-10**: Per-action audit log row in `startup_action_log` table (member_id, channel='mcp', action, params_hash, status, latency_ms, created_at); per-action authorization checks actor's `startup_members.role` + ownership boundary (no cross-startup data leak; negative-test verified)
+
+**Concierge admin onboarding (Ridhi-managed for pilot):**
+
+- [ ] **STARTUP-ADMIN-01**: `POST /admin/startups/new({company, founder_email, founder_phone})` endpoint — auth-protected (Ridhi only); inserts `startups` + `startup_members` rows + generates per-startup MCP install token
+- [ ] **STARTUP-ADMIN-02**: Admin endpoint SMS-sends the install snippet to the founder's phone via Telnyx/Spectrum: `claude mcp add internjobs https://mcp.internjobs.ai/{token}` (also shown formatted for Cursor + Cline + ChatGPT)
+
+**Channel-adapter schema + docs:**
+
+- [ ] **STARTUP-CHANNEL-01**: `startup_channel_links` table schema — `(id, startup_id, member_id, channel_type, channel_external_id, status, opt_in_flags, created_at)`. Enables Phase 29 (channel_type='telnyx-sms' or 'telnyx-voice') + v1.5 (channel_type='slack' or 'discord' or 'teams') identity mapping without core code change
+- [ ] **STARTUP-CHANNEL-02**: `apps/startup-mcp/CHANNELS.md` — architecture doc showing how Phase 29 (Telnyx) + v1.5 (Slack/Discord/Teams) plug in as thin adapters on the same `search`/`execute`/`me` core. Concrete pattern + ~50–100 LOC adapter sketch per channel.
+
+**Marketing + pilot:**
+
+- [ ] **STARTUP-MARKETING-01**: `/startups` marketing page CTA block — "Request access — we'll text you the install" form that emails Ridhi the founder's name + email + phone + what they're hiring for. (No self-serve install page in Phase 28; deferred to v1.5.)
+- [ ] **STARTUP-MARKETING-02**: `/startups` marketing page "how we work with you" section — visual grid presenting the channel options with brand-correct hierarchy. **Primary tier (highlighted):** Claude / ChatGPT / Cursor (via MCP install), Voice (call our Telnyx number), SMS (text our number), Email (always-on). **Coming soon tier (greyed/labeled):** Slack, Discord, Microsoft Teams. Copy emphasizes "talk to us where you already work" — no forced platform choice. Brand voice (lowercase, blunt, "no resumes" pattern) per BRAND-V1.md. Each primary tier item has a one-line "how it works" subhead.
+- [ ] **STARTUP-PILOT-01**: First pilot startup onboards end-to-end (Ridhi runs admin endpoint → founder receives SMS → founder pastes install command into Claude/Cursor/ChatGPT → calls `me()` → calls `execute('post_role')` → calls `search('candidates')` → calls `execute('reply_to_candidate')`); evidence committed to `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/PILOT-EVIDENCE.md`
+
+### Group H — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding (Phase 29, team-cms)
+
+The "feel heard, no work" channel for non-tech / non-MCP startup founders. Toll-free Telnyx number (skips A2P 10DLC wait), SMS inbound webhook routing to MCP `execute()`, Telnyx Voice AI Agent configured to call our MCP tools directly, voice-intake onboarding flow ("call → activated in 30 seconds"), weekly text touchbase scheduled task. Builds on Phase 28's `startup_channel_links` + MCP core.
+
+**Telnyx number + SMS:**
+
+- [ ] **STARTUP-TELNYX-01**: Provision Telnyx toll-free number (skips A2P 10DLC ~4-week registration); store as `STARTUP_TELNYX_NUMBER` in Infisical; document migration path to A2P 10DLC local number in v1.5 candidates
+- [ ] **STARTUP-TELNYX-02**: Telnyx SMS inbound webhook → CF Worker handler at `apps/startup-mcp/` (new adapter) → identity resolution via `startup_channel_links` (channel_type='telnyx-sms', channel_external_id=from_phone)
+- [ ] **STARTUP-TELNYX-03**: SMS intent classifier — small LLM call that maps natural-language SMS body to an action enum (`search('candidates', q)` / `execute('reply_to_candidate', ...)` / `execute('show_candidate', {position})` / etc); fall-through to a clarification prompt for ambiguous text
+- [ ] **STARTUP-TELNYX-04**: SMS outbound via Telnyx REST API — responses + scheduled touchbase messages; 160-char chunking for long content; brand voice (lowercase, blunt, fast — same AGENT-VOICE rules from v1.2)
+- [ ] **STARTUP-TELNYX-05**: SMS opt-out — `STOP` / `UNSUBSCRIBE` reply parsed by webhook → flips `startup_channel_links.opt_in_flags`; confirmation reply; legal compliance per TCPA
+- [ ] **STARTUP-TELNYX-06**: SMS audit log — each inbound + outbound row written to `startup_action_log` (channel='telnyx-sms')
+
+**Voice AI agent + voice-intake onboarding:**
+
+- [ ] **STARTUP-VOICE-01**: Telnyx Voice AI Agent provisioned and configured to call our MCP server tools directly (zero custom voice code; Telnyx handles TTS, STT, intent, tool calling). Auth via per-agent MCP token.
+- [ ] **STARTUP-VOICE-02**: Voice-intake onboarding script — greeting ("hey, this is internjobs — i'll get you set up in 30 seconds") → 4 questions (company_name, founder_name, work_email, what hiring for) → calls `execute('register_startup', {...})` → confirms via SMS install link
+- [ ] **STARTUP-VOICE-03**: Voice call recordings + transcripts logged to R2 (per-startup folder) for audit; opt-in disclosure in voice greeting per applicable consent laws
+- [ ] **STARTUP-VOICE-04**: Voice failure-mode handling — if `execute('register_startup', ...)` fails (e.g., email already registered), AI agent gracefully recovers ("looks like you're already in our system — i'll text you a fresh install link") + alerts Ridhi via internal Slack/email
+
+**Weekly text touchbase:**
+
+- [ ] **STARTUP-TOUCHBASE-01**: CF Worker scheduled trigger (Monday 9am ET, per-startup-configurable) — pulls fresh candidates for each opted-in startup; SMS via Telnyx: `"hey [founder] — 3 new candidates this week for [role]. reply 1/2/3 to see, or 'stop' to opt out."`
+- [ ] **STARTUP-TOUCHBASE-02**: Touchbase reply parser — "1"/"2"/"3" → `execute('show_candidate', {position})` → SMS sends candidate snapshot; "stop" → opt-out; arbitrary text → routes through SMS intent classifier as normal request
+
+**Multi-channel proof + pilot:**
+
+- [ ] **STARTUP-MULTICHAN-01**: `apps/startup-mcp/CHANNELS.md` updated with the Telnyx adapter as the concrete proof-of-concept for the channel-adapter pattern established in Phase 28. Includes adapter code-sketch for Slack/Discord/Teams (v1.5).
+- [ ] **STARTUP-MULTICHAN-02**: First pilot startup end-to-end via Telnyx: founder calls number → voice intake → activated → receives SMS install link → opts into weekly touchbase → following Monday receives 3-candidate SMS → replies "1" → receives candidate snapshot. Evidence in `.planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/PILOT-EVIDENCE.md`.
+
 ### Group E — Test floor
 
 - [ ] **WSTEST-01**: Vitest harness added to `apps/parrot/workers/`; smoke test for `/healthz` returning expected JSON shape with all readiness keys. *Team: team-workspace*
@@ -329,10 +398,19 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | BRAND-LOGO-01..07 | Phase 22 | team-cms | Pending |
 | BRAND-COPY-01..08 | Phase 22 | team-cms | Pending |
 | BRAND-VERIFY-01..03 | Phase 22 | team-cms | Pending |
+| STARTUP-MCP-01..10 | Phase 28 | team-cms | Pending |
+| STARTUP-ADMIN-01..02 | Phase 28 | team-cms | Pending |
+| STARTUP-CHANNEL-01..02 | Phase 28 | team-cms | Pending |
+| STARTUP-MARKETING-01..02 | Phase 28 | team-cms | Pending |
+| STARTUP-PILOT-01 | Phase 28 | team-cms | Pending |
+| STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Pending |
+| STARTUP-VOICE-01..04 | Phase 29 | team-cms | Pending |
+| STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Pending |
+| STARTUP-MULTICHAN-01..02 | Phase 29 | team-cms | Pending |
 
 **Coverage (v1.4):**
-- Active requirements: 68 total (46 original + 22 brand)
-- Mapped to phases: 68 ✓
+- Active requirements: 96 total (46 original + 22 brand + 14 Startup MCP + 14 Startup Telnyx)
+- Mapped to phases: 96 ✓
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -342,12 +420,17 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 - Phase 25 (team-workspace): 8 reqs — MMSSO + ADMIN-UX + NEONEX-DEP
 - Phase 26 (team-workspace): 8 reqs — KGRAPH + GENZ
 - Phase 27 (team-workspace): 6 reqs — DAILY-THEME + STAR-API + DATES + WSTEST
+- **Phase 28 (team-cms): 14 reqs — STARTUP-MCP-01..10 + STARTUP-ADMIN-01..02 + STARTUP-CHANNEL-01..02 + STARTUP-MARKETING-01..02 + STARTUP-PILOT-01** *(13 distinct items grouped + 1 added MARKETING-02)*
+- **Phase 29 (team-cms): 14 reqs — STARTUP-TELNYX-01..06 + STARTUP-VOICE-01..04 + STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02**
 
 **Team load:**
-- team-cms: 35 requirements across Phases 22 + 24
+- team-cms: 63 requirements across Phases 22 + 24 + 28 + 29
 - team-workspace: 33 requirements across Phases 23 + 25 + 26 + 27
 
-**Cross-team sequencing:** Phase 23 depends on Phase 22 (SAFETY-VERIFY-LIVE-04 needs Lakera v2 schema from LAKERA-V2-02). Otherwise teams run in parallel on their own branches.
+**Cross-team sequencing:**
+- Phase 23 (team-workspace) depends on Phase 22 (team-cms) — SAFETY-VERIFY-LIVE-04 needs Lakera v2 schema from LAKERA-V2-02
+- Phase 29 (team-cms) depends on Phase 28 (team-cms) — Telnyx adapter calls the MCP core from Phase 28
+- Otherwise teams run in parallel on their own branches
 
 ---
 *Requirements defined: 2026-05-19 (v1.3)*
