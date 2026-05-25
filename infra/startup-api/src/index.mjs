@@ -1004,7 +1004,8 @@ app.get("/v1/channel-links/resolve", async (c) => {
   }
   try {
     const { rows } = await pool.query(
-      `SELECT cl.startup_id, cl.member_id, s.name AS startup_name
+      `SELECT cl.id AS channel_link_id, cl.startup_id, cl.member_id,
+              s.name AS startup_name
          FROM startup_channel_links cl
          JOIN startups s ON s.id = cl.startup_id
         WHERE cl.channel_type = $1
@@ -1015,6 +1016,7 @@ app.get("/v1/channel-links/resolve", async (c) => {
     );
     if (rows.length === 0) return c.json({ error: "not_found" }, 404);
     return c.json({
+      channel_link_id: rows[0].channel_link_id,
       startup_id: rows[0].startup_id,
       member_id: rows[0].member_id,
       startup_name: rows[0].startup_name,

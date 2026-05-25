@@ -294,6 +294,124 @@ telnyxRouter.post("/webhooks/telnyx/sms", async (c) => {
 			return c.json({ ok: true });
 		}
 
+		// ── 4a. Touchbase fast-path: numeric reply "1"/"2"/"3" ──────────────
+		//
+		// When the weekly touchbase cron sends "3 new this week — reply 1/2/3"
+		// it ALSO writes a KV cursor at `touchbase:cursor:<phone>` with the
+		// ordered candidate thread_ids. If the founder replies "1"/"2"/"3"
+		// within 48h, look up the cursor and short-circuit straight to
+		// show_candidate({position, thread_id}). On miss (no KV, expired
+		// cursor, out-of-range position) we fall through to the regular
+		// intent classifier — which still resolves "1" → show_candidate
+		// by position alone (Phase 29-01 behavior preserved).
+		const numericMatch = /^\s*([1-9])\s*$/.exec(body.trim());
+		if (numericMatch && env.TOUCHBASE_CURSORS) {
+			const position = parseInt(numericMatch[1], 10);
+			try {
+				const cursorRaw = await env.TOUCHBASE_CURSORS.get(
+					`touchbase:cursor:${fromPhone}`,
+				);
+				if (cursorRaw) {
+					const cursor = JSON.parse(cursorRaw) as Array<{
+						thread_id: string;
+						candidate_name: string;
+						role_title: string | null;
+					}>;
+					const entry = cursor[position - 1];
+					if (entry?.thread_id) {
+						const exec = await handleExecute({
+							startup_id: ctx.startup_id,
+							member_id: ctx.member_id,
+							action: "show_candidate",
+							params: { position, thread_id: entry.thread_id },
+							env,
+						});
+						const result = exec.ok
+							? (exec.data as unknown)
+							: {
+									ok: false,
+									error: exec.error,
+									message: exec.detail,
+								};
+						await sendSms(env, fromPhone, formatForSms(result));
+
+						await writeAuditLog(env, {
+							member_id: ctx.member_id,
+							startup_id: ctx.startup_id,
+							channel: "telnyx-sms",
+							action: "touchbase_show_candidate",
+							status: "ok",
+							params_hash: await hashParams({ position, thread_id: entry.thread_id }),
+						});
+						return c.json({ ok: true });
+					}
+				}
+			} catch (err) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						event: "startup_touchbase_cursor_lookup_failed",
+						error: (err as Error)?.message ?? String(err),
+					}),
+				);
+				// Fall through to intent classifier — defense in depth.
+			}
+		}
+
+		// ── 4b. Opt-in fast-path: "yes" / "y" → flip weekly_touchbase=true ──
+		//
+		// Voice intake (Phase 29-02) registers a startup_channel_links row
+		// with opt_in_flags.weekly_touchbase=true by default. But a founder
+		// who STOPped previously and then texts "yes" later should re-opt-in
+		// without re-running the voice flow. We also handle the case where
+		// post-voice the founder confirms by SMS — same outcome.
+		//
+		// Requires ctx.channel_link_id (returned by Phase 29-03's extended
+		// /v1/channel-links/resolve endpoint). Pre-29-03 deploys without that
+		// field gracefully fall through to the intent classifier, which has
+		// its own "yes" regex hit but no DB write — log-only.
+		const optInMatch = /^\s*(yes|y)\s*$/i.exec(body.trim());
+		if (optInMatch && ctx.channel_link_id) {
+			try {
+				const base = env.STARTUP_API_URL.replace(/\/$/, "");
+				await fetch(
+					`${base}/v1/channel-links/${encodeURIComponent(ctx.channel_link_id)}/opt-in-touchbase`,
+					{
+						method: "PATCH",
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${env.STARTUP_API_SECRET}`,
+						},
+						body: JSON.stringify({ opt_in: true }),
+						signal: AbortSignal.timeout(5000),
+					},
+				);
+			} catch (err) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						event: "startup_touchbase_opt_in_patch_failed",
+						error: (err as Error)?.message ?? String(err),
+					}),
+				);
+			}
+			await sendSms(
+				env,
+				fromPhone,
+				"you're in! we'll text you every Monday with fresh intern candidates. reply 'stop' anytime to opt out.",
+			);
+
+			await writeAuditLog(env, {
+				member_id: ctx.member_id,
+				startup_id: ctx.startup_id,
+				channel: "telnyx-sms",
+				action: "touchbase_opt_in",
+				status: "ok",
+				params_hash: await hashParams({ channel_link_id: ctx.channel_link_id }),
+			});
+			return c.json({ ok: true });
+		}
+
 		// ── 5. Intent classification ─────────────────────────────────────────
 		const intent = await classifyIntent(body, env);
 		if (!intent) {

@@ -37,13 +37,17 @@ export async function resolveChannelLink(
 		});
 		if (!res.ok) return null;
 		const row = (await res.json().catch(() => null)) as
-			| StartupContext
+			| (StartupContext & { channel_link_id?: string })
 			| null;
 		if (!row?.startup_id || !row?.member_id) return null;
 		return {
 			startup_id: row.startup_id,
 			member_id: row.member_id,
 			startup_name: row.startup_name,
+			// channel_link_id was added to the Fly /v1/channel-links/resolve response
+			// in Phase 29-03 — older deployments may not populate it. Tolerate
+			// undefined so the opt-in "yes" fast-path can no-op gracefully.
+			channel_link_id: row.channel_link_id,
 		};
 	} catch {
 		return null;

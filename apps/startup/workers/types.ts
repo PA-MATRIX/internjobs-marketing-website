@@ -55,6 +55,12 @@ export interface StartupContext {
 	startup_id: string;
 	member_id: string;
 	startup_name: string;
+	// v1.4 Phase 29-03 — populated by resolveChannelLink() when identity comes
+	// from a startup_channel_links row (telnyx-sms / telnyx-voice / email / ...).
+	// Used by the "yes" opt-in fast-path in routes/telnyx.ts to PATCH the link's
+	// opt_in_flags. Not populated by /mcp Bearer auth (where startup_id comes
+	// from mcp_token_hash), hence optional.
+	channel_link_id?: string;
 }
 
 /** What the MCP tool handlers receive in `props` after auth — startup context + env. */
