@@ -186,6 +186,16 @@ app.post("/v1/startups/token", async (c) => {
 // Body: { company: string, founder_email: string, founder_name?: string,
 //         founder_phone?: string (ignored — schema has no phone column) }
 // Returns: { startup_id, member_id, token } — token is plaintext, returned ONCE.
+//          409 if a startup_members row with this founder_email already exists.
+//
+// Dedupe (added 28-04): `startup_members.email` has no DB UNIQUE constraint
+// (multi-member startups can share a contact email), so we do an app-layer
+// pre-check on the FOUNDER role only — Ridhi shouldn't be able to mint a
+// second token for the same founder email. The pre-check + INSERT are NOT
+// atomic; in the unlikely concurrent-call case a duplicate row could slip
+// through. Acceptable for the concierge-only onboarding flow (one operator,
+// no automation). A v1.5 hardening pass should add a UNIQUE partial index
+// on startup_members(email) WHERE role = 'founder'.
 app.post("/v1/startups", async (c) => {
   const pool = getPool();
   if (!pool) return c.json({ error: "no_database" }, 503);
@@ -194,6 +204,26 @@ app.post("/v1/startups", async (c) => {
   const { company, founder_email, founder_name } = body ?? {};
   if (!company || !founder_email) {
     return c.json({ error: "company_and_founder_email_required" }, 400);
+  }
+  // App-layer dedupe: reject if a founder member with this email already exists.
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM startup_members
+         WHERE lower(email) = lower($1) AND role = 'founder'
+         LIMIT 1`,
+      [founder_email],
+    );
+    if (rows.length > 0) {
+      return c.json({ error: "founder_email_already_registered" }, 409);
+    }
+  } catch (err) {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "startup_api_dedupe_check_failed",
+      error: err?.message,
+    }));
+    // Fall through — if the pre-check errors, let the INSERT attempt proceed.
+    // The transactional INSERT below will report its own failure.
   }
   const client = await pool.connect();
   try {

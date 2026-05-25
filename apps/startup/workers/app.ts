@@ -24,6 +24,7 @@ import { cors } from "hono/cors";
 
 import { buildMcpHandler } from "./server";
 import { validateBearerToken } from "./lib/auth";
+import { adminRouter } from "./routes/admin";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -98,8 +99,12 @@ app.get("/healthz", (c) =>
 	c.json({ ok: true, service: "internjobs-startup-mcp" }),
 );
 
-// ── Admin + API stubs (Plans 28-04 + 28-05 will mount real handlers) ─────────
-app.all("/admin/*", (c) => c.json({ error: "not_yet_implemented" }, 503));
+// ── Admin router (Plan 28-04 — concierge onboarding endpoint) ────────────────
+// POST /admin/startups/new — auth: Authorization: Bearer STARTUP_MCP_ADMIN_SECRET
+// (separate from per-startup install tokens that gate /mcp).
+app.route("/admin", adminRouter);
+
+// ── API stub (Plan 28-05 — marketing CTA receiver will mount here) ───────────
 app.all("/api/*", (c) => c.json({ error: "not_yet_implemented" }, 503));
 
 // ── Root ─────────────────────────────────────────────────────────────────────
