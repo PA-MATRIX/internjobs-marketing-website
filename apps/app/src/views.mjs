@@ -3,6 +3,16 @@ import { escapeHtml } from "./http.mjs";
 import { getMissingProviderConfig } from "./config.mjs";
 import { getSignInUrl, getStartupSignInUrl } from "./auth.mjs";
 
+// Matches apps/marketing/public/logo/mark-gradient.svg (lime → tangerine →
+// cobalt brand-stroke infinity loop). Inlined so the Node app doesn't need
+// a static-asset route. Gradient ID is namespaced per-instance to allow
+// multiple mounts (topbar + tier-1) on the same page.
+let brandMarkCounter = 0;
+function brandMarkSvg({ size = 32 } = {}) {
+  const id = `brandGrad${++brandMarkCounter}`;
+  return `<svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32" width="${size * 2}" height="${size}" aria-hidden="true"><defs><linearGradient id="${id}" x1="0%" y1="50%" x2="100%" y2="50%"><stop offset="0%" stop-color="#CAFF4D"/><stop offset="50%" stop-color="#FF7A3A"/><stop offset="100%" stop-color="#3855FF"/></linearGradient></defs><path d="M 8 16 C 8 6, 22 6, 32 16 C 42 26, 56 26, 56 16 C 56 6, 42 6, 32 16 C 22 26, 8 26, 8 16 Z" fill="none" stroke="url(#${id})" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
 export function renderLayout({ title, body, config, auth, bgEffect, embedClerk }) {
   const missing = getMissingProviderConfig(config);
   // Vanta.js animated background — opt-in per page via the bgEffect arg.
@@ -28,7 +38,7 @@ export function renderLayout({ title, body, config, auth, bgEffect, embedClerk }
   <body>
     ${wantsBg ? `<div id="vanta-bg" aria-hidden="true"></div>` : ""}
     <header class="topbar">
-      <a class="brand" href="/waitlist"><span class="logo">∞</span><strong>InternJobs.ai</strong></a>
+      <a class="brand" href="/waitlist">${brandMarkSvg({ size: 28 })}<strong>InternJobs.ai</strong></a>
       ${auth ? `<nav>
         <a href="/onboarding">Onboarding</a>
         <a href="/onboard/start">Pairing</a>
@@ -166,7 +176,7 @@ export function renderWaitlist(config) {
     <section class="waitlist-center">
       <div class="waitlist-card">
         <div class="waitlist-tier waitlist-tier-1">
-          <div class="waitlist-logo" aria-hidden="true"><span class="logo">∞</span></div>
+          <div class="waitlist-logo" aria-hidden="true">${brandMarkSvg({ size: 56 })}</div>
           <h1 class="waitlist-title">Join the Waitlist</h1>
           <p class="waitlist-eyebrow">Welcome to InternJobs.ai.</p>
         </div>
@@ -175,10 +185,9 @@ export function renderWaitlist(config) {
           <noscript>
             <a class="button primary waitlist-fallback" href="${escapeHtml(getSignInUrl(config))}">Continue with LinkedIn</a>
           </noscript>
-          <p class="waitlist-fine">We'll only see your name and headline.</p>
         </div>
         <div class="waitlist-tier waitlist-tier-3">
-          <p class="waitlist-fine">By continuing you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy</a>. InternJobs.ai is for users 18 and older.</p>
+          <p class="waitlist-fine">By continuing you agree to our <a href="https://internjobs.ai/terms" target="_blank" rel="noopener">Terms</a> and <a href="https://internjobs.ai/privacy" target="_blank" rel="noopener">Privacy</a>. InternJobs.ai is for users 18 and older.</p>
           <p class="waitlist-made">Made with <span class="waitlist-heart" aria-hidden="true">♥</span> from Texas 🦄</p>
         </div>
       </div>
@@ -744,7 +753,7 @@ function styles() {
     :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#f7f4ed}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 12%,#ffe4f0,transparent 26%),radial-gradient(circle at 82% 4%,#ddecff,transparent 28%),linear-gradient(180deg,#fbf7ef,#f4efe6 58%,#eef7f2);color:#111}
     a{color:inherit}.topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.9rem 1.2rem;background:rgba(251,247,239,.82);backdrop-filter:blur(18px);border-bottom:1px solid rgba(0,0,0,.07)}
-    .brand{display:flex;align-items:center;gap:.55rem;text-decoration:none}.logo{display:grid;place-items:center;width:1.75rem;height:1.75rem;border-radius:.5rem;background:#111;color:#fff;font-weight:900}nav{display:flex;gap:.75rem;font-size:.82rem;font-weight:800}nav a{text-decoration:none;color:#45443f}
+    .brand{display:flex;align-items:center;gap:.55rem;text-decoration:none;color:inherit}.brand strong{font-weight:900;letter-spacing:-.01em}.brand-mark{display:block;height:1.75rem;width:auto}.logo{display:grid;place-items:center;width:1.75rem;height:1.75rem;border-radius:.5rem;background:#111;color:#fff;font-weight:900}nav{display:flex;gap:.75rem;font-size:.82rem;font-weight:800}nav a{text-decoration:none;color:#45443f}
     .config-banner{padding:.75rem 1.2rem;background:#fff7d6;color:#5f4b00;font-size:.85rem;font-weight:800;border-bottom:1px solid rgba(0,0,0,.08)}
     main{width:min(1120px,calc(100vw - 2rem));margin:0 auto;padding:4rem 0}.hero-grid,.panel-grid,.pair-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:2rem;align-items:center}.hero-grid{min-height:72vh}
     .eyebrow{margin:0 0 1rem;font-size:.73rem;font-weight:950;text-transform:uppercase;letter-spacing:.12em;color:#6f6c64}h1{max-width:700px;margin:0;font-size:clamp(3rem,8vw,6.8rem);line-height:.86;letter-spacing:0;font-weight:1000}h2{margin:.2rem 0 1rem;font-size:2rem;line-height:.96}.lede{max-width:620px;color:#5f625d;font-size:1.06rem;line-height:1.65}.fine{color:#77736b;font-size:.85rem;line-height:1.5}.actions{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:1.5rem}.button{display:inline-flex;align-items:center;justify-content:center;min-height:3rem;border:0;border-radius:999px;padding:0 1.2rem;text-decoration:none;font-weight:950;cursor:pointer}.primary{background:#111;color:#fff}.secondary{background:#fff;color:#111;border:1px solid rgba(0,0,0,.1)}.light{background:#fff;color:#111}
@@ -773,6 +782,7 @@ function styles() {
     .waitlist-tier-2{border-top:1px solid rgba(0,0,0,.06);border-bottom:1px solid rgba(0,0,0,.06)}
     .waitlist-tier-3{padding-bottom:0}
     .waitlist-logo{display:flex;justify-content:center;margin-bottom:.9rem}
+    .waitlist-logo .brand-mark{height:3.5rem;width:auto}
     .waitlist-logo .logo{width:2.6rem;height:2.6rem;border-radius:.85rem;font-size:1.3rem;box-shadow:0 6px 20px rgba(0,0,0,.18)}
     .waitlist-title{margin:0;font-size:clamp(1.3rem,4.5vw,1.6rem);font-weight:900;line-height:1.2;letter-spacing:-.01em}
     .waitlist-eyebrow{margin:.45rem 0 0;color:#5f625d;font-size:.93rem;font-weight:600}
