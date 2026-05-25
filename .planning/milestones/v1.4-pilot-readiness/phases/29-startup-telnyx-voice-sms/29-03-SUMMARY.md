@@ -197,6 +197,19 @@ Mid-execution, peer (`executor-29-02`) committed `031f7dd feat(29-02)` which rew
 
 Both Wave-2 plans share `apps/startup/workers/app.ts` (orchestrator listed it as a non-shared file, but both plans needed to register a new route/export). This is a coordination-protocol learning for v1.5 wave-mode: any plan adding to `app.ts` should declare it as a wave-shared file in the orchestrator config.
 
+## Deviations (files outside frontmatter `files_modified`)
+
+Per HYGN-04, listing every file touched by this plan's commits that wasn't in the frontmatter `files_modified` array — all have authority from the plan body (`<action>` blocks reference them explicitly):
+
+- `apps/startup/workers/app.ts` — scheduled export wire-up (Task 2 `<action>` block explicitly required adapting the default export). Two commits: `4fea3c6` initial, `2d66192` merge-reconcile after peer's `031f7dd`.
+- `apps/startup/workers/routes/scheduled.test.ts` — unit tests (plan-level constraint: "Add unit tests for: weekly-cron startup-selection query shape (mock), cursor write/read round-trip (mock KV), reply parser numeric-position resolution, 'yes' re-subscribe handler").
+- `apps/startup/workers/routes/telnyx.test.ts` — extended existing test file with 14 new touchbase regex tests (same constraint).
+- `apps/startup/workers/lib/resolveChannelLink.ts` — extract `channel_link_id` from Fly response (Task 3 `<action>` block: "have `resolveChannelLink` populate it from the `/v1/channel-links/resolve` Fly response").
+- `apps/startup/workers/types.ts` — `StartupContext.channel_link_id?: string` (Task 3 `<action>` block: "extend `StartupContext` in `types.ts` to include `channel_link_id?: string`").
+- `infra/startup-api/src/index.mjs` — 4 new endpoints + augmented existing `/v1/channel-links/resolve` response (Task 2 + Task 3 `<action>` blocks both explicitly require Fly proxy changes).
+- `.planning/.../29-03-SUMMARY.md` — this file (mandated by `<output>` section).
+- `.planning/workstreams/team-cms/STATE.md` — workstream state update (mandated by execute-plan workflow + team-mode constraint).
+
 ## Authentication Gates
 
 None — Plan 29-03 ships code only. All Telnyx auth was deferred in 29-01 (DEFER-29-01-E API key, F webhook pubkey, G FROM number).
