@@ -1596,7 +1596,7 @@ function ChannelSection() {
                 className={`channel-chip ${active === index ? "is-active" : ""}`}
                 style={{
                   borderColor: item.color,
-                  color: active === index ? "white" : item.color,
+                  color: active === index ? "var(--lavender)" : item.color,
                   background: active === index ? item.color : "rgba(255, 255, 255, 0.78)",
                 }}
               >
