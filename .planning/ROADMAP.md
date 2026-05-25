@@ -359,14 +359,14 @@ Plans:
 7. Telnyx Voice AI's call recordings + transcripts logged to a per-startup S3-equivalent (R2) for audit; opt-in disclosure in voice intake greeting
 8. `apps/startup-mcp/CHANNELS.md` updated with the Telnyx adapter pattern as the concrete proof-of-concept for the channel-adapter architecture established in Phase 28
 
-**Plans**: TBD (likely 3)
+**Plans**: 3 plans, 2 waves
 
 Plans:
-- [ ] 29-01: Telnyx number provisioning + SMS inbound/outbound adapter wired into existing `apps/startup-mcp/` MCP core + identity resolution via `startup_channel_links` (STARTUP-TELNYX-01..06)
-- [ ] 29-02: Telnyx Voice AI Agent configuration + voice-intake onboarding script + R2 audit log + opt-in disclosure (STARTUP-VOICE-01..04)
-- [ ] 29-03: Weekly touchbase cron + reply intent parser + opt-in management + first pilot end-to-end test (call onboarding → SMS touchbase → reply round-trip) (STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02)
+- [ ] 29-01-PLAN.md — SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 (Wave 1) [STARTUP-TELNYX-01..06]
+- [ ] 29-02-PLAN.md — Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md (Wave 2, parallel with 29-03) [STARTUP-VOICE-01..04]
+- [ ] 29-03-PLAN.md — Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md (Wave 2, parallel with 29-02) [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02]
 
-**Research flags**: Likely on STARTUP-VOICE-01..04 (Telnyx Voice AI is new product surface — verify current MCP-integration support, voice agent configuration UI, and SLA/cost characteristics at signup)
+**Research flags**: Resolved — 29-RESEARCH.md confirmed (1) toll-free Telnyx skips A2P 10DLC, BRN required for verification, (2) Voice AI MCP integration confirmed supported; may be plan-tier gated → TELNYX_USE_MCP_INTEGRATION feature flag codes both paths, (3) SMS webhook Ed25519-signed, inbound shape fully documented
 
 ---
 

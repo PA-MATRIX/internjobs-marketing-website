@@ -2,10 +2,10 @@
 schema_version: 1
 team: "team-cms"
 milestone: "v1.4"
-current_phase: 28.5
-plan_total: 5
-status: in_progress
-last_activity: "2026-05-25"  # 28.5-05 shipped — Phase 28.5 code-complete (5/5). Work-email enforcement webhook + 26 unit tests + marketing CTA flip + 7-test Playwright E2E suite. Deploy + ops → DEFER-28.5-05-A..E (5 new entries in PHASE-28.5-DEFERRED-OPS.md).
+current_phase: 29
+plan_total: 3
+status: planned
+last_activity: "2026-05-25"  # Phase 29 planned — 3 plans, 2 waves. 29-01 Wave 1, 29-02+29-03 Wave 2 parallel.
 ---
 
 # team-cms Workstream State
@@ -26,14 +26,27 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: Phase 28.5 CODE-COMPLETE (5/5 plans shipped 2026-05-25). 28.5-05 wave 4 final plan landed (commits `cc0fe9a` + `e9787e0`): work-email enforcement webhook at `apps/startup/workers/routes/webhooks.ts` (POST /webhooks/clerk with Svix signature verification + 30-domain personal-email blocklist + Clerk Backend API DELETE on personal-domain user.created + OAuth-race guard for empty email_addresses arrays) with 26-test node:test unit suite at `apps/startup/workers/routes/webhooks.test.ts` (all 26 pass); marketing /startups CTA flipped from RequestAccessForm to primary "sign up at startups.internjobs.ai" link with RequestAccessForm retained inside <details> concierge fallback (apps/marketing/src/App.tsx StartupAccessSection); 7-test Playwright E2E suite at `apps/startups/e2e/founder-flow.spec.ts` with pre-deploy hostReachable() guards (3 unauthed + 4 auth-gated tests; currently 7 skipped + 0 failed pending DEFER-28.5-02-A + 05-C + 05-E). Live deploy + ops → DEFER-28.5-05-A..E (5 new entries appended to PHASE-28.5-DEFERRED-OPS.md).
+Status: Phase 29 PLANNED (3 plans, 2 waves). Plans created 2026-05-25.
 
-Phase status: code-complete, ops-incomplete. All 13 STARTUP-WEB-* + STARTUP-AGENT-EMAIL-* + STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01 requirements addressed. Awaiting orchestrator phase-close after deferred ops run.
+Current phase: 29 (Startup Telnyx SMS + Voice AI + Voice-Based Onboarding)
+Current plan: 29-01 (not yet started)
+Blockers: None for executor; all three plans use ops-deferred guards (DEFER-29-01..03).
+Next action: `wrangler dev --test-scheduled` smoke test after ops steps run.
 
-Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: 28.5-05 ✓ shipped 2026-05-25 (code-complete; deploy + 5-step ops verification → DEFER-28.5-05-A..E)
-Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A + DEFER-28.5-04-A..D + DEFER-28.5-05-A..E (see PHASE-28.5-DEFERRED-OPS.md).
-Next phase: 29 — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding (planning not yet started).
+### Phase 29 plan summary
+
+| Plan | Objective | Wave | Deps | Status |
+|------|-----------|------|------|--------|
+| 29-01 | SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 [STARTUP-TELNYX-01..06] | 1 | none | Not started |
+| 29-02 | Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md [STARTUP-VOICE-01..04] | 2 | 29-01 | Not started |
+| 29-03 | Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02] | 2 | 29-01 | Not started |
+
+### Previous position: Phase 28.5 CODE-COMPLETE (2026-05-25)
+
+Phase 28.5 shipped 5/5 plans on 2026-05-25. Work-email enforcement webhook at `apps/startup/workers/routes/webhooks.ts` (POST /webhooks/clerk with Svix signature verification + 30-domain personal-email blocklist + Clerk Backend API DELETE on personal-domain user.created + OAuth-race guard for empty email_addresses arrays) with 26-test node:test unit suite at `apps/startup/workers/routes/webhooks.test.ts` (all 26 pass); marketing /startups CTA flipped from RequestAccessForm to primary "sign up at startups.internjobs.ai" link with RequestAccessForm retained inside <details> concierge fallback (apps/marketing/src/App.tsx StartupAccessSection); 7-test Playwright E2E suite at `apps/startups/e2e/founder-flow.spec.ts` with pre-deploy hostReachable() guards (3 unauthed + 4 auth-gated tests; currently 7 skipped + 0 failed pending DEFER-28.5-02-A + 05-C + 05-E). Live deploy + ops → DEFER-28.5-05-A..E (5 new entries appended to PHASE-28.5-DEFERRED-OPS.md).
+
+Phase 28.5 status: code-complete, ops-incomplete. All 13 STARTUP-WEB-* + STARTUP-AGENT-EMAIL-* + STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01 requirements addressed. Awaiting orchestrator phase-close after deferred ops run.
+
 Deferred to v1.5:
 - `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
 - `DEFER-28.5-01-A..G` — Clerk #3 wrangler secret injection, Clerk frontend-api CNAME, CF Pages project + custom domain, CF Email Routing domain verify (SPF/DKIM/DMARC), catch-all → Worker, Clerk webhook signing secret, DNS propagation check. See `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/PHASE-28.5-DEFERRED-OPS.md`.
@@ -77,7 +90,7 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 ## Remaining phases (team-cms)
 
 - **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(5/5 plans shipped 2026-05-25; code-complete, ops-incomplete; awaiting orchestrator phase-close)*
-- **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding *(not yet started)*
+- **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding *(3 plans planned 2026-05-25; ready for execution)*
 
 ## Phase 28.5 plan summary
 
