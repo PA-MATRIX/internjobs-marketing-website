@@ -36,55 +36,18 @@
 
 import { Webhook } from "svix";
 import type { Env } from "../types";
+import { isPersonalEmailDomain } from "../lib/workEmail";
 
 // ── Personal-email blocklist ────────────────────────────────────────────────
 // Common free/personal email providers that should NOT be allowed to sign
 // up as a founder (founders must use a work email so we can verify they
-// belong to the startup). List captured from 28.5-RESEARCH.md §2.
-const BLOCKED_DOMAINS = new Set<string>([
-	"gmail.com",
-	"googlemail.com",
-	"yahoo.com",
-	"yahoo.co.uk",
-	"yahoo.co.in",
-	"ymail.com",
-	"hotmail.com",
-	"hotmail.co.uk",
-	"outlook.com",
-	"outlook.co.uk",
-	"live.com",
-	"msn.com",
-	"icloud.com",
-	"me.com",
-	"mac.com",
-	"aol.com",
-	"proton.me",
-	"protonmail.com",
-	"pm.me",
-	"mail.com",
-	"yandex.com",
-	"yandex.ru",
-	"zoho.com",
-	"fastmail.com",
-	"tutanota.com",
-	"tutamail.com",
-]);
-
-/**
- * Returns true if the email's domain is a known personal/free provider.
- * Case-insensitive on the domain. Also matches any `gmx.*` domain (gmx.com,
- * gmx.de, gmx.net, etc.) since gmx has dozens of country TLDs.
- *
- * Exported for unit tests in webhooks.test.ts.
- */
+// belong to the startup). The canonical blocklist lives in lib/workEmail.ts
+// and is shared with Phase 29-01's Voice AI `register_startup` handler.
+// `isPersonalEmail` is preserved as a re-export to keep the existing
+// webhooks.test.ts (26 cases) green; new code should import from
+// `../lib/workEmail` directly.
 export function isPersonalEmail(email: string): boolean {
-	if (typeof email !== "string" || !email.includes("@")) return false;
-	const domain = email.split("@")[1]?.toLowerCase().trim() ?? "";
-	if (!domain) return false;
-	if (BLOCKED_DOMAINS.has(domain)) return true;
-	// gmx.* (gmx.com, gmx.de, gmx.net, gmx.at, ...) — all personal.
-	if (domain === "gmx" || domain.startsWith("gmx.")) return true;
-	return false;
+	return isPersonalEmailDomain(email);
 }
 
 // ── Clerk Backend API ────────────────────────────────────────────────────────

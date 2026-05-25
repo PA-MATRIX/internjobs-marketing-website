@@ -978,6 +978,153 @@ app.get("/v1/channels/resolve", async (c) => {
   }
 });
 
+// ── v1.4 Phase 29-01 — Telnyx SMS adapter endpoints ──────────────────────────
+//
+// Three endpoints land here:
+//   • GET   /v1/channel-links/resolve            — phone (or other external_id) → (startup_id, member_id)
+//   • PATCH /v1/channel-links/:id/opt-out        — STOP handling for TCPA compliance
+//   • GET   /v1/startups/:id/candidates          — position-indexed candidate lookup
+//                                                   for the show_candidate MCP action
+//
+// All sit behind the same Authorization: Bearer STARTUP_API_SECRET gate.
+
+// ── GET /v1/channel-links/resolve ────────────────────────────────────────────
+// Query: ?channel_type=<type>&external_id=<value>
+// Returns 200 { startup_id, member_id, startup_name } on hit, 404 on miss.
+// Used by apps/startup/workers/lib/resolveChannelLink.ts to map an inbound
+// SMS sender phone → owning startup. Generic across channel types so the
+// same helper covers telnyx-voice in Phase 29-02.
+app.get("/v1/channel-links/resolve", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const channelType = c.req.query("channel_type");
+  const externalId = c.req.query("external_id");
+  if (!channelType || !externalId) {
+    return c.json({ error: "channel_type_and_external_id_required" }, 400);
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT cl.startup_id, cl.member_id, s.name AS startup_name
+         FROM startup_channel_links cl
+         JOIN startups s ON s.id = cl.startup_id
+        WHERE cl.channel_type = $1
+          AND cl.channel_external_id = $2
+          AND cl.status = 'active'
+        LIMIT 1`,
+      [channelType, externalId],
+    );
+    if (rows.length === 0) return c.json({ error: "not_found" }, 404);
+    return c.json({
+      startup_id: rows[0].startup_id,
+      member_id: rows[0].member_id,
+      startup_name: rows[0].startup_name,
+    });
+  } catch (err) {
+    return c.json({ error: "lookup_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── PATCH /v1/channel-links/:id/opt-out ──────────────────────────────────────
+// TCPA-compliant unconditional opt-out. Sets:
+//   status = 'opted_out'
+//   opt_in_flags = '{}'::jsonb
+// Used by routes/telnyx.ts when an inbound message matches STOP / UNSUBSCRIBE /
+// CANCEL / END / QUIT. Body is empty (the path id is the load-bearing input).
+// Returns 200 { ok: true } even if the row was already opted out (idempotent).
+app.patch("/v1/channel-links/:id/opt-out", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const linkId = c.req.param("id");
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE startup_channel_links
+          SET status = 'opted_out',
+              opt_in_flags = '{}'::jsonb,
+              updated_at = now()
+        WHERE id = $1`,
+      [linkId],
+    );
+    if (!rowCount) return c.json({ error: "channel_link_not_found" }, 404);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: "opt_out_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── GET /v1/startups/:id/candidates ──────────────────────────────────────────
+// Query: ?position=<1..9>
+// Returns the Nth most-recent candidate (unique student × startup pair) for
+// this startup. position=1 → most recent inbound; position=9 → 9th-most-recent.
+// Mirrors the existing /v1/search/:scope `threads` scope ordering (max
+// inbound_messages.created_at DESC per student) but exposes a single row by
+// 1-indexed position for the show_candidate MCP action.
+//
+// Returns 200 { candidate_name, role_title, application_summary, thread_id }
+// or 404 if fewer than `position` candidates exist for this startup.
+app.get("/v1/startups/:id/candidates", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const startupId = c.req.param("id");
+  const positionRaw = c.req.query("position");
+  const position = parseInt(positionRaw ?? "1", 10);
+  if (!Number.isFinite(position) || position < 1 || position > 9) {
+    return c.json({ error: "position_must_be_1_to_9" }, 400);
+  }
+  const offset = position - 1;
+  try {
+    // One row per student-startup pair; latest inbound determines ordering.
+    // student_threads → role_id linkage gives us the role.title (best-effort —
+    // some candidates may not have an attached role yet, in which case role_title
+    // returns null).
+    const { rows } = await pool.query(
+      `SELECT
+         COALESCE(s.name, s.email, 'unknown')         AS candidate_name,
+         (
+           SELECT r.title FROM student_threads st
+            JOIN roles r ON r.id = st.role_id
+            WHERE st.student_id = im_agg.student_id
+              AND st.startup_id = $1
+            ORDER BY st.created_at DESC
+            LIMIT 1
+         )                                            AS role_title,
+         (
+           SELECT CASE
+                    WHEN length(im.body) > 140
+                    THEN substring(im.body, 1, 137) || '...'
+                    ELSE im.body
+                  END
+             FROM inbound_messages im
+            WHERE im.student_id = im_agg.student_id
+              AND im.startup_id = $1
+            ORDER BY im.created_at DESC
+            LIMIT 1
+         )                                            AS application_summary,
+         im_agg.student_id::text                      AS thread_id
+       FROM (
+         SELECT im.student_id, max(im.created_at) AS last_at
+           FROM inbound_messages im
+          WHERE im.startup_id = $1
+            AND im.student_id IS NOT NULL
+          GROUP BY im.student_id
+          ORDER BY max(im.created_at) DESC
+          OFFSET $2
+          LIMIT 1
+       ) im_agg
+       JOIN students s ON s.id = im_agg.student_id`,
+      [startupId, offset],
+    );
+    if (rows.length === 0) return c.json({ error: "not_found" }, 404);
+    return c.json(rows[0]);
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "startup_api_candidates_lookup_failed",
+      error: err?.message,
+    }));
+    return c.json({ error: "lookup_failed", detail: err?.message }, 500);
+  }
+});
+
 // ── POST /v1/messages/inbound ────────────────────────────────────────────────
 // Body: { provider, provider_event_id?, channel_type, channel_address,
 //         startup_id, member_id?, direction?, from_address?, subject?, body,

@@ -25,6 +25,29 @@ export interface Env {
 	// undefined, routes/admin.ts logs the welcome email and continues (the
 	// 28-04 marketing-CTA path already has the same fallback semantics).
 	EMAIL?: SendEmail;
+
+	// v1.4 Phase 29 — Telnyx SMS + Voice AI bindings (all OPTIONAL at type
+	// level; runtime guards in routes/telnyx.ts and lib/telnyx.ts log + no-op
+	// when absent so the Worker never 500s before Telnyx ops close.
+	// See PHASE-29-DEFERRED-OPS.md for the secret-binding backlog.)
+	TELNYX_API_KEY?: string;                // Bearer for POST /v2/messages
+	TELNYX_FROM_NUMBER?: string;            // E.164 sender (toll-free)
+	TELNYX_MESSAGING_PROFILE_ID?: string;   // Telnyx messaging profile UUID
+	TELNYX_WEBHOOK_PUBLIC_KEY?: string;     // Ed25519 public key (base64) for SMS webhook sig verify
+	TELNYX_VOICE_AGENT_TOKEN?: string;      // Bearer for Voice AI agent's MCP calls (Phase 29-02)
+	TELNYX_USE_MCP_INTEGRATION?: string;    // 'true' | 'false'; gates MCP vs webhook-tool path
+	// R2 bucket binding for voice call audit log (Phase 29-02 enables).
+	VOICE_AUDIT?: R2Bucket;
+	// KV namespace for touchbase cursors (Phase 29-03 enables).
+	TOUCHBASE_CURSORS?: KVNamespace;
+	// Workers AI binding — declared in wrangler.jsonc (`"ai": { "binding": "AI" }`)
+	// and used by lib/embed.ts (Phase 28) and lib/intent.ts (Phase 29-01).
+	AI?: {
+		run: (
+			model: string,
+			input: Record<string, unknown>,
+		) => Promise<unknown>;
+	};
 }
 
 /** Identity context resolved from the per-startup Bearer token. */
