@@ -12,6 +12,8 @@
 //   POST  /v1/startups/token       — lookup startup context by mcp_token_hash
 //   POST  /v1/startups             — create startup + member + issue MCP token
 //   PATCH /v1/startups/:id/token   — rotate MCP token (returns new plaintext)
+//   GET   /v1/startups/:id/stats   — active role count + 7-day action count
+//                                    (added in 28-03 for me() tool)
 //   POST  /v1/roles                — insert a role + store pgvector embedding
 //   POST  /v1/messages             — insert an outbound_messages row (channel='mcp')
 //   POST  /v1/channel-links        — UPSERT a startup_channel_links row
@@ -19,6 +21,9 @@
 //                                    updated_at advance on re-POST)
 //   POST  /v1/action-log           — insert a startup_action_log row
 //   POST  /v1/search/candidates    — pgvector cosine similarity search
+//   POST  /v1/search/:scope        — structured search (scope ∈
+//                                    {roles, threads, messages, members,
+//                                    startups}; added in 28-03)
 //   PATCH /v1/roles/:id            — update role fields (ownership-checked)
 //   PATCH /v1/threads/:id/mark     — set inbound_messages.startup_mark
 //                                    (ownership-checked)
@@ -593,6 +598,195 @@ app.patch("/v1/roles/:id", async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     return c.json({ error: "update_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── GET /v1/startups/:id/stats ───────────────────────────────────────────────
+// Snapshot stats for the me() MCP tool: active_role_count + actions_last_7d.
+// Wired by apps/startup/workers/tools/me.ts. Bearer-authed; no body.
+app.get("/v1/startups/:id/stats", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const startupId = c.req.param("id");
+  try {
+    const { rows: [stats] } = await pool.query(
+      `SELECT
+         (SELECT count(*)::int FROM roles
+            WHERE startup_id = $1 AND status = 'active') AS active_role_count,
+         (SELECT count(*)::int FROM startup_action_log
+            WHERE startup_id = $1
+              AND created_at > now() - interval '7 days') AS actions_last_7d,
+         (SELECT max(created_at) FROM startup_action_log
+            WHERE startup_id = $1) AS last_action_at`,
+      [startupId],
+    );
+    return c.json({
+      startup_id: startupId,
+      active_role_count: stats?.active_role_count ?? 0,
+      actions_last_7d: stats?.actions_last_7d ?? 0,
+      last_action_at: stats?.last_action_at ?? null,
+    });
+  } catch (err) {
+    return c.json({ error: "stats_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── POST /v1/search/:scope ───────────────────────────────────────────────────
+// Structured search for the non-candidates scopes (roles | threads | messages |
+// members | startups). Wired by apps/startup/workers/tools/search.ts. The
+// `candidates` scope still goes through POST /v1/search/candidates (pgvector).
+//
+// Body: { startup_id, query, filters?, limit? } — startup_id is ALWAYS the
+// caller's auth-resolved id; the Worker enforces that. Each scope adds
+// WHERE startup_id = $auth at SQL so cross-startup leaks are impossible.
+//
+// Result envelope: { results: [{id, summary, score, ...extras}], total_returned }
+//
+// `score` is 1.0 for structured hits (no relevance ranking — just SQL match).
+// The Worker's handleSearch() copies this verbatim into the MCP envelope.
+const STRUCTURED_SCOPES = new Set([
+  "roles",
+  "threads",
+  "messages",
+  "members",
+  "startups",
+]);
+
+app.post("/v1/search/:scope", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const scope = c.req.param("scope");
+  if (!STRUCTURED_SCOPES.has(scope)) {
+    return c.json({
+      error: "invalid_scope",
+      detail: `scope must be one of: ${[...STRUCTURED_SCOPES].join(", ")} (candidates uses /v1/search/candidates)`,
+    }, 400);
+  }
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const { startup_id, query, limit = 10 } = body ?? {};
+  if (!startup_id) return c.json({ error: "startup_id_required" }, 400);
+  const q = typeof query === "string" ? query : "";
+  const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`; // escape LIKE metacharacters
+  const maxLimit = Math.min(Math.max(1, Number(limit) || 10), 20);
+
+  try {
+    let rows = [];
+    if (scope === "roles") {
+      const result = await pool.query(
+        `SELECT
+           id::text                          AS id,
+           title                             AS summary,
+           1.0::float8                       AS score,
+           status,
+           description,
+           location,
+           comp_range,
+           created_at
+         FROM roles
+         WHERE startup_id = $1
+           AND ($2 = '' OR title ILIKE $3 OR description ILIKE $3 OR requirements ILIKE $3)
+         ORDER BY created_at DESC
+         LIMIT $4`,
+        [startup_id, q, like, maxLimit],
+      );
+      rows = result.rows;
+    } else if (scope === "threads") {
+      // A "thread" here is a unique student×startup conversation surface.
+      // We aggregate inbound_messages by student_id (no first-class thread_id
+      // column — see 28-01 schema notes). Each result row is one student's
+      // engagement with this startup; the id is the student_id (resolvable
+      // via search('candidates') for full details).
+      const result = await pool.query(
+        `SELECT
+           s.id::text                        AS id,
+           COALESCE(s.name, s.email, 'unknown') AS summary,
+           1.0::float8                       AS score,
+           s.email,
+           s.linkedin_profile_url            AS linkedin,
+           max(im.created_at)                AS last_inbound_at,
+           count(im.id)::int                 AS message_count,
+           max(im.startup_mark)              AS startup_mark
+         FROM inbound_messages im
+         JOIN students s ON s.id = im.student_id
+         WHERE im.startup_id = $1
+           AND ($2 = '' OR s.name ILIKE $3 OR s.email ILIKE $3 OR im.body ILIKE $3)
+         GROUP BY s.id, s.name, s.email, s.linkedin_profile_url
+         ORDER BY max(im.created_at) DESC
+         LIMIT $4`,
+        [startup_id, q, like, maxLimit],
+      );
+      rows = result.rows;
+    } else if (scope === "messages") {
+      const result = await pool.query(
+        `SELECT
+           id::text                          AS id,
+           CASE
+             WHEN length(content) > 120
+             THEN substring(content, 1, 117) || '...'
+             ELSE content
+           END                               AS summary,
+           1.0::float8                       AS score,
+           channel,
+           direction,
+           thread_id,
+           delivery_status,
+           created_at
+         FROM outbound_messages
+         WHERE startup_id = $1
+           AND ($2 = '' OR content ILIKE $3)
+         ORDER BY created_at DESC
+         LIMIT $4`,
+        [startup_id, q, like, maxLimit],
+      );
+      rows = result.rows;
+    } else if (scope === "members") {
+      const result = await pool.query(
+        `SELECT
+           id::text                          AS id,
+           COALESCE(name, email)             AS summary,
+           1.0::float8                       AS score,
+           role,
+           email,
+           created_at
+         FROM startup_members
+         WHERE startup_id = $1
+           AND ($2 = '' OR name ILIKE $3 OR email ILIKE $3)
+         ORDER BY created_at ASC
+         LIMIT $4`,
+        [startup_id, q, like, maxLimit],
+      );
+      rows = result.rows;
+    } else if (scope === "startups") {
+      // Caller can ONLY see their own startup record. The id filter is
+      // hardcoded to startup_id — query string is ignored for matching but
+      // included in response for shape consistency.
+      const result = await pool.query(
+        `SELECT
+           id::text                          AS id,
+           name                              AS summary,
+           1.0::float8                       AS score,
+           domain,
+           website,
+           status,
+           created_at,
+           updated_at
+         FROM startups
+         WHERE id = $1
+         LIMIT 1`,
+        [startup_id],
+      );
+      rows = result.rows;
+    }
+    return c.json({ results: rows, total_returned: rows.length });
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "startup_api_structured_search_failed",
+      scope,
+      error: err?.message,
+    }));
+    return c.json({ error: "search_failed", detail: err?.message }, 500);
   }
 });
 

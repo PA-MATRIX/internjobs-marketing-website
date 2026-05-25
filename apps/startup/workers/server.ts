@@ -132,6 +132,7 @@ export function createStartupMcpServer() {
 					query,
 					filters,
 					limit,
+					env: props.env,
 				}),
 			);
 		},
