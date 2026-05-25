@@ -398,11 +398,11 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | BRAND-LOGO-01..07 | Phase 22 | team-cms | Pending |
 | BRAND-COPY-01..08 | Phase 22 | team-cms | Pending |
 | BRAND-VERIFY-01..03 | Phase 22 | team-cms | Pending |
-| STARTUP-MCP-01..10 | Phase 28 | team-cms | Pending |
-| STARTUP-ADMIN-01..02 | Phase 28 | team-cms | Pending |
-| STARTUP-CHANNEL-01..02 | Phase 28 | team-cms | Pending |
-| STARTUP-MARKETING-01..02 | Phase 28 | team-cms | Pending |
-| STARTUP-PILOT-01 | Phase 28 | team-cms | Pending |
+| STARTUP-MCP-01..10 | Phase 28 | team-cms | Complete |
+| STARTUP-ADMIN-01..02 | Phase 28 | team-cms | Complete |
+| STARTUP-CHANNEL-01..02 | Phase 28 | team-cms | Complete |
+| STARTUP-MARKETING-01..02 | Phase 28 | team-cms | Complete |
+| STARTUP-PILOT-01 | Phase 28 | team-cms | Deferred → v1.5 STARTUP-PILOT-LIVE-01 |
 | STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Pending |
 | STARTUP-VOICE-01..04 | Phase 29 | team-cms | Pending |
 | STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Pending |
