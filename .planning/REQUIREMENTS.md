@@ -230,6 +230,40 @@ First scalable channel for startup-initiated interaction with internjobs.ai. Sta
 - [ ] **STARTUP-MARKETING-02**: `/startups` marketing page "how we work with you" section — visual grid presenting the channel options with brand-correct hierarchy. **Primary tier (highlighted):** Claude / ChatGPT / Cursor (via MCP install), Voice (call our Telnyx number), SMS (text our number), Email (always-on). **Coming soon tier (greyed/labeled):** Slack, Discord, Microsoft Teams. Copy emphasizes "talk to us where you already work" — no forced platform choice. Brand voice (lowercase, blunt, "no resumes" pattern) per BRAND-V1.md. Each primary tier item has a one-line "how it works" subhead.
 - [ ] **STARTUP-PILOT-01**: First pilot startup onboards end-to-end (Ridhi runs admin endpoint → founder receives SMS → founder pastes install command into Claude/Cursor/ChatGPT → calls `me()` → calls `execute('post_role')` → calls `search('candidates')` → calls `execute('reply_to_candidate')`); evidence committed to `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/PILOT-EVIDENCE.md`
 
+
+### Group G2 — Startups Web App + Clerk #3 + Per-Startup Agent Email (Phase 28.5, team-cms)
+
+Third leg of the auth tripod: a founder-facing Vite+React portal at `startups.internjobs.ai` (Clerk app #3, Google OAuth + work-email magic-link), per-startup agent email addresses (`<slug>@startups.internjobs.ai`), and a Cloudflare Email Routing catch-all → Worker for inbound email threading. Founders can self-serve sign in (no Claude/Cursor needed), post roles, view candidate threads, and send replies from their agent address. Ridhi's concierge admin endpoint extended to mint Clerk invites + reserve agent slugs + send welcome emails. Marketing `/startups` CTA flipped from "request access" to "sign up".
+
+**Auth + web app:**
+
+- [ ] **STARTUP-WEB-AUTH-01**: Clerk app #3 "InternJobs Startups" created; mounted in `apps/startups/` via `@clerk/react` `ClerkProvider`; Google OAuth + email magic-link enabled; `STARTUPS_NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `STARTUPS_CLERK_SECRET_KEY` in Infisical at `/internjobs-ai` env=prod
+- [ ] **STARTUP-WEB-AUTH-02**: `startups.internjobs.ai` resolves with valid TLS; Google OAuth sign-in and email magic-link both complete end-to-end; authenticated session lands on `/dashboard`
+- [ ] **STARTUP-WEB-AUTH-03**: Work-email enforcement active: sign-up attempt from gmail.com / yahoo.com / hotmail.com / outlook.com / icloud.com / aol.com / proton.me / live.com / msn.com / googlemail.com / gmx.* is rejected (Clerk `user.created` webhook + `deleteUser` call); custom-domain sign-up succeeds
+- [ ] **STARTUP-WEB-AUTH-04**: Clerk webhook at `https://mcp.internjobs.ai/webhooks/clerk` verified with Svix signature; `STARTUPS_CLERK_WEBHOOK_SECRET` in Infisical; unauthorized requests return 400
+
+**Dashboard + role/thread UX:**
+
+- [ ] **STARTUP-WEB-DASH-01**: Authenticated founder lands on `/dashboard` showing startup name, agent email address, role count, and recent candidate threads — all from live `/api/me` response via Pages Function proxy
+- [ ] **STARTUP-WEB-DASH-02**: Founder can create a new role at `/roles/new` → row appears in `roles` table with the identical column set as MCP `execute('post_role')` — no schema fragmentation; `title`, `description`, `location`, `employment_type` fields match exactly
+- [ ] **STARTUP-WEB-DASH-03**: Founder can open a candidate thread and send a reply → outbound email goes FROM `<slug>@startups.internjobs.ai`; candidate sees that as the From address
+
+**Per-startup agent email:**
+
+- [ ] **STARTUP-AGENT-EMAIL-01**: Migration 0013 applied: `startups.agent_email TEXT UNIQUE` column exists; slug algorithm (`mintSlug` + `reserveUniqueSlug` with 10-attempt collision guard) implemented in `apps/startup/workers/lib/slug.ts`; each startup provisioned with `<slug>@startups.internjobs.ai` at creation time
+- [ ] **STARTUP-AGENT-EMAIL-02**: CF Email Routing catch-all for `startups.internjobs.ai` → `internjobs-startups` Worker; `email()` export on Worker resolves slug via `startup_channel_links` → inserts `inbound_messages` row with `channel='email'` and correct `(startup_id, member_id)`; unknown slug returns `setReject('startup not found')`
+- [ ] **STARTUP-AGENT-EMAIL-03**: Outbound email via `env.EMAIL.send()` CF binding uses `from: '<slug>@startups.internjobs.ai'`; SPF + DKIM + DMARC records on `startups.internjobs.ai` verified in CF Email Routing; `welcome@startups.internjobs.ai` send-from verified
+- [ ] **STARTUP-AGENT-EMAIL-04**: Phase 28 `POST /admin/startups/new` extended: mints slug + sets `agent_email` + inserts `startup_channel_links` row + sends Clerk invite to founder email + sends welcome email FROM `welcome@startups.internjobs.ai`
+
+**Marketing CTA:**
+
+- [ ] **STARTUP-WEB-CTA-01**: `/startups` marketing page CTA updated from "request access" form → "sign up →" anchor linking to `https://startups.internjobs.ai/`; cobalt accent preserved per BRAND-V1.md; copy: "create your account in 60 seconds" (lowercase)
+
+**Work-email enforcement:**
+
+- [ ] **STARTUP-WORK-EMAIL-01**: `POST /webhooks/clerk` handler in `apps/startup/` Worker with Svix HMAC-SHA256 verification; `user.created` event triggers `isPersonalEmail()` check; personal-domain users deleted via `DELETE /v1/users/:id` with `STARTUPS_CLERK_SECRET_KEY`; code comment documenting v1.5 upgrade path to Clerk paid-tier native blocklist
+
+
 ### Group H — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding (Phase 29, team-cms)
 
 The "feel heard, no work" channel for non-tech / non-MCP startup founders. Toll-free Telnyx number (skips A2P 10DLC wait), SMS inbound webhook routing to MCP `execute()`, Telnyx Voice AI Agent configured to call our MCP tools directly, voice-intake onboarding flow ("call → activated in 30 seconds"), weekly text touchbase scheduled task. Builds on Phase 28's `startup_channel_links` + MCP core.
@@ -403,14 +437,19 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 | STARTUP-CHANNEL-01..02 | Phase 28 | team-cms | Complete |
 | STARTUP-MARKETING-01..02 | Phase 28 | team-cms | Complete |
 | STARTUP-PILOT-01 | Phase 28 | team-cms | Deferred → v1.5 STARTUP-PILOT-LIVE-01 |
+| STARTUP-WEB-AUTH-01..04 | Phase 28.5 | team-cms | Pending |
+| STARTUP-WEB-DASH-01..03 | Phase 28.5 | team-cms | Pending |
+| STARTUP-AGENT-EMAIL-01..04 | Phase 28.5 | team-cms | Pending |
+| STARTUP-WEB-CTA-01 | Phase 28.5 | team-cms | Pending |
+| STARTUP-WORK-EMAIL-01 | Phase 28.5 | team-cms | Pending |
 | STARTUP-TELNYX-01..06 | Phase 29 | team-cms | Pending |
 | STARTUP-VOICE-01..04 | Phase 29 | team-cms | Pending |
 | STARTUP-TOUCHBASE-01..02 | Phase 29 | team-cms | Pending |
 | STARTUP-MULTICHAN-01..02 | Phase 29 | team-cms | Pending |
 
 **Coverage (v1.4):**
-- Active requirements: 96 total (46 original + 22 brand + 14 Startup MCP + 14 Startup Telnyx)
-- Mapped to phases: 96 ✓
+- Active requirements: 109 total (46 original + 22 brand + 14 Startup MCP + 13 Startup Web/Email + 14 Startup Telnyx)
+- Mapped to phases: 109 ✓
 - Unmapped: 0 ✓
 
 **Phase distribution:**
@@ -421,10 +460,11 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 - Phase 26 (team-workspace): 8 reqs — KGRAPH + GENZ
 - Phase 27 (team-workspace): 6 reqs — DAILY-THEME + STAR-API + DATES + WSTEST
 - **Phase 28 (team-cms): 14 reqs — STARTUP-MCP-01..10 + STARTUP-ADMIN-01..02 + STARTUP-CHANNEL-01..02 + STARTUP-MARKETING-01..02 + STARTUP-PILOT-01** *(13 distinct items grouped + 1 added MARKETING-02)*
+- **Phase 28.5 (team-cms): 13 reqs — STARTUP-WEB-AUTH-01..04 + STARTUP-WEB-DASH-01..03 + STARTUP-AGENT-EMAIL-01..04 + STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01**
 - **Phase 29 (team-cms): 14 reqs — STARTUP-TELNYX-01..06 + STARTUP-VOICE-01..04 + STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02**
 
 **Team load:**
-- team-cms: 63 requirements across Phases 22 + 24 + 28 + 29
+- team-cms: 76 requirements across Phases 22 + 24 + 28 + 28.5 + 29
 - team-workspace: 33 requirements across Phases 23 + 25 + 26 + 27
 
 **Cross-team sequencing:**
