@@ -5,7 +5,7 @@ milestone: "v1.4"
 current_phase: 28.5
 plan_total: 5
 status: in_progress
-last_activity: "2026-05-25"  # 28.5-02 shipped (Vite scaffold + sign-in + dashboard + Pages Function); deploy → DEFER-28.5-02-A
+last_activity: "2026-05-25"  # 28.5-03 shipped (live dashboard + role form + thread reply UI + Pages Function route mapping); deploy → DEFER-28.5-02-A
 ---
 
 # team-cms Workstream State
@@ -26,9 +26,9 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 28.5 wave 2 plan 28.5-02 shipped (apps/startups Vite scaffold + Clerk sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint); deploy → DEFER-28.5-02-A (blocked by DEFER-28.5-01-C)
+Status: In progress — Phase 28.5 wave 3 plan 28.5-03 shipped (live founder dashboard wired to /api/me + /api/roles + /api/threads, role creation form with MCP-schema parity, candidate-thread view + optimistic reply send, lightweight shadcn-shaped UI primitives in-tree, Pages Function per-route mapping with server-side startup_id resolution); deploy → DEFER-28.5-02-A (blocked by DEFER-28.5-01-C)
 Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: 28.5-02 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-03 (founder dashboard real data wiring)
+Current plan: 28.5-03 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-04 (apps/startup/ Worker email handler + migration 0013 — peer's wave-3 territory) and 28.5-05 (Clerk webhook)
 Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A (see PHASE-28.5-DEFERRED-OPS.md)
 Deferred to v1.5:
 - `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
@@ -68,7 +68,7 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 
 ## Remaining phases (team-cms)
 
-- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 1/5 plans shipped)*
+- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 3/5 plans shipped)*
 - **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
 
 ## Phase 28.5 plan summary
@@ -77,9 +77,54 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 |------|-----------|------|------|--------|
 | 28.5-01 | Clerk app #3 + DNS + Email Routing bootstrap (STARTUPS_CLERK_* wrangler stubs + PHASE-28.5-DEFERRED-OPS.md backlog) | 1 | none | ✓ Shipped 2026-05-25 (auto portion; 7-step external-ops checkpoint → DEFERRED-OPS.md) |
 | 28.5-02 | apps/startups Vite+React+Clerk scaffold + sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint | 2 | 28.5-01 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
-| 28.5-03 | TBD — routing / dashboard real data wiring | - | 28.5-02 | Planned |
-| 28.5-04 | TBD — startup Worker email handler | - | 28.5-03 | Planned |
-| 28.5-05 | TBD — Clerk webhook | - | 28.5-04 | Planned |
+| 28.5-03 | Live founder dashboard + role form + thread reply UI + Pages Function route mapping (per-route /api/me, /api/roles, /api/threads, /api/threads/:id/reply with server-side startup_id resolution) | 3 | 28.5-02 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
+| 28.5-04 | apps/startup/ Worker email handler + migration 0013 + slug assignment (peer's wave-3 parallel territory) | 3 | 28.5-02 | In progress (peer executor-28.5-04) |
+| 28.5-05 | Clerk webhook (user.created → startup_members.clerk_user_id) | 4 | 28.5-03 + 28.5-04 | Planned |
+
+### Plan 28.5-03 completion (2026-05-25)
+
+Two-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `d01278e` `feat(28.5-03)`: rewrote `apps/startups/src/lib/api.ts` from
+  the 28.5-02 single `useApi()` generic-fetch hook to a 6-function typed
+  client (getMe, getRoles, createRole, getThread, sendReply, getThreads)
+  with shared `apiRequest` helper, `ApiError` class, and a new
+  `useApiBound()` hook that pre-binds all 6 functions to the current
+  Clerk session. Backward-compat `useApi()` retained.
+
+- `abdd8c5` `feat(28.5-03)`: 16 files / 1770 insertions:
+  - Lightweight shadcn-shaped UI primitives in `src/components/ui/`
+    (Card / Button / Input / Textarea / Label) — same API surface as
+    shadcn but zero new dependencies, brand tokens only, no hex
+    literals
+  - Real page components: `Dashboard.tsx` (live data, 3 independent
+    per-card fetches, not-linked branch), `RolesNew.tsx` + `RoleForm.tsx`
+    (MCP-schema parity hard-locked), `RoleDetail.tsx`, `CandidateDetail.tsx`,
+    `ThreadView.tsx` (optimistic-then-reconcile reply send)
+  - Shared components: `ThreadList.tsx`, `MessageComposer.tsx`,
+    `src/lib/cn.ts`
+  - `App.tsx`: real components wired into router (replaces 28.5-02
+    placeholders)
+  - `functions/api/[[path]].ts`: per-route mapping for /api/me,
+    /api/roles, /api/threads, /api/threads/:id/reply with
+    **server-side startup_id resolution** (browser cannot spoof) +
+    legacy pass-through for all other /api/* paths
+
+Verification: build PASS (91 modules, 84.26 kB gz, no secret leak in
+dist/, no hex literals in src/), tsc --noEmit clean. Visual proof
+deferred — dev-server start-stop incompatible with executor session
+(macOS lacks `timeout`); deploy verification rolls into DEFER-28.5-02-A.
+
+agent_email null handling: dashboard renders "agent email pending —
+ridhi will provision shortly" until peer's 28.5-04 migration 0013 lands.
+
+Deviation: 7 files outside frontmatter `files_modified` — all are
+shadcn-shaped UI primitives in `src/components/ui/` (Decision 1 in
+SUMMARY) plus `src/lib/cn.ts` helper. Zero peer-territory touches
+(verified `apps/startup/` singular has unstaged peer modifications
+that I deliberately did NOT stage).
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-03-SUMMARY.md`
 
 ### Plan 28.5-01 completion (2026-05-25)
 
