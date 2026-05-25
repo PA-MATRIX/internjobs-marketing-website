@@ -5,7 +5,7 @@ milestone: "v1.4"
 current_phase: 28.5
 plan_total: 5
 status: in_progress
-last_activity: "2026-05-25"  # 28.5-04 shipped (per-startup agent email — migration 0013 + slug.ts + inbound Worker email() handler + admin extension w/ Clerk invite + welcome email; 4 Fly endpoints); deploy → DEFER-28.5-04-A..C
+last_activity: "2026-05-25"  # 28.5-05 shipped — Phase 28.5 code-complete (5/5). Work-email enforcement webhook + 26 unit tests + marketing CTA flip + 7-test Playwright E2E suite. Deploy + ops → DEFER-28.5-05-A..E (5 new entries in PHASE-28.5-DEFERRED-OPS.md).
 ---
 
 # team-cms Workstream State
@@ -26,14 +26,21 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: In progress — Phase 28.5 wave 3 plan 28.5-04 shipped (per-startup agent email: migration 0013 startups.agent_email TEXT UNIQUE; apps/startup/workers/lib/slug.ts with mintSlug + reserveUniqueSlug + 16-test node:test suite; apps/startup/workers/routes/email.ts catch-all CF Email Routing handler via postal-mime; apps/startup/workers/routes/admin.ts extended with provisionAgentEmail + sendClerkInvite + sendWelcomeStartupEmail helpers — POST /admin/startups/new response now includes agent_email + agent_email_error; 4 new Fly endpoints in infra/startup-api/src/index.mjs: GET check-slug, PATCH agent-email, GET channels/resolve, POST messages/inbound); deploy → DEFER-28.5-04-A..C (Clerk secret bind + migration apply + Fly+Worker redeploy)
+Status: Phase 28.5 CODE-COMPLETE (5/5 plans shipped 2026-05-25). 28.5-05 wave 4 final plan landed (commits `cc0fe9a` + `e9787e0`): work-email enforcement webhook at `apps/startup/workers/routes/webhooks.ts` (POST /webhooks/clerk with Svix signature verification + 30-domain personal-email blocklist + Clerk Backend API DELETE on personal-domain user.created + OAuth-race guard for empty email_addresses arrays) with 26-test node:test unit suite at `apps/startup/workers/routes/webhooks.test.ts` (all 26 pass); marketing /startups CTA flipped from RequestAccessForm to primary "sign up at startups.internjobs.ai" link with RequestAccessForm retained inside <details> concierge fallback (apps/marketing/src/App.tsx StartupAccessSection); 7-test Playwright E2E suite at `apps/startups/e2e/founder-flow.spec.ts` with pre-deploy hostReachable() guards (3 unauthed + 4 auth-gated tests; currently 7 skipped + 0 failed pending DEFER-28.5-02-A + 05-C + 05-E). Live deploy + ops → DEFER-28.5-05-A..E (5 new entries appended to PHASE-28.5-DEFERRED-OPS.md).
+
+Phase status: code-complete, ops-incomplete. All 13 STARTUP-WEB-* + STARTUP-AGENT-EMAIL-* + STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01 requirements addressed. Awaiting orchestrator phase-close after deferred ops run.
+
 Current phase: 28.5 (Startups Web App + Clerk #3 + Per-Startup Agent Email)
-Current plan: 28.5-04 ✓ shipped 2026-05-25 (code-complete + deploy-ready); next is 28.5-05 (Clerk webhook → user.created handler with Svix signature verify + work-email blocklist + startup_members.clerk_user_id UPDATE)
-Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A + DEFER-28.5-04-A..D (see PHASE-28.5-DEFERRED-OPS.md)
+Current plan: 28.5-05 ✓ shipped 2026-05-25 (code-complete; deploy + 5-step ops verification → DEFER-28.5-05-A..E)
+Blockers: None for executor; pilot-readiness gated on DEFER-28.5-01-A..G + DEFER-28.5-02-A + DEFER-28.5-04-A..D + DEFER-28.5-05-A..E (see PHASE-28.5-DEFERRED-OPS.md).
+Next phase: 29 — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding (planning not yet started).
 Deferred to v1.5:
 - `NEONEX-VER-WORKER-LIVE-01` — 5-step Clerk-JWT probe of Workspace Worker `/api/ops/safety/*` (see 24-01-SUMMARY.md). Code-verified PASS; live-HTTP confirmation needs a browser session.
 - `DEFER-28.5-01-A..G` — Clerk #3 wrangler secret injection, Clerk frontend-api CNAME, CF Pages project + custom domain, CF Email Routing domain verify (SPF/DKIM/DMARC), catch-all → Worker, Clerk webhook signing secret, DNS propagation check. See `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/PHASE-28.5-DEFERRED-OPS.md`.
 - `DEFER-28.5-04-A..D` — STARTUPS_CLERK_SECRET_KEY wrangler bind, migration 0013 apply to Fly Postgres, Fly proxy + apps/startup Worker redeploy, Pages Function consumer note. See PHASE-28.5-DEFERRED-OPS.md.
+- `DEFER-28.5-05-A..E` — Clerk webhook URL registration, STARTUPS_CLERK_WEBHOOK_SECRET wrangler bind, startup worker + marketing redeploy, live gmail-rejection smoke (the checkpoint:human-verify task), Playwright auth-suite activation. See PHASE-28.5-DEFERRED-OPS.md.
+- Migrate work-email enforcement to Clerk paid-tier native blocklist (eliminates ~1-3s OAuth race window in webhooks.ts).
+- Externalize personal-domain list to Workers KV (currently hardcoded in webhooks.ts).
 
 ### Plan 24-01 completion (2026-05-25)
 
@@ -69,8 +76,8 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 
 ## Remaining phases (team-cms)
 
-- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(current — 4/5 plans shipped)*
-- **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding
+- **Phase 28.5** — Startups Web App + Clerk #3 + Per-Startup Agent Email *(5/5 plans shipped 2026-05-25; code-complete, ops-incomplete; awaiting orchestrator phase-close)*
+- **Phase 29** — Startup Telnyx SMS + Voice AI + Voice-Based Onboarding *(not yet started)*
 
 ## Phase 28.5 plan summary
 
@@ -80,7 +87,7 @@ Summary: `.planning/milestones/v1.4-pilot-readiness/phases/24-neon-exit-closeout
 | 28.5-02 | apps/startups Vite+React+Clerk scaffold + sign-in + dashboard skeleton + Pages Function proxy + Fly identity endpoint | 2 | 28.5-01 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
 | 28.5-03 | Live founder dashboard + role form + thread reply UI + Pages Function route mapping (per-route /api/me, /api/roles, /api/threads, /api/threads/:id/reply with server-side startup_id resolution) | 3 | 28.5-02 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-02-A) |
 | 28.5-04 | Per-startup agent email — migration 0013 + slug.ts + inbound email() Worker handler + admin extension w/ Clerk invite + welcome email + 4 Fly endpoints | 3 | 28.5-02 | ✓ Shipped 2026-05-25 (code-complete; deploy → DEFER-28.5-04-A..C) |
-| 28.5-05 | Clerk webhook (user.created → startup_members.clerk_user_id; work-email blocklist; Svix signature verify) | 4 | 28.5-03 + 28.5-04 | Planned |
+| 28.5-05 | Work-email enforcement webhook + marketing CTA flip + E2E Playwright suite | 4 | 28.5-03 + 28.5-04 | ✓ Shipped 2026-05-25 (code-complete; deploy + ops → DEFER-28.5-05-A..E) |
 
 ### Plan 28.5-04 completion (2026-05-25)
 
@@ -136,6 +143,77 @@ Deviations (Rule 1 — frontmatter drift, all auto-fixed):
    agentic-inbox both use the object shape).
 
 Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-04-SUMMARY.md`
+
+### Plan 28.5-05 completion (2026-05-25) — Phase 28.5 CODE-COMPLETE
+
+Two-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `cc0fe9a` `feat(28.5-05)`: webhook handler + blocklist + CTA flip — 6 files
+  - `apps/startup/workers/routes/webhooks.ts` (new, 233 LOC): POST /webhooks/clerk
+    with Svix verification + 30-domain personal-email blocklist + Clerk
+    Backend API DELETE on user.created for personal domains. OAuth-race
+    guard: empty email_addresses → 200 no-op (no DELETE). Returns 503 when
+    STARTUPS_CLERK_WEBHOOK_SECRET is unbound (keeps Clerk retry queue active).
+  - `apps/startup/workers/routes/webhooks.test.ts` (new, 319 LOC, 26 cases):
+    node:test runner; covers isPersonalEmail (15: gmail/yahoo/hotmail/outlook/
+    icloud/proton.me blocked; acme.io/stripe.com accepted; uppercase, gmx.*,
+    subdomain edge-cases, malformed input) + extractPrimaryEmail (4) +
+    handleClerkWebhook integration (7 via globalThis.fetch reassignment +
+    Svix fixture generator). All 26 pass.
+  - `apps/startup/workers/app.ts`: import + app.post('/webhooks/clerk') mount
+    + comment block referencing DEFER-28.5-05-A + 05-B.
+  - `apps/startup/package.json`: +svix ^1.42.0 (apps/startup is excluded from
+    root workspaces — needed local install).
+  - `apps/marketing/src/App.tsx` StartupAccessSection: CTA flipped from
+    <RequestAccessForm /> to anchor href="https://startups.internjobs.ai/"
+    with "sign up at startups.internjobs.ai →" label (cobalt-on-lavender
+    pill). Eyebrow "request access" → "sign up". RequestAccessForm retained
+    inside <details id="startup-fallback"> "no work email — concierge
+    onboarding" block. BRAND-V1 preserved: verify-brand.mjs 38/38 PASS.
+
+- `e9787e0` `test(28.5-05)`: Playwright E2E + deferred-ops backlog — 6 files
+  - `apps/startups/e2e/founder-flow.spec.ts` (new, 243 LOC, 7 tests):
+    3 unauthed (sign-in render, /dashboard redirect, marketing CTA) + 4
+    auth-gated (dashboard startup name + agent email, /roles/new fields,
+    post-role increments count, thread reply input). Pre-deploy guards
+    via hostReachable() + dist HTML grep — tests cleanly test.skip()
+    until DEFER-28.5-02-A + 05-C close (currently 7 skipped, 0 failed).
+  - `apps/startups/playwright.config.ts` (new): Chromium-only, TEST_BASE_URL
+    overrideable, CI mode 2 workers + retry + github reporter.
+  - `apps/startups/package.json`: +@playwright/test ^1.60.0 + 3 scripts.
+  - `.gitignore`: ignore test-results/ + playwright-report/ recursively.
+  - `PHASE-28.5-DEFERRED-OPS.md` (+270 lines): DEFER-28.5-05-A..E entries
+    (Clerk webhook URL register; wrangler secret put; worker+marketing
+    redeploy; live gmail-rejection smoke = the deferred checkpoint:human-verify
+    task per "don't wait on me" rule; Playwright auth-suite token activation).
+
+Verification: 26/26 unit tests pass (node:test via tsx); tsc --noEmit clean
+(apps/startup); wrangler dry-run clean (apps/startup, gzip 493 KiB w/ svix);
+verify-brand.mjs ALL PASS (38/38); marketing build 374 kB clean w/
+startups.internjobs.ai 2x in dist; apps/startups build clean (91 modules,
+84 kB gz; e2e/ outside tsconfig.app include); playwright 7-skipped 0-failed.
+
+Phase 28.5 status: **5/5 plans shipped 2026-05-25, code-complete,
+ops-incomplete.** All 13 STARTUP-WEB-* + STARTUP-AGENT-EMAIL-* +
+STARTUP-WEB-CTA-01 + STARTUP-WORK-EMAIL-01 requirements addressed.
+Awaiting orchestrator phase-close after DEFER-28.5-01-A..G +
+DEFER-28.5-02-A + DEFER-28.5-04-A..D + DEFER-28.5-05-A..E run.
+
+Deviations from plan:
+1. (Rule 1 — research-doc drift) svix package required local install into
+   apps/startup; the plan claimed it was already in the 28.5-02 dep set
+   but the root workspaces array explicitly excludes apps/startup —
+   svix at root node_modules is from apps/startups (Vite), not apps/startup
+   (Worker). Installed svix@^1.42.0 directly into apps/startup.
+2. (Plan-anticipated) checkpoint:human-verify task DEFERRED per active
+   session rule. Captured as DEFER-28.5-05-A..D in PHASE-28.5-DEFERRED-OPS.md.
+3. (Plan-anticipated) Playwright tests written as STRUCTURE-only execution
+   for the auth-gated suite; live execution against startups.internjobs.ai
+   blocked by pre-existing DEFER-28.5-02-A and freshly-added DEFER-28.5-05-C.
+   Pre-deploy host-reachable guard added so the suite reports clean
+   "0 failures" instead of misleading errors during the deploy-pending window.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-05-SUMMARY.md`
 
 ### Plan 28.5-03 completion (2026-05-25)
 
