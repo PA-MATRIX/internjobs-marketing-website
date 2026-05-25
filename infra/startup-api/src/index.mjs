@@ -1125,6 +1125,178 @@ app.get("/v1/startups/:id/candidates", async (c) => {
   }
 });
 
+// ── v1.4 Phase 29-03 — Weekly touchbase cron endpoints ───────────────────────
+//
+// Three endpoints land here:
+//   • GET   /v1/touchbase/due-startups               — list startups eligible
+//     for this week's touchbase SMS (cron pre-pass, paged 100 at a time).
+//   • PATCH /v1/channel-links/:id/touchbase-sent     — mark the row's
+//     `last_touchbase_at = NOW()` after the cron successfully dispatched SMS.
+//   • GET   /v1/startups/:startup_id/fresh-candidates — up to 3 of the most
+//     recent active candidate threads for the cron's per-startup SMS body.
+//   • PATCH /v1/channel-links/:id/opt-in-touchbase   — flip
+//     `opt_in_flags.weekly_touchbase = true` when founder replies "yes" to
+//     the post-voice-onboarding opt-in prompt.
+//
+// All sit behind the same Authorization: Bearer STARTUP_API_SECRET gate as
+// the rest of /v1/*. Cron-side caller is the CF Worker scheduled() handler.
+
+// ── GET /v1/touchbase/due-startups ───────────────────────────────────────────
+// Returns startups that need a touchbase SMS this week (or initially).
+// Eligibility filter:
+//   - channel_type = 'telnyx-sms'
+//   - status = 'active'                       (opted-out rows excluded)
+//   - opt_in_flags->>'weekly_touchbase' = 'true'
+//   - last_touchbase_at IS NULL OR < NOW() - 7d
+// Sorted by last_touchbase_at ASC NULLS FIRST (oldest/never-touched first).
+// Hard cap of 100 per cron run — pilot volume is well below this, but the
+// cap protects the Worker from runaway loops if backfill day arrives.
+app.get("/v1/touchbase/due-startups", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         cl.id::text                        AS channel_link_id,
+         cl.startup_id::text                AS startup_id,
+         cl.channel_external_id             AS phone,
+         cl.member_id::text                 AS member_id,
+         s.name                             AS startup_name,
+         m.name                             AS founder_name
+       FROM startup_channel_links cl
+       JOIN startups s        ON s.id = cl.startup_id
+       LEFT JOIN startup_members m ON m.id = cl.member_id
+       WHERE cl.channel_type = 'telnyx-sms'
+         AND cl.status = 'active'
+         AND (cl.opt_in_flags->>'weekly_touchbase')::boolean = true
+         AND (cl.last_touchbase_at IS NULL
+              OR cl.last_touchbase_at < NOW() - INTERVAL '7 days')
+       ORDER BY cl.last_touchbase_at ASC NULLS FIRST
+       LIMIT 100`,
+    );
+    return c.json({ due: rows });
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "startup_api_touchbase_due_failed",
+      error: err?.message,
+    }));
+    return c.json({ error: "query_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── PATCH /v1/channel-links/:id/touchbase-sent ───────────────────────────────
+// Marks the channel-link row's last_touchbase_at to NOW(). Called by the
+// scheduled() handler after a touchbase SMS was successfully dispatched.
+// Idempotent: subsequent PATCHes update updated_at + last_touchbase_at again.
+app.patch("/v1/channel-links/:id/touchbase-sent", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const linkId = c.req.param("id");
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE startup_channel_links
+          SET last_touchbase_at = NOW(),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [linkId],
+    );
+    if (!rowCount) return c.json({ error: "channel_link_not_found" }, 404);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: "update_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── PATCH /v1/channel-links/:id/opt-in-touchbase ─────────────────────────────
+// Body: { opt_in?: boolean } — default true.
+// Merges {"weekly_touchbase": <opt_in>} into opt_in_flags via jsonb || .
+// Used by the "yes" fast-path in routes/telnyx.ts after voice onboarding.
+app.patch("/v1/channel-links/:id/opt-in-touchbase", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const linkId = c.req.param("id");
+  let body = {};
+  try { body = await c.req.json(); } catch { /* empty body is fine */ }
+  const optIn = body?.opt_in === false ? false : true;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE startup_channel_links
+          SET opt_in_flags = COALESCE(opt_in_flags, '{}'::jsonb)
+                             || jsonb_build_object('weekly_touchbase', $2::boolean),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [linkId, optIn],
+    );
+    if (!rowCount) return c.json({ error: "channel_link_not_found" }, 404);
+    return c.json({ ok: true, weekly_touchbase: optIn });
+  } catch (err) {
+    return c.json({ error: "opt_in_failed", detail: err?.message }, 500);
+  }
+});
+
+// ── GET /v1/startups/:startup_id/fresh-candidates ────────────────────────────
+// Up to 3 of the most recent inbound candidate threads for this startup,
+// used by the weekly cron to compose the touchbase SMS body ("3 new this
+// week — reply 1/2/3"). Identical row shape to the show_candidate response
+// but returns an ARRAY (caller maps positions 1..N).
+//
+// Returns { candidates: [{ thread_id, candidate_name, role_title, summary }] }.
+// Returns { candidates: [] } if the startup has no recent candidates — caller
+// (scheduled() handler) sends the "no new candidates this week" variant.
+app.get("/v1/startups/:startup_id/fresh-candidates", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  const startupId = c.req.param("startup_id");
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         im_agg.student_id::text              AS thread_id,
+         COALESCE(s.name, s.email, 'unknown') AS candidate_name,
+         (
+           SELECT r.title FROM student_threads st
+             JOIN roles r ON r.id = st.role_id
+            WHERE st.student_id = im_agg.student_id
+              AND st.startup_id = $1
+            ORDER BY st.created_at DESC
+            LIMIT 1
+         )                                    AS role_title,
+         (
+           SELECT CASE
+                    WHEN length(im.body) > 100
+                    THEN substring(im.body, 1, 97) || '...'
+                    ELSE im.body
+                  END
+             FROM inbound_messages im
+            WHERE im.student_id = im_agg.student_id
+              AND im.startup_id = $1
+            ORDER BY im.created_at DESC
+            LIMIT 1
+         )                                    AS summary
+       FROM (
+         SELECT im.student_id, max(im.created_at) AS last_at
+           FROM inbound_messages im
+          WHERE im.startup_id = $1
+            AND im.student_id IS NOT NULL
+          GROUP BY im.student_id
+          ORDER BY max(im.created_at) DESC
+          LIMIT 3
+       ) im_agg
+       JOIN students s ON s.id = im_agg.student_id
+       ORDER BY im_agg.last_at DESC`,
+      [startupId],
+    );
+    return c.json({ candidates: rows });
+  } catch (err) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "startup_api_fresh_candidates_failed",
+      error: err?.message,
+    }));
+    return c.json({ error: "lookup_failed", detail: err?.message }, 500);
+  }
+});
+
 // ── POST /v1/messages/inbound ────────────────────────────────────────────────
 // Body: { provider, provider_event_id?, channel_type, channel_address,
 //         startup_id, member_id?, direction?, from_address?, subject?, body,

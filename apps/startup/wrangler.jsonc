@@ -52,7 +52,17 @@
 		{
 			"name": "EMAIL"
 		}
-	]
+	],
+	// v1.4 Phase 29-03 STARTUP-TOUCHBASE-01..02 — weekly touchbase cron.
+	// "0 14 * * 1" = Monday 14:00 UTC = 9:00am EST (10:00am EDT in summer;
+	// 1h drift accepted for v1.4. Per-startup timezone scheduling is a v1.5
+	// polish — see PHASE-29-DEFERRED-OPS.md). The scheduled() handler is
+	// exported from workers/app.ts via routes/scheduled.ts; it queries the
+	// Fly proxy for due-startups and sends touchbase SMS via lib/telnyx.ts.
+	// Silent no-op until TELNYX_API_KEY is bound (DEFER-29-01-E).
+	"triggers": {
+		"crons": ["0 14 * * 1"]
+	}
 	// Secrets (set via `wrangler secret put`):
 	//   STARTUP_API_SECRET            — Bearer token for internjobs-startup-api proxy.
 	//                                   Value is the 64-hex secret minted by 28-01;

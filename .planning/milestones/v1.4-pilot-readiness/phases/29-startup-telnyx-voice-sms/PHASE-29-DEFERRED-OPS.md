@@ -208,7 +208,62 @@ Group by plan; close in any order unless a downstream blocker dictates otherwise
 
 ## Plan 29-03 — Weekly cron + reply parser + opt-in
 
-*(To be appended when 29-03 executes; placeholders documented in the plan file.)*
+### DEFER-29-03-A — KV namespace creation (TOUCHBASE_CURSORS)
+- **What:** Run `cd apps/startup && wrangler kv namespace create TOUCHBASE_CURSORS`.
+  Copy the generated namespace `id` into `apps/startup/wrangler.jsonc` —
+  uncomment the `kv_namespaces` binding stub and paste the real id
+  (a `// Phase 29-03 ...` commented line was added in Plan 29-01;
+  29-03 leaves it commented since namespace creation is ops work).
+- **Acceptance:** `wrangler kv namespace list` shows `TOUCHBASE_CURSORS`;
+  `apps/startup/wrangler.jsonc` has the binding uncommented with the real id;
+  `cd apps/startup && npx tsc --noEmit` still passes (KV is optional at
+  type level via `TOUCHBASE_CURSORS?: KVNamespace`).
+- **Downstream blockers:** DEFER-29-03-C (must redeploy after binding bound).
+
+### DEFER-29-03-B — Migration 0014 apply to Fly Postgres
+- **What:** Apply `apps/app/db/migrations/0014_v1_4_telnyx_touchbase.sql`
+  via the same `migrate.mjs` runner used for 0011/0012/0013. (Mirror of
+  DEFER-29-01-K — listed here because the 29-03 cron query reads
+  `last_touchbase_at` directly; pre-flight check for DEFER-29-03-D.)
+- **Acceptance:** `SELECT column_name FROM information_schema.columns
+  WHERE table_name='startup_channel_links' AND column_name='last_touchbase_at';`
+  returns one row.
+- **Downstream blockers:** DEFER-29-03-D (cron query depends on column).
+
+### DEFER-29-03-C — Worker redeploy after KV namespace bound
+- **What:** `cd apps/startup && wrangler deploy`. Should run AFTER
+  DEFER-29-03-A (KV binding uncommented + id pasted). Can be batched with
+  Plan 29-02's DEFER-29-02-E (R2 bucket redeploy) to avoid two redeploys.
+- **Acceptance:** New Worker version id printed; `wrangler triggers list`
+  (or CF dashboard) shows the cron `0 14 * * 1` registered;
+  `GET https://mcp.internjobs.ai/healthz` returns `{ok:true}`.
+- **Downstream blockers:** DEFER-29-03-D.
+
+### DEFER-29-03-D — Cron smoke test (wrangler dev --test-scheduled)
+- **What:** Locally run `cd apps/startup && wrangler dev --test-scheduled`,
+  then in a second terminal: `curl 'http://localhost:8787/__scheduled?cron=0+14+*+*+1'`.
+  For a startup with `opt_in_flags->>'weekly_touchbase'='true'` and either
+  `last_touchbase_at IS NULL` or older than 7 days, Worker logs should show
+  a `[touchbase]` JSON line, the Fly proxy logs a
+  `GET /v1/touchbase/due-startups` call, and (if Telnyx creds are bound) an
+  outbound SMS gets dispatched.
+- **Acceptance:** `wrangler tail` line includes
+  `event:"startup_touchbase_cron_complete"` with `processed >= 1`;
+  `last_touchbase_at` advances on the corresponding `startup_channel_links`
+  row; KV namespace contains a `touchbase:cursor:<phone>` key.
+- **Downstream blockers:** DEFER-29-03-E.
+
+### DEFER-29-03-E — End-to-end pilot run (STARTUP-MULTICHAN-02)
+- **What:** Prerequisites: DEFER-29-01-A..K + DEFER-29-02-A..F +
+  DEFER-29-03-A..D all complete. Then run through `PILOT-EVIDENCE.md`
+  checklist step by step with the first pilot founder. Record evidence
+  (screenshots, SMS screenshots, DB query outputs) inline in
+  PILOT-EVIDENCE.md.
+- **Acceptance:** PILOT-EVIDENCE.md sign-off table flips
+  `STARTUP-MULTICHAN-02` from `PENDING` to `PASS` with date + initials and
+  evidence links.
+- **Downstream blockers:** Closes Phase 29 pilot loop; unlocks Milestone
+  v1.4 "pilot-readiness" ROADMAP row.
 
 ---
 
