@@ -442,6 +442,7 @@ Marketing site + LinkedIn Clerk auth + Postgres schema + Photon/Spectrum SMS + w
 - **STARTUP-MULTI-MEMBER** — Founder invites cofounder/recruiter; shared startup view; per-member roles. Existing v1.4 backlog item `MULTI-MEMBER-01` extended for the startup side specifically.
 
 **Carryovers from earlier scope work:**
+- **STARTUP-PILOT-LIVE-01** — Execute live first-pilot install via real founder + Claude Desktop / Cursor / ChatGPT; record `me()` + `execute('post_role')` + `search('candidates')` + `execute('reply_to_candidate')` tool-call evidence in `PILOT-EVIDENCE.md`. Deferred from Phase 28 Plan 05 by user decision 2026-05-25 — Phase 28.5 (web onboarding at `startups.internjobs.ai`) ships first because non-tech founders won't install MCP cold. Closes when either (a) Phase 28.5 surfaces a founder Raj can install-as-surrogate for, or (b) a tech founder is identified and walks through it directly. Acceptance criteria are codified in `.planning/milestones/v1.4-pilot-readiness/phases/28-startup-mcp-server/PILOT-EVIDENCE.md`.
 - **SEC-ROTATE-ALL** — Reopens from v1.3 Phase 21 when first pilot user is identifiable. RUNBOOK preserved.
 - **DAILY-VANITY-01** — Custom Daily.co subdomain `meet.internjobs.ai`. Scale-plan upgrade gate.
 - **AGENTIC-INBOX-TESTS** — Test coverage for `apps/agentic-inbox/workers/` (zero `.test.ts` files today).
