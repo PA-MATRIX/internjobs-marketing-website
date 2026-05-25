@@ -89,7 +89,7 @@ Plans:
 4. AgentPanel quick actions (summarize, draft, translate) return live LLM results in production within 10s
 5. MCPPanel lists all 11 MCP tools and tool calls return non-error responses
 
-**Plans**: TBD (likely 4)
+**Plans**: 4 plans
 
 Plans:
 - [ ] 23-01: `closeTodoFact` Cypher helper + Workspace reply-path integration + structured logging (CLOSETODO-01..04)
