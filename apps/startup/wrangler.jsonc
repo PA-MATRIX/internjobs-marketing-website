@@ -35,11 +35,19 @@
 	// 768-dim bge-base-en-v1.5 vectors directly via env.AI.run() — NO dependency
 	// on the student app. CF bills per-neuron, not per-binding (free to declare.)
 	"ai": { "binding": "AI" },
-	// Email binding (Phase 28 Plan 05). Used by routes/api.ts to deliver
-	// marketing-CTA leads to raj@internjobs.ai. The binding is OPTIONAL —
-	// routes/api.ts gracefully falls back to log-only if the EMAIL binding is
-	// missing (handy for local dev with `wrangler dev` where send_email isn't
-	// wired). Matches the apps/parrot/wrangler.jsonc pattern.
+	// Email binding (Phase 28 Plan 05 + Phase 28.5 Plan 04). Used by:
+	//   • routes/api.ts — marketing-CTA leads to raj@internjobs.ai (Plan 28-05)
+	//   • routes/admin.ts — per-startup welcome email from
+	//     welcome@startups.internjobs.ai during /admin/startups/new (Plan 28.5-04)
+	//   • routes/email.ts — inbound catch-all handler (the email() export on
+	//     the Worker default export, not this send binding — this binding only
+	//     covers outbound send via env.EMAIL.send())
+	// The binding is OPTIONAL — both routes/api.ts and routes/admin.ts
+	// gracefully fall back to log-only if env.EMAIL is unbound (handy for
+	// local dev with `wrangler dev` where send_email isn't wired, and for the
+	// pre-DEFER-28.5-01-D window where the startups.internjobs.ai domain is
+	// not yet verified in CF Email Routing).
+	// Matches the apps/parrot/wrangler.jsonc pattern.
 	"send_email": [
 		{
 			"name": "EMAIL"
