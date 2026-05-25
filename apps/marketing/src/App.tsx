@@ -1001,7 +1001,7 @@ function HeroSection() {
           <h1
             className="font-display lowercase"
             style={{
-              fontSize: "clamp(72px, 8vw, 96px)",
+              fontSize: "clamp(2.75rem, 11vw, 6rem)",
               lineHeight: "0.95",
               letterSpacing: "-0.04em",
               fontWeight: 900,
@@ -2065,7 +2065,7 @@ function StartupHeroSection() {
           <h1
             className="font-display lowercase"
             style={{
-              fontSize: "clamp(72px, 8vw, 96px)",
+              fontSize: "clamp(2.75rem, 11vw, 6rem)",
               lineHeight: "0.95",
               letterSpacing: "-0.04em",
               fontWeight: 900,
