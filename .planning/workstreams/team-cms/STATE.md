@@ -4,8 +4,8 @@ team: "team-cms"
 milestone: "v1.4"
 current_phase: 29
 plan_total: 3
-status: planned
-last_activity: "2026-05-25"  # Phase 29 planned — 3 plans, 2 waves. 29-01 Wave 1, 29-02+29-03 Wave 2 parallel.
+status: in_progress
+last_activity: "2026-05-25"  # Phase 29-01 shipped (Wave 1). 29-02+29-03 (Wave 2) cleared to start in parallel.
 ---
 
 # team-cms Workstream State
@@ -26,20 +26,97 @@ Phases: 22, 24, 28, 28.5, 29
 
 ## Current Position
 
-Status: Phase 29 PLANNED (3 plans, 2 waves). Plans created 2026-05-25.
+Status: Phase 29 IN PROGRESS (1/3 plans shipped). Wave 1 complete.
 
 Current phase: 29 (Startup Telnyx SMS + Voice AI + Voice-Based Onboarding)
-Current plan: 29-01 (not yet started)
-Blockers: None for executor; all three plans use ops-deferred guards (DEFER-29-01..03).
-Next action: `wrangler dev --test-scheduled` smoke test after ops steps run.
+Current plan: 29-02 + 29-03 (Wave 2, parallel, cleared to start)
+Blockers: None for executor; Wave 2 plans use ops-deferred guards.
+Next action: Either dispatch 29-02 + 29-03 in parallel, or wait for orchestrator wave-2 trigger.
 
 ### Phase 29 plan summary
 
 | Plan | Objective | Wave | Deps | Status |
 |------|-----------|------|------|--------|
-| 29-01 | SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 [STARTUP-TELNYX-01..06] | 1 | none | Not started |
+| 29-01 | SMS adapter + identity resolution + action enum (show_candidate + register_startup) + migration 0014 [STARTUP-TELNYX-01..06] | 1 | none | ✓ Shipped 2026-05-25 |
 | 29-02 | Voice AI Agent hooks + R2 audit log + VOICE_AGENT_CONFIG.md [STARTUP-VOICE-01..04] | 2 | 29-01 | Not started |
 | 29-03 | Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02] | 2 | 29-01 | Not started |
+
+### Plan 29-01 completion (2026-05-25)
+
+Four-commit ship on branch `rrr/v1.4/team-cms`:
+
+- `50f9835` `docs(29-01)`: PHASE-29-DEFERRED-OPS.md backlog (11 entries
+  DEFER-29-01-A..K — Telnyx signup, toll-free purchase, BRN verification,
+  messaging profile, API key, webhook public key, FROM_NUMBER / MESSAGING_
+  PROFILE_ID wrangler secrets, Worker redeploy, smoke test, migration apply).
+- `5f76b1c` `feat(29-01)`: migration 0014 + 2 new action handlers + 3 Fly
+  proxy endpoints — 6 files / 491 insertions.
+  - `apps/app/db/migrations/0014_v1_4_telnyx_touchbase.sql` (new): ALTER
+    TABLE startup_channel_links ADD COLUMN last_touchbase_at + partial
+    composite index for Phase 29-03 cron. Apply → DEFER-29-01-K.
+  - `apps/startup/workers/types.ts`: 8 new optional Env fields (TELNYX_*
+    + VOICE_AUDIT R2 + TOUCHBASE_CURSORS KV + AI binding type).
+  - `apps/startup/workers/tools/execute.ts`: handleShowCandidate (calls
+    GET /v1/startups/:id/candidates) + handleRegisterStartup (loopback
+    POST /admin/startups/new with work-email blocklist enforcement + best-
+    effort channel-link metadata upsert). ACTION_HANDLERS 5 → 7 entries.
+  - `apps/startup/workers/lib/workEmail.ts` (new): shared blocklist
+    extracted from webhooks.ts (Phase 28.5-05). Same 30 domains + gmx.*
+    wildcard. webhooks.ts isPersonalEmail() now re-exports isPersonalEmail
+    Domain() from this lib (DRY; webhooks.test.ts 26/26 still green).
+  - `infra/startup-api/src/index.mjs`: GET /v1/channel-links/resolve
+    (identity), PATCH /v1/channel-links/:id/opt-out (TCPA), GET /v1/
+    startups/:id/candidates?position=N (show_candidate).
+- `587e5cf` `feat(29-01)`: SMS adapter — 6 files / 886 insertions.
+  - `apps/startup/workers/lib/telnyx.ts` (new): sendSms() with ops-deferred
+    guards + formatForSms() with special-cased shapes for show_candidate
+    + register_startup. 1580-char truncation; 429 rate-limit handling.
+  - `apps/startup/workers/lib/resolveChannelLink.ts` (new): generic
+    identity helper. Returns StartupContext | null. Never throws.
+  - `apps/startup/workers/lib/intent.ts` (new): 2-layer classifier —
+    classifyIntentRegex (sync; numeric 1..9, START/YES/y/no/n) + LLM
+    fallback via env.AI.run('@cf/meta/llama-3.1-8b-instruct') with
+    structured JSON output parsing.
+  - `apps/startup/workers/routes/telnyx.ts` (new): POST /webhooks/telnyx/sms.
+    Load-bearing flow order: STOP-first (TCPA) → Ed25519 sig verify (skip
+    if WEBHOOK_PUBLIC_KEY unbound) → message.received gate → resolveChannelLink
+    → classifyIntent → handleSearch/handleExecute → formatForSms → sendSms.
+    Always returns 200 (except 401 on bad sig).
+  - `apps/startup/wrangler.jsonc`: TELNYX_WEBHOOK_PUBLIC_KEY + TELNYX_VOICE_
+    AGENT_TOKEN + TELNYX_USE_MCP_INTEGRATION comment stubs + commented
+    kv_namespaces (TOUCHBASE_CURSORS) + r2_buckets (VOICE_AUDIT) stubs.
+  - `apps/startup/workers/app.ts`: imported + mounted telnyxRouter.
+- `15e0ad1` `test(29-01)`: 34-case unit suite at
+  `apps/startup/workers/routes/telnyx.test.ts` via node:test + tsx:
+  intent regex (11) + STOP regex (10) + Ed25519 verify (4 — node:crypto
+  keypair → crypto.subtle.verify roundtrip) + isPersonalEmailDomain (5)
+  + formatForSms (4). All 34 pass.
+
+Verification: tsc --noEmit clean (apps/startup); telnyx.test 34/34;
+webhooks.test 26/26 (unchanged); slug.test 16/16 (unchanged); node
+--check on index.mjs clean; all 7 plan-verification grep checks pass.
+
+Deviations from plan:
+1. (Rule 2 — missing critical) Extracted shared work-email blocklist
+   into `lib/workEmail.ts`. Plan constraint #14 said "extract to lib if
+   not already" — it was inline in webhooks.ts; this is the practical
+   reuse path. webhooks.ts isPersonalEmail kept as a thin re-export so
+   the 26-case Phase 28.5-05 test suite passes unchanged.
+2. (Rule 1 — bug) STOP-path channel-link opt-out uses POST /v1/channel-
+   links upsert (status='opted_out'), not the plan's suggested PATCH
+   /v1/channel-links/:rowId/opt-out — the resolve endpoint doesn't
+   return the row id, and inflating its response surface for one
+   STOP path didn't seem worth it. Still ADDED the PATCH endpoint for
+   future admin tooling. UPSERT path is idempotent via the UNIQUE
+   constraint on (startup_id, channel_type, channel_external_id).
+3. (Rule 1 — bug) First test run failed 3/34 with "Invalid key object
+   type public, expected private" from a leftover `createPublicKey
+   (publicKey)` noop call in the Ed25519 test helper. Removed; all 34 pass.
+4. (Plan-anticipated; Rule 4 pre-approved) checkpoint:human-verify Task 1
+   wholesale DEFERRED per active session rule. 11 entries
+   (DEFER-29-01-A..K) captured in PHASE-29-DEFERRED-OPS.md.
+
+Summary: `.planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/29-01-SUMMARY.md`
 
 ### Previous position: Phase 28.5 CODE-COMPLETE (2026-05-25)
 
