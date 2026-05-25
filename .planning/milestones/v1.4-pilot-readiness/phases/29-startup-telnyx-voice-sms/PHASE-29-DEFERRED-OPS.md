@@ -115,7 +115,94 @@ Group by plan; close in any order unless a downstream blocker dictates otherwise
 
 ## Plan 29-02 — Voice AI Agent + R2 audit log
 
-*(To be appended when 29-02 executes; placeholders documented in the plan file.)*
+### DEFER-29-02-A — Voice AI Agent creation in Telnyx portal
+- **What:** Go to portal.telnyx.com → AI → Assistants → New Assistant.
+  Paste config from `docs/VOICE_AGENT_CONFIG.md` into the corresponding portal
+  fields (system prompt, greeting, model). Configure tools/integration based
+  on plan tier:
+  - **If MCP Servers tab is visible:** set MCP Server URL =
+    `https://mcp.internjobs.ai/mcp`, auth type = `Bearer`, token =
+    `TELNYX_VOICE_AGENT_TOKEN` (per DEFER-29-02-C).
+  - **If MCP Servers tab is NOT available (plan-gated):** fall back to
+    webhook-tool config — register `register_startup` + `show_candidate`
+    webhook tools at `https://mcp.internjobs.ai/webhooks/telnyx/voice-tool`
+    (per `docs/VOICE_AGENT_CONFIG.md` Step 4b). Set
+    `TELNYX_USE_MCP_INTEGRATION=false` (DEFER-29-02-D).
+  - Set Dynamic Variables Webhook URL =
+    `https://mcp.internjobs.ai/webhooks/telnyx/voice-init`.
+  - Set Post-Call Insights Webhook URL =
+    `https://mcp.internjobs.ai/webhooks/telnyx/voice-postprocess`.
+  - Assign toll-free number from DEFER-29-01-B to this agent.
+- **Acceptance:** Agent visible in Telnyx portal; calling the toll-free number
+  reaches the AI assistant with the configured greeting.
+- **Downstream blockers:** DEFER-29-02-F (smoke test).
+
+### DEFER-29-02-B — R2 bucket creation + wrangler.jsonc binding uncomment
+- **What:** Run `cd apps/startup && wrangler r2 bucket create internjobs-voice-audit`.
+  Then edit `apps/startup/wrangler.jsonc` and uncomment the line
+  `"r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-voice-audit" }]`
+  (the stub line is commented with a `// Phase 29-02 R2 binding — uncomment after running DEFER-29-02-B`
+  marker).
+- **Acceptance:** `wrangler r2 bucket list` shows `internjobs-voice-audit`;
+  `wrangler.jsonc` binding line is uncommented; `wrangler deploy` succeeds.
+- **Downstream blockers:** DEFER-29-02-E (worker redeploy), DEFER-29-02-F
+  (smoke test verifies R2 writes).
+
+### DEFER-29-02-C — TELNYX_VOICE_AGENT_TOKEN minting + Infisical + wrangler
+- **What:** Mint a dedicated MCP install token for the Voice AI agent's
+  "onboarding" persona via `POST /admin/startups/new` with a sentinel
+  `company` value (e.g. `__onboarding__`) and a synthetic founder email +
+  phone — the returned `token` field is what the Voice AI agent uses as its
+  Bearer when calling `/mcp`. (Alternative: add a `POST /admin/tokens/mint`
+  endpoint that returns just a token without creating a startup row;
+  v1.5 follow-up.)
+  Store the token as `TELNYX_VOICE_AGENT_TOKEN` in Infisical `/internjobs-ai`
+  env=`prod` BEFORE using. Then `cd apps/startup && wrangler secret put TELNYX_VOICE_AGENT_TOKEN`.
+- **Acceptance:** Infisical record present; `wrangler secret list` shows
+  `TELNYX_VOICE_AGENT_TOKEN`; Voice AI agent's MCP Server Bearer field is
+  populated in the Telnyx portal.
+- **Downstream blockers:** DEFER-29-02-A (Voice AI agent creation),
+  DEFER-29-02-E (worker redeploy).
+
+### DEFER-29-02-D — TELNYX_USE_MCP_INTEGRATION feature-flag secret
+- **What:** After DEFER-29-02-A confirms which path is available:
+  - **MCP path:** `cd apps/startup && wrangler secret put TELNYX_USE_MCP_INTEGRATION`,
+    value: `true`.
+  - **Webhook-tool path:** value: `false` (or leave the secret unbound — the
+    `voice-tool` handler defaults to webhook-tool mode when the secret is
+    not equal to the literal string `"true"`).
+- **Acceptance:** `wrangler secret list` shows `TELNYX_USE_MCP_INTEGRATION`
+  (when MCP path); the Voice AI agent's tool calls reach the expected handler
+  during DEFER-29-02-F smoke test.
+- **Downstream blockers:** DEFER-29-02-E, DEFER-29-02-F.
+
+### DEFER-29-02-E — Worker redeploy after R2 bucket + secrets are bound
+- **What:** `cd apps/startup && wrangler deploy`. Should follow
+  DEFER-29-02-B + DEFER-29-02-C + DEFER-29-02-D so the deployed Worker has
+  the R2 binding live and the Voice AI agent token available for any
+  per-caller token-injection logic (v1.5).
+- **Acceptance:** New Worker version ID printed; `GET https://mcp.internjobs.ai/healthz`
+  returns `{ok:true}`; `wrangler tail` shows no startup errors.
+- **Downstream blockers:** DEFER-29-02-F.
+
+### DEFER-29-02-F — Smoke test voice intake end-to-end
+- **What:** Call the toll-free number from DEFER-29-01-B from a personal phone.
+- **Acceptance:**
+  - AI greets with the opt-in disclosure greeting from `docs/VOICE_AGENT_CONFIG.md`.
+  - AI asks the 4 intake questions (company, founder name, work email, what hiring for).
+  - After completion: SMS arrives at the calling phone with the MCP install snippet
+    (delivered by `handleRegisterStartupFromVoice` → `sendSms`).
+  - `wrangler tail` shows `POST /webhooks/telnyx/voice-init` (before call) and
+    `POST /webhooks/telnyx/voice-postprocess` (after call hangup).
+  - R2 bucket `internjobs-voice-audit` contains two objects under
+    `transcripts/<startup_id>/<call_control_id>.json` and
+    `recordings/<startup_id>/<call_control_id>.mp3` (verify via
+    `wrangler r2 object list internjobs-voice-audit`).
+- **Downstream blockers:** Closes the Plan 29-02 ship loop. After this passes,
+  the LOW-confidence post-call payload field names from the research doc are
+  validated against the real Telnyx payload — adjust the optional-chaining
+  fallback chain in `routes/voice.ts` voice-postprocess if needed (raw payload
+  is logged to console for first-call hotfix-ability).
 
 ---
 
