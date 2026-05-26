@@ -46,6 +46,7 @@ import {
 	WorkspaceShell,
 } from "../components/WorkspaceShell";
 import { apiFetch } from "~/lib/api";
+import { fireConfetti } from "~/lib/confetti";
 
 type LoadState =
 	| { status: "loading" }
@@ -284,6 +285,11 @@ export default function DashboardRoute() {
 								disappeared.forEach((id) => next.add(id));
 								return next;
 							});
+							// v1.4 Phase 26 GENZ-02: confetti on first todo resolved.
+							// The "first_todo_resolved" event is once-per-session
+							// (localStorage gate in fireConfetti itself). Fire
+							// asynchronously — don't await, don't block the polling tick.
+							void fireConfetti("first_todo_resolved");
 							// Show the first-agent-clear toast (best-effort; we don't
 							// know which resolution_source disappeared so we trigger on
 							// any disappearance — false positives are acceptable since
