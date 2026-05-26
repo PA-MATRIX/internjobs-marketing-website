@@ -145,12 +145,12 @@ Plans:
 4. Invite form creates Clerk phone-OTP user + CF Email Routing rule + WorkspaceDO row + sends personalized welcome email from Ridhi
 5. `@neondatabase/serverless` removed from `apps/parrot/package.json`; `npm run build` still passes
 
-**Plans**: TBD (likely 3)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 25-01: Mattermost SSO mmctl activation + first-login Mattermost user auto-provisioning (MMSSO-01..03)
-- [ ] 25-02: `/admin` frontend page + capability-toggle UI + invite form (ADMIN-UX-01..04)
-- [ ] 25-03: Drop orphan `@neondatabase/serverless` from Workspace package.json (NEONEX-DEP-01)
+- [ ] 25-01-PLAN.md — mmctl runbook + Mattermost SSO activation script (MMSSO-01, MMSSO-03 confirmed native)
+- [ ] 25-02-PLAN.md — Brand-refit /admin + /admin/invite pages with v1.4 brand tokens (ADMIN-UX-01..04)
+- [ ] 25-03-PLAN.md — Remove @neondatabase/serverless from apps/parrot/package.json (NEONEX-DEP-01)
 
 **Research flags**: Unlikely (Mattermost OIDC docs known; admin backend exists)
 
