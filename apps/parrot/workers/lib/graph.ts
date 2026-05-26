@@ -290,6 +290,9 @@ export interface RecordTodoFactArgs {
 	mentionedActors?: string[];
 	/** True if the source message @-mentions the employee directly. */
 	isMention: boolean;
+	/** Free-text blocker descriptions (from kimi extraction). Each becomes a
+	 *  :Person-like stub :Blocker node merged by the description string. */
+	blockedByIds?: string[];
 }
 
 export interface RecordTodoFactResult {
@@ -464,6 +467,35 @@ export async function recordTodoFact(
 					}),
 				);
 				// Keep going — partial mentions better than none.
+			}
+		}
+	}
+
+	// Step 5: MERGE each :BLOCKED_BY edge. Same fire-and-forget pattern as :MENTIONS.
+	// :Blocker nodes are stub nodes keyed by their description text — not true graph
+	// entities (no separate index), just anchors for future retrieval.
+	//
+	// :BLOCKED_BY is NOT gated by !skipped — blocker discovery on re-run is meaningful
+	// and the MERGE is idempotent, so writing the same edge twice is safe.
+	if (args.blockedByIds && args.blockedByIds.length > 0) {
+		for (const rawBlocker of args.blockedByIds) {
+			const desc = String(rawBlocker || "").trim().slice(0, 200);
+			if (!desc) continue;
+			const blockerRes = await graph.query(
+				`MERGE (b:Blocker {desc: $desc})
+				 MERGE (t:Todo {id: $tid})
+				 MERGE (t)-[:BLOCKED_BY]->(b)`,
+				{ params: { desc, tid: todoId } },
+			);
+			if (blockerRes === null) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						message: "parrot_graph_blocked_by_edge_failed",
+						todoId,
+						desc,
+					}),
+				);
 			}
 		}
 	}
