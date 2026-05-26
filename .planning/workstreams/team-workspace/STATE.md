@@ -2,8 +2,8 @@
 schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
-status: "in_progress"
-last_activity: "2026-05-26 (23-04 template-complete; Phase 23 all 4 plans closed)"
+status: "human_needed"
+last_activity: "2026-05-26 (Phase 23 verified — status: human_needed; 1/5 code_verified, 4/5 deferred to one ~90-min operator window)"
 ---
 
 # team-workspace Workstream State
@@ -24,10 +24,10 @@ Phases: 23 (active), 25, 26, 27 (queued)
 
 ## Current Position
 
-Status: In progress — Phase 23 ALL 4 plans closed (1 shipped+smoke, 2 code-complete-with-deferral, 1 template-complete-with-deferral). Three shared operator deferrals consolidated into a single deploy window.
-Current phase: 23 (Workspace Pilot Closeouts) — closed pending operator window
-Current plan: 23-04 template-complete-with-deferral (just landed); all 4 Phase 23 plans now closed
-Blockers: None for code work. Three deferred live-verify halves (23-02 SAFETY-VERIFY-LIVE-04, 23-03 ATTACH-DOWN-01..03, 23-04 AGENT-UAT-01..03) consolidated under ONE shared operator deploy window — see Open Items below.
+Status: human_needed — Phase 23 verified 2026-05-26. 1/5 success criteria code_verified (SC-1 closeTodoFact); 4/5 deferred to operator (SC-2 Lakera email, SC-3 attachment download, SC-4 AgentPanel UAT, SC-5 MCPPanel UAT) — all behind the same single ~90-min deploy window. No code gaps found by rrr-verifier.
+Current phase: 23 (Workspace Pilot Closeouts) — verification report: `.planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-VERIFICATION.md` (223 lines, status: human_needed)
+Current plan: All 4 Phase 23 plans closed; phase rollup ready for `/rrr:submit-phase 23 --team team-workspace`
+Blockers: None for code work. All four deferred live-verify halves consolidated under ONE shared operator deploy window — see Open Items below.
 
 ## Phase 23 Plan Status
 
