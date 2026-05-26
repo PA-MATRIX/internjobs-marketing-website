@@ -17,6 +17,11 @@
 //
 // Operator gate: API enforces requireOperator middleware. Non-operators
 // see a 403 surfaced as the "error" panel.
+//
+// v1.4 Phase 25 Plan 02 (brand refit): structural surfaces moved to brand
+// tokens — lavender page background, cream form card, ink text, cobalt
+// submit button (per BRAND-V1.md). UI-state colors (rose for error, emerald
+// for success) remain Tailwind utility classes per BRAND-V1 edge-case rule.
 
 import { useState } from "react";
 import { Link } from "react-router";
@@ -181,19 +186,27 @@ export default function AdminInviteRoute() {
 		!busy && firstName && lastName && personalEmail && phoneNumber;
 
 	return (
-		<WorkspaceShell title="Add employee">
-			<div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
+		<WorkspaceShell title="add employee">
+			<div
+				className="mx-auto w-full max-w-2xl p-4 sm:p-6"
+				style={{ background: "var(--lavender)" }}
+			>
 				<div className="mb-3">
 					<Link
 						to="/admin"
-						className="text-xs font-medium text-slate-500 hover:text-slate-900 no-underline"
+						className="text-xs font-medium [color:color-mix(in_srgb,var(--ink)_50%,transparent)] hover:[color:var(--ink)] no-underline"
 					>
 						← Back to admin
 					</Link>
 				</div>
-				<div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-					<h2 className="text-lg font-semibold">Add employee</h2>
-					<p className="mt-1 text-sm text-slate-600">
+				<div
+					className="rounded-xl border border-[var(--ink)]/10 p-4 sm:p-6"
+					style={{ background: "var(--cream)" }}
+				>
+					<h2 className="text-lg font-semibold [color:var(--ink)]">
+						add employee
+					</h2>
+					<p className="mt-1 text-sm [color:color-mix(in_srgb,var(--ink)_60%,transparent)]">
 						Creates a Clerk user with a derived{" "}
 						<code>@internjobs.ai</code> address, adds an Email Routing rule
 						for it, and emails the new hire instructions at their personal
@@ -206,7 +219,7 @@ export default function AdminInviteRoute() {
 							<div>
 								<label
 									htmlFor="emp-first-name"
-									className="block text-sm font-medium text-slate-700"
+									className="block text-sm font-medium [color:var(--ink)]"
 								>
 									First name
 								</label>
@@ -217,13 +230,13 @@ export default function AdminInviteRoute() {
 									value={firstName}
 									onChange={(e) => setFirstName(e.target.value)}
 									placeholder="Alice"
-									className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+									className="mt-1 w-full rounded-md border border-[var(--ink)]/30 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)]/20"
 								/>
 							</div>
 							<div>
 								<label
 									htmlFor="emp-last-name"
-									className="block text-sm font-medium text-slate-700"
+									className="block text-sm font-medium [color:var(--ink)]"
 								>
 									Last name
 								</label>
@@ -234,7 +247,7 @@ export default function AdminInviteRoute() {
 									value={lastName}
 									onChange={(e) => setLastName(e.target.value)}
 									placeholder="Smith"
-									className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+									className="mt-1 w-full rounded-md border border-[var(--ink)]/30 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)]/20"
 								/>
 							</div>
 						</div>
@@ -242,7 +255,7 @@ export default function AdminInviteRoute() {
 						<div>
 							<label
 								htmlFor="emp-personal"
-								className="block text-sm font-medium text-slate-700"
+								className="block text-sm font-medium [color:var(--ink)]"
 							>
 								Personal email
 							</label>
@@ -253,9 +266,9 @@ export default function AdminInviteRoute() {
 								value={personalEmail}
 								onChange={(e) => setPersonalEmail(e.target.value)}
 								placeholder="alice@personal.example"
-								className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+								className="mt-1 w-full rounded-md border border-[var(--ink)]/30 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--ink)]/20"
 							/>
-							<p className="mt-1 text-xs text-slate-500">
+							<p className="mt-1 text-xs [color:color-mix(in_srgb,var(--ink)_50%,transparent)]">
 								Welcome email destination. Not used for login.
 							</p>
 						</div>
@@ -263,7 +276,7 @@ export default function AdminInviteRoute() {
 						<div>
 							<label
 								htmlFor="emp-phone"
-								className="block text-sm font-medium text-slate-700"
+								className="block text-sm font-medium [color:var(--ink)]"
 							>
 								Phone number
 							</label>
@@ -280,7 +293,7 @@ export default function AdminInviteRoute() {
 								className={`mt-1 w-full rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 ${
 									phoneFieldError
 										? "border-rose-400 focus:ring-rose-400/30"
-										: "border-slate-300 focus:ring-slate-900/20"
+										: "border-[var(--ink)]/30 focus:ring-[var(--ink)]/20"
 								}`}
 							/>
 							{phoneFieldError ? (
@@ -288,18 +301,18 @@ export default function AdminInviteRoute() {
 									{phoneFieldError}
 								</p>
 							) : (
-								<p className="mt-1 text-xs text-slate-500">
+								<p className="mt-1 text-xs [color:color-mix(in_srgb,var(--ink)_50%,transparent)]">
 									E.164 format. This is the login credential — employees
 									enter it at workspace.internjobs.ai to receive their OTP.
 								</p>
 							)}
 						</div>
 
-						<fieldset className="rounded-md border border-slate-200 p-4">
-							<legend className="px-1 text-sm font-medium text-slate-700">
+						<fieldset className="rounded-md border border-[var(--ink)]/10 p-4">
+							<legend className="px-1 text-sm font-medium [color:var(--ink)]">
 								Capabilities (all enabled by default)
 							</legend>
-							<p className="text-xs text-slate-500 mb-3">
+							<p className="text-xs [color:color-mix(in_srgb,var(--ink)_50%,transparent)] mb-3">
 								Uncheck any surfaces this employee should NOT see. You can
 								change these later from the admin directory.
 							</p>
@@ -307,15 +320,15 @@ export default function AdminInviteRoute() {
 								{CAPABILITY_KEYS.map((key) => (
 									<label
 										key={key}
-										className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm cursor-pointer hover:bg-slate-50"
+										className="flex items-center gap-2 rounded-md border border-[var(--ink)]/15 [background:var(--cream)] px-3 py-2 text-sm cursor-pointer hover:[background:color-mix(in_srgb,var(--lavender)_50%,var(--cream))]"
 									>
 										<input
 											type="checkbox"
 											checked={featureFlags[key]}
 											onChange={() => toggleFlag(key)}
-											className="h-4 w-4 rounded border-slate-300"
+											className="h-4 w-4 rounded border-[var(--ink)]/30"
 										/>
-										<span className="text-slate-700">
+										<span className="[color:var(--ink)]">
 											{CAPABILITY_LABELS[key]}
 										</span>
 									</label>
@@ -327,7 +340,7 @@ export default function AdminInviteRoute() {
 							<button
 								type="submit"
 								disabled={!canSubmit}
-								className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+								className="w-full rounded-md [background:var(--cobalt)] px-4 py-2 text-sm font-medium text-white hover:[background:color-mix(in_srgb,var(--cobalt)_80%,black)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
 							>
 								{busy ? "Inviting…" : "Send invite"}
 							</button>
