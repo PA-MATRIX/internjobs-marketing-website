@@ -2,8 +2,8 @@
 schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
-status: "executing"
-last_activity: "2026-05-26"
+status: "human_needed"
+last_activity: "2026-05-26 (Phase 25 verified — status: human_needed; SC-5 code_verified, SC-1/SC-2 deferred to operator mmctl window, SC-3/SC-4 deferred to operator browser walkthrough)"
 ---
 
 # team-workspace Workstream State
@@ -24,11 +24,11 @@ Phases: 23, 25, 26, 27
 
 ## Current Position
 
-Status: Phase 25 Wave 1 closed (3/3 plans done) — 25-01 code-complete + operator-deferred for live MMSSO-02 cutover
-Current phase: 25 (SSO Activation + Admin UX)
-Current plan: 25-01 closed 2026-05-26 (deferred_to_operator) | 25-02 closed | 25-03 closed
-Last activity: 2026-05-26 — Completed 25-01-PLAN.md (MMSSO-01 runbook + script shipped, MMSSO-02 deferred)
-Blockers: None (operator-handoff items tracked in Open Items below)
+Status: human_needed — Phase 25 verified 2026-05-26. 1/5 code_verified (SC-5 dep cleanup); 4/5 deferred to operator (SC-1+SC-2 mmctl SSO cutover, SC-3+SC-4 /admin browser walkthrough). No code gaps found by rrr-verifier.
+Current phase: 25 (SSO Activation + Admin UX) — verification report: `.planning/milestones/v1.4-pilot-readiness/phases/25-sso-activation-admin-ux/25-VERIFICATION.md` (status: human_needed)
+Current plan: All 3 Phase 25 plans closed; phase rollup ready for `/rrr:submit-phase 25 --team team-workspace`
+Last activity: 2026-05-26 — Phase 25 verifier ran, status: human_needed
+Blockers: None for code work (operator-handoff items tracked in Open Items below)
 
 ## Open Items
 
