@@ -3,7 +3,7 @@ schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
 status: "in-progress"
-last_activity: "2026-05-27"
+last_activity: "2026-05-27 — Plan 26-01 complete (KGRAPH track closed, :BLOCKED_BY shipped)"
 ---
 
 # team-workspace Workstream State
@@ -24,19 +24,26 @@ Phases: 26-knowledge-graph-genz-polish
 
 ## Current Position
 
-Status: Planning complete — ready for execution
+Status: Plan 26-01 complete — Plan 26-02 in progress (parallel under same branch)
 Current phase: 26-knowledge-graph-genz-polish
-Current plan: —
+Current plan: 26-01 complete; 26-02 in progress
 Blockers: None
+Last commits (26-01): 6d44eb0 (Task 1 :BLOCKED_BY schema), 6e4f9a9 (Task 2 smoke + A/B scripts)
 
 ## Phase 26 Plan Map
 
 | Plan | Track | Autonomous | Wave | Status |
 |------|-------|-----------|------|--------|
-| 26-01 | KGRAPH (verify + :BLOCKED_BY) | true | 1 | Not started |
-| 26-02 | GENZ polish (confetti + mascot + GIF runbook) | true (code); operator-deferred (GIF install) | 1 | Not started |
+| 26-01 | KGRAPH (verify + :BLOCKED_BY) | true | 1 | **Complete (2026-05-27)** — KGRAPH-01..03 grep-verified live; :BLOCKED_BY edge shipped in `recordTodoFact`; KGRAPH-04/05 smoke + A/B scripts ready for operator |
+| 26-02 | GENZ polish (confetti + mascot + GIF runbook) | true (code); operator-deferred (GIF install) | 1 | In progress (parallel) |
 
-Wave 1: 26-01 and 26-02 are parallel — no file overlap.
+Wave 1: 26-01 and 26-02 are parallel — no file overlap (26-01 = `apps/parrot/workers/*` + `scripts/`; 26-02 = `apps/parrot/app/*`).
+
+## Decisions (cumulative)
+
+- :BLOCKED_BY edge source = kimi schema field (`ExtractedTodo.blocked_by_ids`), not regex heuristic. Pattern mirrors `mentioned_actors`.
+- :BLOCKED_BY MERGE is NOT gated by `!skipped` (unlike :MENTIONS) — retroactive blocker discovery on re-run is meaningful + idempotent.
+- :Blocker nodes are stub nodes keyed by description text only (no canonicalization yet; v1.5 candidate for embedding-similarity dedupe).
 
 ## Notes
 
