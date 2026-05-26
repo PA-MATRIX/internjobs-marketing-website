@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { ParrotMascot } from "../components/ParrotMascot";
 import {
 	ResolvedTodoCard,
 	TodoCard,
@@ -109,17 +110,8 @@ function DashboardSecondaryNav({ activeView }: { activeView: string }) {
 }
 
 function LoadingSkeleton() {
-	return (
-		<div className="space-y-3">
-			{[0, 1, 2].map((i) => (
-				<div
-					key={i}
-					className="animate-pulse bg-slate-200 rounded-xl h-16"
-					aria-hidden="true"
-				/>
-			))}
-		</div>
-	);
+	// v1.4 Phase 26 GENZ-03: parrot mascot replaces generic pulse skeleton.
+	return <ParrotMascot label="Loading your todos..." />;
 }
 
 function ErrorCard({ message }: { message: string }) {

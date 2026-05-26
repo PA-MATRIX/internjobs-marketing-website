@@ -21,6 +21,7 @@
 import { Send, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
+import { fireConfetti, incrementEmailRespondedCount } from "~/lib/confetti";
 import RichTextEditor from "./RichTextEditor";
 
 export type ComposeMode = "compose" | "reply" | "forward";
@@ -157,6 +158,14 @@ export function ComposePane({
 			}
 
 			onSent?.(result.id);
+			// v1.4 Phase 26 GENZ-02: 5-emails-responded confetti (per-session).
+			// Increment the localStorage counter (key: parrot_emails_responded_count)
+			// and fire confetti exactly when it hits 5. The fireConfetti
+			// once-per-session gate ensures this fires only once per browser session.
+			const emailCount = incrementEmailRespondedCount();
+			if (emailCount === 5) {
+				void fireConfetti("5_emails_responded");
+			}
 			onClose();
 		} catch (err) {
 			if (err instanceof ApiError) {
