@@ -2,8 +2,8 @@
 schema_version: 1
 team: "team-workspace"
 milestone: "v1.4"
-status: "in-progress"
-last_activity: "2026-05-27 — Plans 26-01 and 26-02 both code-complete; visual verify + Mattermost install operator-deferred"
+status: "human_needed"
+last_activity: "2026-05-27 (Phase 26 verified — status: human_needed; all 5 SCs code_verified, 3 deferred to operator for live KGRAPH smoke + A/B + GenZ visual + Mattermost GIF install)"
 last_plan_closed: "26-02"
 ---
 
