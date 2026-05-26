@@ -41,10 +41,17 @@ import {
 	buildThreadingHeaders,
 	resolveOriginalEmail,
 } from "../lib/email-helpers";
+import { closeTodoFact } from "../lib/graph";
 import { Folders } from "../../shared/folders";
 import type { ParrotContext } from "../lib/mailbox";
 
 type AppContext = Context<ParrotContext>;
+
+// CLOSETODO-02: Resolution-acknowledgement phrases.
+// Phrases: got it / fixed / done / sent / shipped (case-insensitive).
+// Regex is intentionally loose — false positives ("I've done this") are
+// acceptable; false negatives (missing a resolved todo) are not.
+const ACK_PATTERN = /\b(got\s+it|fixed|done|sent|shipped)\b/i;
 
 /**
  * POST /api/inbox/messages/:id/reply
@@ -173,6 +180,28 @@ export async function handleReplyEmail(c: AppContext) {
 	);
 
 	await stub.markThreadRead(threadId);
+
+	// CLOSETODO-02: If this reply contains a resolution-acknowledgement phrase,
+	// close the linked :Todo in FalkorDB so the auto-clear cron can pick it up.
+	// IMPORTANT: Use `id` from c.req.param("id") — that is the original email's
+	// DO-internal UUID (set at inbound time via crypto.randomUUID()), which is
+	// what recordTodoFact stored as :Todo.source_id. Do NOT use the RFC-5322
+	// `threadId` from buildReferencesChain: that is a Message-ID header string
+	// (e.g. <abc@mail.gmail.com>) and will match zero :Todo nodes in FalkorDB.
+	const replyBodyText = (html || text || "").replace(/<[^>]+>/g, " ");
+	const matchedPhrase = replyBodyText.match(ACK_PATTERN)?.[0] ?? null;
+	if (matchedPhrase && id) {
+		// Fire-and-forget via waitUntil — graph write must not block the
+		// reply response. Fail-soft: if closeTodoFact returns null, the
+		// reply still goes through.
+		c.executionCtx.waitUntil(
+			closeTodoFact(c.env, {
+				threadId: id,
+				employeeId: employee.employeeId ?? employee.email,
+				resolutionText: matchedPhrase,
+			}),
+		);
+	}
 
 	// Deferred outbound delivery — the 202 response returns immediately;
 	// the SMTP send happens in the background via executionCtx.waitUntil.

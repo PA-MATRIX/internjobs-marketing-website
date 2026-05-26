@@ -216,7 +216,16 @@ export function EmailPanel({
 				)}
 			</div>
 
-			{/* Attachments */}
+			{/* Attachments
+			 *
+			 * v1.4 Phase 23-03 ATTACH-DOWN-01..03: each chip rendered by
+			 * EmailAttachmentList is an <a href download> anchor pointing at
+			 *   GET /api/inbox/messages/:messageId/attachments/:attachmentId
+			 * on the Workspace Worker. Direct browser download — no fetch(),
+			 * no React Query intermediary. Worker enforces Clerk auth +
+			 * per-employee DO ownership; non-owners get 403, missing blobs
+			 * get 404. Tested in Chrome + Safari (deferred to operator).
+			 */}
 			{hasAttachments && (
 				<div className="border-t border-slate-200 bg-white px-6 py-3">
 					<EmailAttachmentList
