@@ -62,7 +62,7 @@
 	// Silent no-op until TELNYX_API_KEY is bound (DEFER-29-01-E).
 	"triggers": {
 		"crons": ["0 14 * * 1"]
-	}
+	},
 	// Secrets (set via `wrangler secret put`):
 	//   STARTUP_API_SECRET            — Bearer token for internjobs-startup-api proxy.
 	//                                   Value is the 64-hex secret minted by 28-01;
@@ -128,17 +128,16 @@
 	//                                Default off; flip on after confirming MCP
 	//                                tab is available on the Telnyx plan tier.
 	//
-	// Phase 29-03 — uncomment when TOUCHBASE_CURSORS KV namespace is created via
-	// `wrangler kv namespace create TOUCHBASE_CURSORS`. Stores per-phone weekly
-	// touchbase cursors (TTL ~48h) so "reply 1/2/3" maps to a candidate uuid.
-	// "kv_namespaces": [{ "binding": "TOUCHBASE_CURSORS", "id": "" }],
-	//
-	// Phase 29-02 R2 binding — uncomment after running DEFER-29-02-B:
-	//   wrangler r2 bucket create internjobs-voice-audit
+	// Phase 29-03 — TOUCHBASE_CURSORS KV namespace (created 2026-05-26).
+	// Stores per-phone weekly touchbase cursors (TTL ~48h) so "reply 1/2/3"
+	// maps to a candidate uuid.
+	"kv_namespaces": [{ "binding": "TOUCHBASE_CURSORS", "id": "458947413a764ba9adf871c507bc2f67" }],
+
+	// Phase 29-02 R2 binding — internjobs-startup-call-audit (created 2026-05-26).
 	// Stores call recordings (mp3) + transcripts (json) from the Voice AI
 	// agent's post-call insights webhook (routes/voice.ts voice-postprocess).
 	// R2 layout:
 	//   recordings/<startup_id>/<call_control_id>.mp3
 	//   transcripts/<startup_id>/<call_control_id>.json
-	// "r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-voice-audit" }],
+	"r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-startup-call-audit" }],
 }
