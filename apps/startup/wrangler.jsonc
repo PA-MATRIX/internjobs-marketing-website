@@ -96,16 +96,14 @@
 	//                                   founder sessions.
 	//                                   Set via `wrangler secret put STARTUPS_CLERK_SECRET_KEY`.
 	//                                   Infisical key: STARTUPS_CLERK_SECRET_KEY.
-	//   STARTUPS_CLERK_WEBHOOK_SECRET — Svix-style signing secret from the Clerk
-	//                                   dashboard Webhooks page. Used to verify the
-	//                                   user.created webhook delivered to the startup
-	//                                   Worker endpoint (registered in 28.5-02/05).
-	//                                   Value is empty until 28.5-05 finishes wiring
-	//                                   the webhook URL into the Clerk dashboard —
-	//                                   slot reserved here so `wrangler deploy` of
-	//                                   28.5-04 does not race the secret.
-	//                                   Set via `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET`.
-	//                                   Infisical key: STARTUPS_CLERK_WEBHOOK_SECRET.
+	//   STARTUPS_CLERK_WEBHOOK_SECRET — REMOVED 2026-05-27.
+	//                                   Work-email enforcement moved from a
+	//                                   user.created webhook to Clerk's native
+	//                                   Restrictions API (PATCH /v1/instance/
+	//                                   restrictions + 26 personal-domain entries
+	//                                   in /v1/blocklist_identifiers). Rejection
+	//                                   happens at the sign-up form itself — no
+	//                                   Worker handler involved.
 	//
 	// v1.4 Phase 29 TELNYX_* — Telnyx SMS + Voice AI secrets.
 	// See .planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/

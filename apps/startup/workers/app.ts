@@ -27,7 +27,12 @@ import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
 import { handleInboundEmail } from "./routes/email";
-import { handleClerkWebhook } from "./routes/webhooks";
+// Clerk webhook removed 2026-05-27: work-email enforcement now happens via
+// Clerk's native Restrictions blocklist (configured via PATCH /v1/instance/
+// restrictions + 26 personal-domain entries in /v1/blocklist_identifiers).
+// Rejection happens at the sign-up form itself; no post-creation cleanup
+// needed. See 28.5-OPTION-A-DECISION.md in the phase dir for the pivot
+// rationale.
 import { telnyxRouter } from "./routes/telnyx";
 import { voiceRouter } from "./routes/voice";
 import { scheduled as scheduledHandler } from "./routes/scheduled";
@@ -115,16 +120,6 @@ app.route("/admin", adminRouter);
 // what_hiring_for) and emails Ridhi / logs the lead. CORS-restricted to
 // internjobs.ai. NO auth — public marketing endpoint.
 app.route("/api", apiRouter);
-
-// ── Clerk webhook (Plan 28.5-05 — work-email enforcement) ────────────────────
-// POST /webhooks/clerk — receives user.created events from Clerk app #3 with
-// Svix signature verification. Deletes any newly-created user whose primary
-// email is on the personal-domain blocklist (gmail/yahoo/etc.) via the Clerk
-// Backend API (DELETE /v1/users/:id). Work emails proceed unaffected.
-// Webhook registration in Clerk Dashboard is DEFER-28.5-05-A; the Svix signing
-// secret extraction + `wrangler secret put STARTUPS_CLERK_WEBHOOK_SECRET` is
-// DEFER-28.5-05-B. Until both close, this endpoint returns 503.
-app.post("/webhooks/clerk", (c) => handleClerkWebhook(c.req.raw, c.env));
 
 // ── Telnyx SMS inbound webhook (Phase 29-01 STARTUP-TELNYX-01..06) ───────────
 // POST /webhooks/telnyx/sms — Telnyx messaging profile (DEFER-29-01-D)

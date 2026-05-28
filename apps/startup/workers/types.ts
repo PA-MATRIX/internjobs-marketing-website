@@ -17,9 +17,12 @@ export interface Env {
 	// type level — the Worker runtime guards against absence so code paths that
 	// don't require them keep functioning while DEFER-28.5-01-A / 28.5-04-A close.
 	STARTUPS_CLERK_SECRET_KEY?: string;
-	STARTUPS_CLERK_WEBHOOK_SECRET?: string;
 	STARTUPS_CLERK_ISSUER?: string;
 	STARTUPS_CLERK_JWKS_URL?: string;
+	// STARTUPS_CLERK_WEBHOOK_SECRET removed 2026-05-27 — work-email enforcement
+	// moved from a post-creation webhook to Clerk's native Restrictions
+	// blocklist (26 personal-domain entries + block_disposable_email_domains).
+	// Rejection happens at the sign-up form; no Worker handler involved.
 	// v1.4 Phase 28.5 Plan 04 — outbound email (welcome email + reply send)
 	// + inbound catch-all routing target. Optional at type level: when
 	// undefined, routes/admin.ts logs the welcome email and continues (the
