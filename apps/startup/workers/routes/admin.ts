@@ -266,7 +266,7 @@ async function createStartup(
 // ── Phase 28.5 Plan 04 helpers — per-startup agent email + Clerk invite ──────
 
 /**
- * Reserve a unique slug, write `<slug>@startups.internjobs.ai` to the
+ * Reserve a unique slug, write `<slug>@employers.internjobs.ai` to the
  * startup's `agent_email` column, and insert a `startup_channel_links`
  * row with channel_type='email' so the catch-all email handler in
  * routes/email.ts can resolve inbound mail back to the startup.
@@ -285,7 +285,7 @@ async function provisionAgentEmail(
 		throw new Error("provisionAgentEmail: company name reduced to empty slug");
 	}
 	const slug = await reserveUniqueSlug(base, env.STARTUP_API_URL, env.STARTUP_API_SECRET);
-	const agentEmail = `${slug}@startups.internjobs.ai`;
+	const agentEmail = `${slug}@employers.internjobs.ai`;
 	const baseUrl = env.STARTUP_API_URL.replace(/\/$/, "");
 
 	// 1. Patch the startup row with the chosen agent_email.
@@ -367,7 +367,7 @@ async function sendClerkInvite(
 		body: JSON.stringify({
 			email_address: args.founder_email,
 			public_metadata: { startup_id: args.startup_id, role: "admin" },
-			redirect_url: "https://startups.internjobs.ai/dashboard",
+			redirect_url: "https://employers.internjobs.ai/dashboard",
 		}),
 		signal: AbortSignal.timeout(10000),
 	});
@@ -403,7 +403,7 @@ async function sendClerkInvite(
 }
 
 /**
- * Send the welcome email from `welcome@startups.internjobs.ai` via the
+ * Send the welcome email from `welcome@employers.internjobs.ai` via the
  * `send_email` binding. Falls back to log-only if the binding is missing
  * OR if the send throws (CF rejects sends from un-verified domains —
  * the binding will throw until DEFER-28.5-01-D closes).
@@ -421,11 +421,11 @@ async function sendWelcomeStartupEmail(
 	const text = [
 		`hey ${args.company} team,`,
 		``,
-		`welcome to internjobs.ai. your startup portal is live at https://startups.internjobs.ai`,
+		`welcome to internjobs.ai. your startup portal is live at https://employers.internjobs.ai`,
 		``,
 		`your agent email is ${args.agent_email} — when you reach out to candidates, they'll hear from this address. replies route straight back to your portal.`,
 		``,
-		`sign in to post your first role: https://startups.internjobs.ai/roles/new`,
+		`sign in to post your first role: https://employers.internjobs.ai/roles/new`,
 		``,
 		`— internjobs.ai`,
 	].join("\n");
@@ -449,7 +449,7 @@ async function sendWelcomeStartupEmail(
 	try {
 		await emailBinding.send({
 			from: {
-				email: "welcome@startups.internjobs.ai",
+				email: "welcome@employers.internjobs.ai",
 				name: "internjobs.ai",
 			},
 			to: [{ email: args.founder_email }],
@@ -580,7 +580,7 @@ adminRouter.post("/startups/new", async (c) => {
 		);
 
 		// Welcome email — fire-and-forget. EMAIL binding may throw if the
-		// startups.internjobs.ai domain isn't verified yet (DEFER-28.5-01-D);
+		// employers.internjobs.ai domain isn't verified yet (DEFER-28.5-01-D);
 		// sendWelcomeStartupEmail catches that and logs the body for manual
 		// resend, so this waitUntil is purely for non-blocking dispatch.
 		c.executionCtx.waitUntil(

@@ -38,14 +38,14 @@
 	// Email binding (Phase 28 Plan 05 + Phase 28.5 Plan 04). Used by:
 	//   • routes/api.ts — marketing-CTA leads to raj@internjobs.ai (Plan 28-05)
 	//   • routes/admin.ts — per-startup welcome email from
-	//     welcome@startups.internjobs.ai during /admin/startups/new (Plan 28.5-04)
+	//     welcome@employers.internjobs.ai during /admin/startups/new (Plan 28.5-04)
 	//   • routes/email.ts — inbound catch-all handler (the email() export on
 	//     the Worker default export, not this send binding — this binding only
 	//     covers outbound send via env.EMAIL.send())
 	// The binding is OPTIONAL — both routes/api.ts and routes/admin.ts
 	// gracefully fall back to log-only if env.EMAIL is unbound (handy for
 	// local dev with `wrangler dev` where send_email isn't wired, and for the
-	// pre-DEFER-28.5-01-D window where the startups.internjobs.ai domain is
+	// pre-DEFER-28.5-01-D window where the employers.internjobs.ai domain is
 	// not yet verified in CF Email Routing).
 	// Matches the apps/parrot/wrangler.jsonc pattern.
 	"send_email": [

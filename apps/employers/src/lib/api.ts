@@ -2,7 +2,7 @@ import { useAuth } from "@clerk/clerk-react";
 import { useCallback, useMemo } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// apps/startups typed API client.
+// apps/employers typed API client.
 //
 // All functions hit the CF Pages Function at `/api/*` (see
 // functions/api/[[path]].ts). The Pages Function:

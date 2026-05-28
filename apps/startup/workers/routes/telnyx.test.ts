@@ -299,11 +299,11 @@ test("formatForSms: register_startup ok=true shape → 'registered!' message", a
 	const result = formatForSms({
 		ok: true,
 		startup_id: "uuid",
-		agent_email: "acme@startups.internjobs.ai",
+		agent_email: "acme@employers.internjobs.ai",
 		mcp_install_snippet: null,
 	});
 	assert.equal(result.startsWith("registered!"), true);
-	assert.equal(result.includes("acme@startups.internjobs.ai"), true);
+	assert.equal(result.includes("acme@employers.internjobs.ai"), true);
 });
 
 test("formatForSms: register_startup ok=false → returns message verbatim", async () => {

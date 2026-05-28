@@ -86,7 +86,7 @@ leak to happen. see 28-03 SUMMARY § "TWO-LAYER defense" for the mcp implementat
 
 **channel_type:** `web`
 
-**identity resolution:** clerk #3 session cookie (work-email-only signup at `startups.internjobs.ai`) → server reads `clerk_user_id` from the session → looks up `startup_members` by `clerk_user_id` → resolves `(startup_id, member_id)`. clerk handles auth; the resolver is a single sql lookup. no channel link needed (the clerk user id is the key).
+**identity resolution:** clerk #3 session cookie (work-email-only signup at `employers.internjobs.ai`) → server reads `clerk_user_id` from the session → looks up `startup_members` by `clerk_user_id` → resolves `(startup_id, member_id)`. clerk handles auth; the resolver is a single sql lookup. no channel link needed (the clerk user id is the key).
 
 **dispatch:** web ui form submit → next.js server action → calls the SAME `handlePostRole` / `handleSearch` / `handleReplyToCandidate` functions used by mcp. zero core-logic duplication.
 
@@ -203,7 +203,7 @@ each is ~30–50 loc of adapter code on top of the shared resolver + dispatcher.
 
 **channel_type:** `email`
 
-**ingress:** cloudflare email routing catch-all on `startups.internjobs.ai` → worker inbound webhook → resolves by `from_address`. existing student-side reply-to alias system already proves the email-as-intent pattern; the adapter just plugs it into the startup core.
+**ingress:** cloudflare email routing catch-all on `employers.internjobs.ai` → worker inbound webhook → resolves by `from_address`. existing student-side reply-to alias system already proves the email-as-intent pattern; the adapter just plugs it into the startup core.
 
 **why deferred:** ridhi-mediated email handoff covers the gap. founders who want mcp will install mcp; founders who want web will use 28.5; founders who want a phone call get telnyx voice in phase 29.
 

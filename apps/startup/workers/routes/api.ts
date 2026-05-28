@@ -11,7 +11,7 @@
 //
 // Design notes:
 //   - This is a transitional surface. Phase 28.5 (web onboarding at
-//     startups.internjobs.ai) will replace the CTA with "sign up" instead of
+//     employers.internjobs.ai) will replace the CTA with "sign up" instead of
 //     "request access". Keep the implementation simple — no DB write here,
 //     no token issuance. That's the admin endpoint's job.
 //   - CORS is restricted to internjobs.ai + www.internjobs.ai so this

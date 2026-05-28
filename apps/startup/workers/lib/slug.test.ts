@@ -92,7 +92,7 @@ test("reserveUniqueSlug: returns base on first 404", async () => {
 		const result = await reserveUniqueSlug("acme", "https://api.example.com", "secret");
 		assert.equal(result, "acme");
 		assert.equal(calls.length, 1);
-		assert.ok(calls[0].includes("agent_email=acme%40startups.internjobs.ai"));
+		assert.ok(calls[0].includes("agent_email=acme%40employers.internjobs.ai"));
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -117,9 +117,9 @@ test("reserveUniqueSlug: advances to -1 then -2 on consecutive collisions", asyn
 		assert.equal(result, "acme-2");
 		assert.equal(calls, 3);
 		assert.deepEqual(requested, [
-			"acme@startups.internjobs.ai",
-			"acme-1@startups.internjobs.ai",
-			"acme-2@startups.internjobs.ai",
+			"acme@employers.internjobs.ai",
+			"acme-1@employers.internjobs.ai",
+			"acme-2@employers.internjobs.ai",
 		]);
 	} finally {
 		globalThis.fetch = originalFetch;

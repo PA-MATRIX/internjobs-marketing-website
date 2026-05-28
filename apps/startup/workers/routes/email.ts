@@ -1,12 +1,12 @@
 // apps/startup/workers/routes/email.ts
 // v1.4 Phase 28.5 STARTUP-AGENT-EMAIL-02 — catch-all inbound email handler.
 //
-// Cloudflare Email Routing delivers ALL mail to *@startups.internjobs.ai
+// Cloudflare Email Routing delivers ALL mail to *@employers.internjobs.ai
 // to the `email()` export on this Worker's default export (wired in
 // apps/startup/workers/app.ts). This module parses the MIME body, resolves
 // the recipient slug to (startup_id, member_id) via the Fly proxy
 // (`startup_channel_links WHERE channel_type='email' AND channel_external_id
-// = '<slug>@startups.internjobs.ai'`), and inserts an `inbound_messages` row.
+// = '<slug>@employers.internjobs.ai'`), and inserts an `inbound_messages` row.
 //
 // Pattern mirror: apps/parrot/workers/lib/inbound-email.ts. Differences from
 // parrot:
@@ -109,7 +109,7 @@ export async function handleInboundEmail(
 	const toAddress = message.to?.toLowerCase() ?? "";
 	const slug = toAddress.split("@")[0];
 
-	if (!slug || !toAddress.endsWith("@startups.internjobs.ai")) {
+	if (!slug || !toAddress.endsWith("@employers.internjobs.ai")) {
 		message.setReject("invalid recipient address");
 		console.warn(
 			JSON.stringify({

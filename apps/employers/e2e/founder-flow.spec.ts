@@ -1,6 +1,6 @@
-// apps/startups/e2e/founder-flow.spec.ts
+// apps/employers/e2e/founder-flow.spec.ts
 // v1.4 Phase 28.5 Plan 05 STARTUP-WEB-AUTH-04 — Playwright E2E covering
-// the founder happy path on https://startups.internjobs.ai.
+// the founder happy path on https://employers.internjobs.ai.
 //
 // Test layout (7 tests):
 //   • 3 unauthenticated tests (always run): sign-in renders, /dashboard
@@ -15,17 +15,17 @@
 // auth-required tests are skipped — CI sees 3 pass + 4 skip + 0 fail.
 //
 // Targets:
-//   • Default: https://startups.internjobs.ai (production).
+//   • Default: https://employers.internjobs.ai (production).
 //   • Override: TEST_BASE_URL=http://localhost:5173 (Vite dev) or staging.
 //   • Marketing CTA test always hits https://internjobs.ai/startups
 //     regardless of TEST_BASE_URL (it asserts the cross-app contract).
 
 import { test, expect } from "@playwright/test";
 
-const BASE_URL = process.env.TEST_BASE_URL ?? "https://startups.internjobs.ai";
+const BASE_URL = process.env.TEST_BASE_URL ?? "https://employers.internjobs.ai";
 const MARKETING_STARTUPS_URL = "https://internjobs.ai/startups";
 
-// v1.4 Phase 28.5 Plan 05 — pre-deploy guard. The startups.internjobs.ai
+// v1.4 Phase 28.5 Plan 05 — pre-deploy guard. The employers.internjobs.ai
 // hostname doesn't resolve until DEFER-28.5-02-A (CF Pages deploy) closes,
 // and the marketing /startups CTA flip isn't live until DEFER-28.5-05-C
 // closes. Until then, mark the suite skipped instead of failed — a hard
@@ -74,34 +74,34 @@ test.describe("founder happy path — unauthenticated", () => {
 		expect(finalUrl).not.toContain("/dashboard");
 	});
 
-	test("marketing /startups page CTA links to startups.internjobs.ai", async ({
+	test("marketing /startups page CTA links to employers.internjobs.ai", async ({
 		page,
 	}) => {
 		// Pre-deploy guard: until DEFER-28.5-05-C closes (marketing redeploy),
 		// internjobs.ai/startups serves the pre-flip 28-05 version (no
-		// startups.internjobs.ai href). Detect that case via the dist HTML
+		// employers.internjobs.ai href). Detect that case via the dist HTML
 		// directly and skip rather than fail.
 		const checkRes = await fetch(MARKETING_STARTUPS_URL).catch(() => null);
 		const html = checkRes ? await checkRes.text() : "";
 		test.skip(
-			!html.includes("startups.internjobs.ai"),
+			!html.includes("employers.internjobs.ai"),
 			`${MARKETING_STARTUPS_URL} missing CTA link — DEFER-28.5-05-C (marketing redeploy) pending`,
 		);
 
 		await page.goto(MARKETING_STARTUPS_URL);
-		// The new CTA: anchor href to https://startups.internjobs.ai/ with
+		// The new CTA: anchor href to https://employers.internjobs.ai/ with
 		// "sign up" label. The hero "post a role" nav button still anchors to
 		// #startup-access, but the access section itself now contains the
-		// startups.internjobs.ai link (post-28.5-05 commit `cc0fe9a`).
+		// employers.internjobs.ai link (post-28.5-05 commit `cc0fe9a`).
 		const startupsLinks = page.locator(
-			"a[href*='startups.internjobs.ai']",
+			"a[href*='employers.internjobs.ai']",
 		);
 		await expect(startupsLinks.first()).toBeVisible({ timeout: 10_000 });
 		const ctaCount = await startupsLinks.count();
 		expect(ctaCount).toBeGreaterThanOrEqual(1);
 		// The primary "sign up" CTA must contain the words "sign up".
 		const signUpCta = page.locator(
-			"a[href*='startups.internjobs.ai']",
+			"a[href*='employers.internjobs.ai']",
 			{ hasText: /sign up/i },
 		);
 		await expect(signUpCta.first()).toBeVisible({ timeout: 5_000 });
@@ -110,7 +110,7 @@ test.describe("founder happy path — unauthenticated", () => {
 
 // ── Authenticated tests — gated on PLAYWRIGHT_CLERK_TEST_TOKEN ─────────────
 // These tests assume a pre-provisioned founder account exists at
-// startups.internjobs.ai, created via:
+// employers.internjobs.ai, created via:
 //   POST https://mcp.internjobs.ai/admin/startups/new
 //     -H "Authorization: Bearer $STARTUP_MCP_ADMIN_SECRET"
 //     -d '{"company":"E2E Test Corp","founder_email":"e2e@acme.io",...}'
@@ -144,9 +144,9 @@ test.describe("founder happy path — authenticated", () => {
 			timeout: 10_000,
 		});
 		// The per-startup agent_email row (28.5-04) appears in the "your agent"
-		// card. Format: <slug>@startups.internjobs.ai.
+		// card. Format: <slug>@employers.internjobs.ai.
 		await expect(page.locator("body")).toContainText(
-			"@startups.internjobs.ai",
+			"@employers.internjobs.ai",
 			{ timeout: 5_000 },
 		);
 	});

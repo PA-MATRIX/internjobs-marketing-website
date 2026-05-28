@@ -2470,7 +2470,7 @@ function StartupRolePanel() {
 
 function StartupAccessSection() {
   // v1.4 Phase 28.5 Plan 05 STARTUP-WEB-CTA-01 — primary CTA flipped from
-  // RequestAccessForm to a direct link to https://startups.internjobs.ai/.
+  // RequestAccessForm to a direct link to https://employers.internjobs.ai/.
   // The Vite-built founder portal (Clerk #3) handles sign-up; the marketing
   // page no longer needs to be the intake form for the first cohort.
   // RequestAccessForm is kept below as a fallback for founders without a
@@ -2495,7 +2495,7 @@ function StartupAccessSection() {
         </div>
         <div className="rounded-lg border border-white/10 bg-white/[0.075] p-6 backdrop-blur-xl sm:p-8">
           <a
-            href="https://startups.internjobs.ai/"
+            href="https://employers.internjobs.ai/"
             className="inline-flex w-full items-center justify-center gap-2 lowercase"
             style={{
               background: "var(--lavender)",
@@ -2508,7 +2508,7 @@ function StartupAccessSection() {
               letterSpacing: "-0.01em",
             }}
           >
-            sign up at startups.internjobs.ai
+            sign up at employers.internjobs.ai
             <ArrowRight className="size-4" />
           </a>
           <p className="mt-5 text-center text-sm leading-6 text-white/60">

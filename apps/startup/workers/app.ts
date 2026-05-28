@@ -156,7 +156,7 @@ app.get("/", (c) =>
 );
 
 // v1.4 Phase 28.5 Plan 04 STARTUP-AGENT-EMAIL-02 — add `email()` export so
-// Cloudflare Email Routing (catch-all on startups.internjobs.ai) delivers
+// Cloudflare Email Routing (catch-all on employers.internjobs.ai) delivers
 // inbound mail into the Worker. The catch-all rule is configured in the
 // CF dashboard separately (see DEFER-28.5-01-E). Routing is independent
 // of the Worker's `fetch` HTTP surface, so the existing /mcp + /admin +

@@ -2,7 +2,7 @@
 // internjobs-startup-api Fly service.
 //
 // Routes: catch-all on /api/*. All requests from the browser hit
-// https://startups.internjobs.ai/api/<path> and this function:
+// https://employers.internjobs.ai/api/<path> and this function:
 //
 //   1. Strips the /api prefix and rewrites to STARTUP_API_URL/v1/<path>.
 //   2. Replaces the incoming Authorization header (which carries the Clerk

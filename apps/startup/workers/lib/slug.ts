@@ -1,7 +1,7 @@
 // apps/startup/workers/lib/slug.ts
 // v1.4 Phase 28.5 STARTUP-AGENT-EMAIL-01 — slug generation + uniqueness
 // reservation for per-startup agent email addresses
-// (`<slug>@startups.internjobs.ai`).
+// (`<slug>@employers.internjobs.ai`).
 //
 // `mintSlug` is deterministic: the same company name always produces the
 // same base slug. Reservation handles collisions by appending `-1`, `-2`,
@@ -63,7 +63,7 @@ function candidateForAttempt(base: string, attempt: number): string {
 
 /**
  * Reserve a unique slug for a new startup by asking the Fly proxy whether
- * `<candidate>@startups.internjobs.ai` is already taken (404 = free).
+ * `<candidate>@employers.internjobs.ai` is already taken (404 = free).
  *
  * Behaviour:
  *   • 404 from the proxy → candidate is free; return it.
@@ -99,7 +99,7 @@ export async function reserveUniqueSlug(
 
 	for (let attempt = 0; attempt < MAX_RESERVE_ATTEMPTS; attempt++) {
 		const candidate = candidateForAttempt(trimmedBase, attempt);
-		const email = `${candidate}@startups.internjobs.ai`;
+		const email = `${candidate}@employers.internjobs.ai`;
 		const url = `${baseUrl}/v1/startups/check-slug?agent_email=${encodeURIComponent(email)}`;
 
 		const res = await fetch(url, {

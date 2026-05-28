@@ -1,15 +1,15 @@
-// apps/startups/playwright.config.ts
+// apps/employers/playwright.config.ts
 // v1.4 Phase 28.5 Plan 05 STARTUP-WEB-AUTH-04 — Playwright config for the
-// founder-flow E2E suite at apps/startups/e2e/.
+// founder-flow E2E suite at apps/employers/e2e/.
 //
 // Targets:
-//   • Default: production at https://startups.internjobs.ai (override via
+//   • Default: production at https://employers.internjobs.ai (override via
 //     TEST_BASE_URL env var for staging / wrangler-pages-dev / Vite dev).
 //   • Auth-required tests are gated on PLAYWRIGHT_CLERK_TEST_TOKEN — when
 //     unset, those tests are `test.skip`'d (see founder-flow.spec.ts).
 //
 // Run:
-//   cd apps/startups && npx playwright test --reporter=line
+//   cd apps/employers && npx playwright test --reporter=line
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -23,7 +23,7 @@ export default defineConfig({
 	workers: process.env.CI ? 2 : undefined,
 	reporter: process.env.CI ? "github" : "line",
 	use: {
-		baseURL: process.env.TEST_BASE_URL ?? "https://startups.internjobs.ai",
+		baseURL: process.env.TEST_BASE_URL ?? "https://employers.internjobs.ai",
 		headless: true,
 		trace: "retain-on-failure",
 		screenshot: "only-on-failure",
