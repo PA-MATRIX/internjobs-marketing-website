@@ -94,109 +94,47 @@ leak to happen. see 28-03 SUMMARY § "TWO-LAYER defense" for the mcp implementat
 
 ---
 
-## phase 29 — telnyx sms adapter (planned)
+## phase 29 — telnyx sms adapter (live — phase 29-01 + 29-03)
 
 **channel_type:** `telnyx-sms`
 
-**registration:** during 28-04 admin onboarding, also insert a `(telnyx-sms, founder_phone)` row into `startup_channel_links`. enables inbound sms identity from day one.
+**registration:** during 28-04 admin onboarding, an SMS channel-link row is upserted alongside the mcp link (one row per (channel_type, channel_external_id) pair). voice-intake onboarding (29-02) also inserts a `(telnyx-sms, +caller_phone)` link with `opt_in_flags.weekly_touchbase=true`.
 
-**inbound handler sketch:**
+**code:**
+- `apps/startup/workers/routes/telnyx.ts` — full inbound webhook with load-bearing ordering:
+  1. **STOP keyword** (BEFORE sig verify, TCPA-compliant unconditional opt-out) — `isStopKeyword(body)` matches `STOP/STOPALL/UNSUBSCRIBE/CANCEL/END/QUIT`.
+  2. **Ed25519 signature verify** via `crypto.subtle` (skipped with warning if `TELNYX_WEBHOOK_PUBLIC_KEY` unbound — Phase 29-01 ops-deferred guard).
+  3. **`message.received` event gate** — delivery receipts silent-200.
+  4. **Identity resolution** via `resolveChannelLink(env, 'telnyx-sms', from_phone)` → invite-prompt on miss.
+  5. **Touchbase numeric fast-path** (Phase 29-03) — `"1"/"2"/"3"` → `env.TOUCHBASE_CURSORS.get(\`touchbase:cursor:\${phone}\`)` → `handleExecute({action: 'show_candidate', params: { position, thread_id }})`.
+  6. **Touchbase opt-in fast-path** (Phase 29-03) — `"yes"/"y"` → `PATCH /v1/channel-links/:id/opt-in-touchbase`.
+  7. **`classifyIntent(body, env)`** (regex fast-path → Workers AI LLM fallback for natural language).
+  8. **Dispatch** to `handleSearch` or `handleExecute`.
+  9. **`formatForSms(result) + sendSms(env, from_phone, reply)`**.
+- `apps/startup/workers/lib/telnyx.ts` — `sendSms()` + `formatForSms()` with special-cased shapes for `show_candidate` / `register_startup`. Ops-deferred guards on every Telnyx secret.
+- `apps/startup/workers/lib/intent.ts` — 2-layer classifier (regex fast-path for numeric / START / YES / Y / NO / N + Workers AI LLM fallback for natural language).
+- `apps/startup/workers/routes/scheduled.ts` — weekly touchbase cron (Phase 29-03; `0 14 * * 1` Monday 14:00 UTC). Queries `/v1/touchbase/due-startups`, sends touchbase SMS with 3 fresh candidates, writes 48h KV cursor at `touchbase:cursor:<phone>` so reply 1/2/3 maps back to a candidate.
+- `apps/startup/workers/lib/resolveChannelLink.ts` — generic identity helper, returns `StartupContext { startup_id, member_id, startup_name, channel_link_id? }`.
 
-```typescript
-// apps/startup/workers/routes/telnyx.ts
-import { Hono } from "hono";
-import { resolveChannelLink } from "../lib/resolveChannelLink";
-import { classifyIntent } from "../lib/intent";
-import { handleSearch, handleExecute } from "../tools/execute";
-import { sendSms } from "../lib/telnyx";
-
-export const telnyxRouter = new Hono<{ Bindings: Env }>();
-
-telnyxRouter.post("/webhooks/telnyx/sms", async (c) => {
-  // Telnyx webhook signature verification omitted for brevity
-  const payload = await c.req.json();
-  const fromPhone = payload.data?.payload?.from?.phone_number;   // e.g. '+15551234567'
-  const body = payload.data?.payload?.text;
-
-  // 1. identity resolution
-  const ctx = await resolveChannelLink(c.env, "telnyx-sms", fromPhone);
-  if (!ctx) {
-    // unknown phone — politely no-op (don't leak whether the number is known)
-    return c.json({ ok: true });
-  }
-
-  // 2. intent classification (text → action_name + args)
-  // e.g. "post a frontend intern role" → {action: "post_role", args: {title: "Frontend Intern", ...}}
-  // built on a small llm call w/ a fixed action enum + few-shot examples
-  const intent = await classifyIntent(body, c.env);
-  if (!intent) {
-    await sendSms(c.env, fromPhone, "didn't catch that. try: 'post a frontend intern role' or 'search candidates with react experience'.");
-    return c.json({ ok: true });
-  }
-
-  // 3. dispatch — same core handler the mcp execute() tool calls
-  const result = intent.kind === "search"
-    ? await handleSearch(c.env, ctx, intent.scope, intent.query)
-    : await handleExecute(c.env, ctx, intent.action, intent.args);
-
-  // 4. format result for sms (truncated, no markdown)
-  const replyText = formatForSms(result);
-
-  // 5. outbound reply (also via telnyx-sms — same channel)
-  await sendSms(c.env, fromPhone, replyText);
-
-  return c.json({ ok: true });
-});
-```
-
-**outbound reply:**
-
-```typescript
-export async function sendSms(env: Env, to: string, text: string): Promise<void> {
-  await fetch("https://api.telnyx.com/v2/messages", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${env.TELNYX_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: env.TELNYX_FROM_NUMBER,
-      to,
-      text,
-      ...(env.TELNYX_MESSAGING_PROFILE_ID && { messaging_profile_id: env.TELNYX_MESSAGING_PROFILE_ID }),
-    }),
-  });
-}
-```
-
-**why this is ~50 LOC and not 500:** the resolver, the handlers, the audit log, and the database — all reused. the adapter is just inbound webhook → resolve → intent → dispatch → outbound reply.
+**why this is ~50 LOC of adapter and not 500:** the resolver, the handlers, the audit log, and the database — all reused from the mcp channel. the sms adapter just wires inbound webhook → resolve → fast-paths → intent → dispatch → outbound reply.
 
 ---
 
-## phase 29 — telnyx voice ai adapter (planned)
+## phase 29 — telnyx voice ai adapter (live — phase 29-02)
 
 **channel_type:** `telnyx-voice` (same identity model, different ingress)
 
-telnyx voice ai is configurable to call any http endpoint as a tool. point it at `https://mcp.internjobs.ai/mcp` with a per-agent bearer token — telnyx handles tts/stt/intent/prompt; we expose exactly what mcp already exposes.
+**code:**
+- `apps/startup/workers/routes/voice.ts` — three webhook endpoints called by the Telnyx Voice AI Agent during a call:
+  - `POST /webhooks/telnyx/voice-init` — pre-call dynamic-variables hook (returns per-call agent context).
+  - `POST /webhooks/telnyx/voice-postprocess` — post-call insights hook (writes transcript + recording to R2 `internjobs-voice-audit`).
+  - `POST /webhooks/telnyx/voice-tool` — webhook-tool fallback for `register_startup` + `show_candidate` when `TELNYX_USE_MCP_INTEGRATION != 'true'` (plan-gated MCP tab in Telnyx portal).
+- `apps/startup/workers/lib/voice-onboarding.ts` — shared helper that mints a startup row + sends the install-snippet SMS after a successful voice intake.
+- `docs/VOICE_AGENT_CONFIG.md` — Telnyx portal config (system prompt, greeting, model, tools, webhooks) — paste into portal for the zero-code Voice AI agent setup.
 
-**configuration sketch (telnyx portal, not code):**
+**TELNYX_USE_MCP_INTEGRATION:** `'true'` = the Voice AI agent's MCP Server tab points at `https://mcp.internjobs.ai/mcp` with `TELNYX_VOICE_AGENT_TOKEN` as Bearer; `'false'` (or unbound) = webhook-tool fallback via `/webhooks/telnyx/voice-tool`. See `PHASE-29-DEFERRED-OPS.md` DEFER-29-02-A for the portal config workflow.
 
-```yaml
-voice_agent:
-  greeting: "thanks for calling internjobs. what role are you hiring for?"
-  tools:
-    - name: internjobs_mcp
-      type: http
-      url: https://mcp.internjobs.ai/mcp
-      auth:
-        type: bearer
-        token: ${TELNYX_VOICE_AGENT_TOKEN}    # per-startup mcp install token
-      tool_definition_source: discover_actions
-```
-
-**registration:** during voice-intake onboarding (phase 29), insert a `(telnyx-voice, +caller_phone)` link AND issue a per-call install token. caller's first call provisions everything; subsequent calls resolve via the link.
-
-**zero custom voice code in our codebase.** telnyx is the entire ingress.
+**registration:** the Voice AI agent's last-question tool call (`register_startup`) loopbacks to `POST /admin/startups/new` with the founder's company, name, work-email, and the calling phone as `channel_external_id`. Returns a fresh per-startup install token + an SMS install snippet — delivered to the caller via `sendSms` before the call hangs up.
 
 ---
 
