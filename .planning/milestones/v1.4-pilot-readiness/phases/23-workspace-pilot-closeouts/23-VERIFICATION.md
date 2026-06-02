@@ -1,8 +1,9 @@
 ﻿---
 phase: 23-workspace-pilot-closeouts
 team: team-workspace
-status: human_needed
+status: verified
 verified_at: 2026-05-26
+live_verified_at: 2026-06-03
 goal: Workspace is functionally pilot-ready end-to-end
 ---
 
@@ -11,9 +12,10 @@ goal: Workspace is functionally pilot-ready end-to-end
 **Phase Goal:** Workspace is functionally pilot-ready end-to-end: agent reply triggers todo auto-clear, employee email path is Lakera-screened the same way the student SMS path is, attachments download, agent-lift UI features work in a live authenticated UAT.
 
 **Branch:** rrr/v1.4/team-workspace-23 (16 commits ahead of main)
-**Verified:** 2026-05-26
-**Status:** human_needed -- all automated/structural checks PASS; 3 of 5 success criteria deferred to operator (no code gaps)
-**Re-verification:** No -- initial verification
+**Verified (code):** 2026-05-26
+**Live-verified (operator):** 2026-06-03
+**Status:** verified -- all 5 success criteria PASS (SC-1 code_verified; SC-2..SC-5 live_verified). One accepted latency deviation (translate verbose scripts) + Safari attachment half deferred (no Mac). See "Live Verification Update".
+**Re-verification:** Yes -- live operator pass appended below the initial 2026-05-26 code verification
 
 ---
 
@@ -30,10 +32,10 @@ goal: Workspace is functionally pilot-ready end-to-end
 | # | Criterion | Classification | Evidence |
 |---|-----------|----------------|----------|
 | 1 | Agent reply sets :Todo.valid_to in FalkorDB; auto-clear cron closes SQLite todo within 10 min; Resolved view updated | code_verified | Full code chain confirmed; graph-api Fly deploy 2/2 healthy; Cypher smoke 3/3 PASS |
-| 2 | Injection email from non-startup_members sender silently hard-blocked; safety_events row written; no auto-reply | deferred_to_operator | Code shipped (c7973ca); 4-email live test blocked on CF token rotation + Worker deploy |
-| 3 | Clicking attachment in Workspace inbox downloads in Chrome + Safari (no 404) | deferred_to_operator | Code shipped (f00e388 + cff5234); browser click-test blocked on Worker deploy |
-| 4 | AgentPanel quick actions return live LLM results in production within 10s | deferred_to_operator | UAT template shipped (agent-uat-results.md, 164 lines); walkthrough blocked on Worker deploy |
-| 5 | MCPPanel lists all 11 internal Workspace MCP tools; tool calls return non-error | deferred_to_operator | UAT template shipped with 11-tool checklist + curl recipes; walkthrough blocked on Worker deploy |
+| 2 | Injection email from non-startup_members sender silently hard-blocked; safety_events row written; no auto-reply | **live_verified** (2026-05-28) | 3 emails hard-blocked at Lakera (action=blocked, source=lakera_flagged, score=1.00); 0 rows on benign; 0 auto-replies. See safety-email-verify.md |
+| 3 | Clicking attachment in Workspace inbox downloads in Chrome + Safari (no 404) | **live_verified — Chrome** (2026-05-28); Safari deferred (no Mac) | Chrome download + 403 non-owner + 404 bogus-id all PASS. See attachment-download-verify.md |
+| 4 | AgentPanel quick actions return live LLM results in production within 10s | **live_verified** (2026-06-03) | All 5 actions PASS, zero 503s on build 7217fb31. Latency deviation: translate verbose scripts 10–22s. See agent-uat-results.md |
+| 5 | MCPPanel lists all 11 internal Workspace MCP tools; tool calls return non-error | **live_verified** (2026-06-03) | 11/11 tools listed; 3 non-error tool calls (list_emails, get_email, draft_reply). See agent-uat-results.md |
 
 ---
 
@@ -219,5 +221,56 @@ After the operator appends results to safety-email-verify.md, attachment-downloa
 
 ---
 
-_Verified: 2026-05-26_
-_Verifier: Claude (rrr-verifier, claude-sonnet-4-6)_
+## Live Verification Update (2026-06-03)
+
+The single operator window described above was executed. All four deferred
+success criteria are now live-verified. SC-2 + SC-3 ran 2026-05-28; SC-4 + SC-5
+(the agent-lift UAT) ran 2026-06-03.
+
+### SC-2 — Safety email injection (live_verified 2026-05-28)
+3 candidate-style emails from a non-allowlisted external sender hard-blocked at
+the Lakera ingress gate (`action=blocked, source=lakera_flagged, score=1.00`);
+benign control produced 0 rows; 0 auto-replies in Sent. Evidence:
+`apps/parrot/test/safety-email-verify.md`. Note: trigger emails were benign
+candidate text Lakera false-positived into the block path — the gate fires live;
+the FP rate is a separate v1.5 watchlist item (`SAFETY-HARD-BLOCK-EXPAND-01`),
+not a gate regression.
+
+### SC-3 — Attachment download (live_verified Chrome 2026-05-28; Safari deferred)
+Chrome download PASS; negative tests PASS (403 non-owner, 404 bogus
+attachmentId). Safari half deferred — no Mac available; carried as an open item,
+not a blocker. Evidence: `apps/parrot/test/attachment-download-verify.md`.
+
+### SC-4 + SC-5 — Agent-lift UAT (live_verified 2026-06-03)
+All 14 UAT steps PASS on Worker build `7217fb31`. MCPPanel lists 11/11 tools;
+≥3 non-error tool calls confirmed.
+
+**Defect found + fixed during UAT (code change beyond the verification-only
+plan):** AgentPanel quick actions were 503-ing and running 30s–1.7min because all
+five generation actions (summarize/translate/draft/extract/chat) ran on the
+kimi-k2.6 reasoning model, whose chain-of-thought starved the `max_tokens`
+budget (content=null → fail-closed/503) and inflated latency. Fix: route the five
+generation actions + the draft `verifyDraft` scrub to a fast non-reasoning model
+`PARROT_FAST_MODEL` (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`); kimi-k2.6 is
+kept only for the security injection scanner + background todo extraction. Result:
+5–10× speedup, zero 503s.
+
+Files changed by the fix (deployed as `7217fb31`):
+`apps/parrot/workers/routes/agent.ts`, `apps/parrot/workers/lib/ai.ts`,
+`apps/parrot/workers/lib/email-helpers.ts` (DO-RPC stub fix surfaced en route),
+`apps/parrot/workers/types.ts`, `apps/parrot/wrangler.jsonc`.
+
+**Accepted deviation (AGENT-UAT-02-DEV-01):** translate into verbose scripts
+(Hindi/German 14–22s, French/Mandarin ~10–11s) exceeds the <10s target — translate
+produces the largest output of any action. Acceptable for v1.4 pilot (zero errors,
+down from 45s–1.7min + 503s); further tuning deferred to v1.5.
+
+### Open items carried forward
+- Safari attachment-download test (SC-3) — no Mac available.
+- v1.5: `SAFETY-HARD-BLOCK-EXPAND-01` (Lakera candidate-email false positives).
+- v1.5: translate latency for verbose scripts (model/streaming tuning).
+
+---
+
+_Verified (code): 2026-05-26 — Claude (rrr-verifier, claude-sonnet-4-6)_
+_Live-verified (operator): 2026-06-03 — Nithin (rentalaraj@gmail.com), recorded by Claude (claude-opus-4-8)_

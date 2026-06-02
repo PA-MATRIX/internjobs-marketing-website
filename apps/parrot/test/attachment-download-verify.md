@@ -3,7 +3,7 @@
 **Plan:** 23-03
 **Phase:** 23 — Workspace Pilot Closeouts (v1.4)
 **Requirements:** ATTACH-DOWN-01, ATTACH-DOWN-02, ATTACH-DOWN-03
-**Status:** DEFERRED — operator browser-verify pending (code complete)
+**Status:** PASSED (Chrome + all negatives) — Safari portion remains deferred (no Mac available). Verified 2026-05-28.
 **Code status:** COMPLETE
 **Code commits:** `f00e388` (route) + `cff5234` (UI wire) on `rrr/v1.4/team-workspace-23`
 **Date:** 2026-05-26 (record opened)
@@ -155,6 +155,65 @@ Add a `## Live verification results` section to this file with:
 
 Then change `Status:` at the top of this file to `PASSED` (or `FAILED`
 with gap analysis).
+
+## Live verification results
+
+**Date:** 2026-05-28
+**Operator:** Nithin (rentalaraj@gmail.com)
+**Worker version hash:** `160c98aa-1af0-4973-b8f9-79a1385694cd`
+**Deploy account:** prod CF `0fffd3dc637bdb26d4963df445a69fd3`
+**Test recipient (Employee A):** `nithin.test@internjobs.ai` (employee_id `365d02c4-d71b-437b-b4b7-661a0853f5f8`, clerk user `user_3EJdXNOkv9YyzE8eBbSqIYZVK9Y`)
+**2nd employee (Employee B):** `bee.test@internjobs.ai` (created for 403 test only)
+**Sender:** `21bd1a12b4itb@gmail.com`
+**Test message ID:** `a7eced3a-1bee-4d34-b05d-05f1c4dc6bdc` (delivered 2026-05-28 1:06:43 AM, `attachments=1`)
+**Test attachment ID:** `640ad170-cc9d-4451-ab83-d366d0355fb0`
+
+### Inbound delivery (tail evidence)
+
+```
+Email from:21bd1a12b4itb@gmail.com to:nithin.test@internjobs.ai size:98157
+  (log) {"event":"lakera_latency_ms","ms":690,"channel":"email"}
+  (log) Parrot inbound: routed to nithin.test@internjobs.ai
+        (employee=365d02c4..., msg=a7eced3a..., attachments=1)
+EmployeeMailboxDO.createEmail - Ok
+```
+
+R2 store + DO row created on first deploy of internjobs-parrot Worker; no backfill needed.
+
+### Chrome positive (ATTACH-DOWN-03 Chrome)
+
+Operator signed in to workspace.internjobs.ai as Employee A via Clerk phone-OTP. Opened "test attachment" email in inbox.
+
+| Step | Result |
+|------|--------|
+| Inbox shows the message | PASS |
+| Attachment chip renders below body | PASS |
+| Click chip → Chrome initiates download | PASS |
+| Downloaded filename matches chip label | PASS |
+| Opening file produces original content | PASS |
+
+**Chrome: PASSED**
+
+### Safari (ATTACH-DOWN-03 Safari)
+
+**DEFERRED** — operator has no Mac access. Code is identical to Chrome path (RFC-6266 Content-Disposition + `download` attribute on anchor). Safari verification can be picked up in a later operator window if/when Mac access becomes available; not a code defect.
+
+### Negative tests (ATTACH-DOWN-02)
+
+| Test | Method | Status | Response body |
+|------|--------|--------|---------------|
+| 401 no session | `curl -i` to attachment URL without cookie | `HTTP/1.1 401 Unauthorized` | `{"error":"unauthenticated"}` |
+| 403 cross-user | Employee B signed in via Clerk OTP (spare phone 2), navigated to A's attachment URL in address bar | 403 status visible via browser response panel | `{"error":"forbidden"}` |
+| 404 bogus attachmentId | Employee A's browser, address bar to same message ID + attachmentId `00000000-0000-0000-0000-000000000000` | 404 status visible via browser response panel | `{"error":"not_found"}` |
+
+All 3 negative cases PASSED. Ownership enforcement (DO-internal stub.getEmail check at `attachments.ts`) verified end-to-end.
+
+### Result
+
+- ATTACH-DOWN-01 (route serves attachment): **PASSED** (Chrome download succeeded; R2 → response wire confirmed)
+- ATTACH-DOWN-02 (auth + ownership negatives): **PASSED** (401 / 403 / 404 all returned correct status + body)
+- ATTACH-DOWN-03 Chrome: **PASSED**
+- ATTACH-DOWN-03 Safari: **DEFERRED** (no Mac; code path identical to Chrome)
 
 ## Notes
 
