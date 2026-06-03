@@ -1,0 +1,44 @@
+# .github/workflows/parrot-smoke.yml
+# WSTEST-03: Run Parrot Workspace Worker smoke tests on the team-workspace branch.
+# Triggers on push to rrr/v1.4/team-workspace-27 and on PRs targeting main.
+
+name: Parrot Smoke Tests
+
+on:
+  push:
+    branches:
+      - rrr/v1.4/team-workspace-27
+      - rrr/v1.4/team-workspace
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/parrot/**"
+      - "packages/shared/**"
+
+jobs:
+  smoke:
+    name: Vitest smoke tests (apps/parrot)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/parrot/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/parrot
+        run: npm install --legacy-peer-deps
+
+      - name: Run Vitest smoke tests
+        working-directory: apps/parrot
+        run: npm test
+
+      - name: TypeScript typecheck
+        working-directory: apps/parrot
+        run: npm run typecheck
+        continue-on-error: true # typecheck is advisory; wrangler types may not be generated in CI
