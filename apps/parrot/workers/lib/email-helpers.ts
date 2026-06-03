@@ -14,7 +14,7 @@
 //
 // v1.3.1 Agent Lift: backfilled the remaining helpers from agentic-inbox —
 // stripHtmlToText, textToHtml, buildQuotedReplyBlock, getFullEmail,
-// getFullThread, formatEmailDate. These are needed by:
+// getFullThread. These are needed by:
 //   - workers/lib/ai.ts (verifyDraft strips/rewraps HTML)
 //   - workers/lib/agent-tools.ts (draft_reply, send_reply quoted blocks)
 //   - workers/routes/agent.ts (HTTP agent endpoints — summarize / draft / translate)
@@ -184,12 +184,6 @@ export function stripHtmlToText(html: string): string {
 }
 
 /**
- * Format a date string for use in quoted reply blocks.
- * @deprecated Use `formatQuotedDate` from `shared/dates` directly.
- */
-export const formatEmailDate = formatQuotedDate;
-
-/**
  * Build a quoted reply block HTML string from original email data.
  *
  * The original body is sanitized to plain text before being escaped and
@@ -204,7 +198,7 @@ export function buildQuotedReplyBlock(original: {
 	if (!original.body) return "";
 
 	const originalSender = escapeHtml(original.sender || "unknown");
-	const originalDate = escapeHtml(formatEmailDate(original.date || ""));
+	const originalDate = escapeHtml(formatQuotedDate(original.date || ""));
 
 	const plainBody = stripHtmlToText(original.body);
 	const bodyToQuote = escapeHtml(plainBody).replace(/\n/g, "<br>");

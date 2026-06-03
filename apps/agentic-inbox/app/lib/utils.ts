@@ -18,9 +18,6 @@ export {
 	formatShortDate,
 } from "shared/dates";
 
-/** @deprecated Use `formatQuotedDate` from `shared/dates` directly. */
-export const formatComposeDate = formatQuotedDate;
-
 /**
  * Format a byte count as a human-readable file size.
  */
@@ -157,7 +154,7 @@ export function buildQuotedReplyBlock(
 	body: string,
 ): string {
 	if (!body) return "";
-	const formattedDate = formatComposeDate(dateStr);
+	const formattedDate = formatQuotedDate(dateStr);
 	
 	// HTML-escape sender to prevent <john@example.com> from disappearing as a tag
 	const escapedSender = escapeHtml(sender);
