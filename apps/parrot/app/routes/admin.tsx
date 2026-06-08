@@ -15,8 +15,16 @@
 // in workers/routes/admin-employees.ts. The page renders for any signed-in
 // user but will surface 403 errors from the API as a "Not authorized"
 // banner — the same pattern as admin.invite.tsx.
+//
+// v1.4 Phase 25 Plan 02 (brand refit): structural surfaces moved to brand
+// tokens — lavender page background, cream data table card, ink text,
+// cobalt CTA, lime active capability pills (per BRAND-V1.md). UI-state
+// micro-colors (rose for danger, amber for invited, emerald for active
+// status) remain Tailwind utility classes per the BRAND-V1 edge-case rule.
+// Also fixes a pre-existing React Fragment key warning by hoisting the
+// per-row key onto an explicit <Fragment key={row.id}> wrapper.
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { Link } from "react-router";
 import { WorkspaceShell } from "~/components/WorkspaceShell";
 import { apiFetch } from "~/lib/api";
@@ -248,14 +256,17 @@ export default function AdminRoute() {
 	}
 
 	return (
-		<WorkspaceShell title="Admin">
-			<div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+		<WorkspaceShell title="admin">
+			<div
+				className="mx-auto w-full max-w-6xl p-4 sm:p-6"
+				style={{ background: "var(--lavender)" }}
+			>
 				<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 					<div className="min-w-0">
-						<h2 className="text-lg font-semibold text-slate-900">
-							Employee directory
+						<h2 className="text-lg font-semibold [color:var(--ink)]">
+							employee directory
 						</h2>
-						<p className="mt-1 text-sm text-slate-600">
+						<p className="mt-1 text-sm [color:color-mix(in_srgb,var(--ink)_60%,transparent)]">
 							Everyone who's been invited to the workspace. Toggle
 							capabilities per employee to control which workspace surfaces
 							they can use.
@@ -263,9 +274,9 @@ export default function AdminRoute() {
 					</div>
 					<Link
 						to="/admin/invite"
-						className="inline-flex w-full justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white no-underline hover:bg-slate-800 sm:w-auto"
+						className="inline-flex w-full justify-center rounded-md [background:var(--cobalt)] px-4 py-2 text-sm font-medium text-white no-underline hover:[background:color-mix(in_srgb,var(--cobalt)_80%,black)] sm:w-auto"
 					>
-						Add employee
+						add employee
 					</Link>
 				</div>
 
@@ -275,15 +286,20 @@ export default function AdminRoute() {
 					</div>
 				)}
 
-				<div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+				<div
+					className="overflow-hidden rounded-xl border border-[var(--ink)]/10"
+					style={{ background: "var(--cream)" }}
+				>
 					{loading ? (
-						<div className="p-6 text-sm text-slate-500">Loading…</div>
+						<div className="p-6 text-sm [color:color-mix(in_srgb,var(--ink)_50%,transparent)]">
+							Loading…
+						</div>
 					) : employees.length === 0 ? (
-						<div className="p-6 text-sm text-slate-500">
+						<div className="p-6 text-sm [color:color-mix(in_srgb,var(--ink)_60%,transparent)]">
 							No employees yet.{" "}
 							<Link
 								to="/admin/invite"
-								className="text-slate-900 font-medium hover:underline"
+								className="[color:var(--ink)] font-medium hover:underline"
 							>
 								Invite the first one →
 							</Link>
@@ -291,8 +307,11 @@ export default function AdminRoute() {
 					) : (
 						<div className="overflow-x-auto">
 							<table className="w-full min-w-[760px] text-sm">
-								<thead className="border-b border-slate-200 bg-slate-50">
-									<tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+								<thead
+									className="border-b border-[var(--ink)]/10"
+									style={{ background: "var(--lavender)" }}
+								>
+									<tr className="text-left text-xs uppercase tracking-wide [color:color-mix(in_srgb,var(--ink)_60%,transparent)]">
 										<th className="px-3 py-3 sm:px-4">Display name</th>
 										<th className="px-3 py-3 sm:px-4">Workspace email</th>
 										<th className="px-3 py-3 sm:px-4">Status</th>
@@ -300,28 +319,31 @@ export default function AdminRoute() {
 										<th className="px-3 py-3 text-right sm:px-4">Actions</th>
 									</tr>
 								</thead>
-								<tbody className="divide-y divide-slate-100">
+								<tbody className="divide-y divide-[var(--ink)]/10">
 									{employees.map((row) => {
 									const rowFlags = flags[row.id] ?? DEFAULT_FLAGS;
 									const isEditing = editingId === row.id;
 									const isDisabled = row.status === "disabled";
 									const isBusy = !!busy[row.id];
 									return (
-										<>
+										<Fragment key={row.id}>
 											<tr
-												key={row.id}
-												className={isDisabled ? "text-slate-400" : ""}
+												className={
+													isDisabled
+														? "[color:color-mix(in_srgb,var(--ink)_40%,transparent)]"
+														: ""
+												}
 											>
-												<td className="px-3 py-3 font-medium text-slate-900 sm:px-4">
+												<td className="px-3 py-3 font-medium [color:var(--ink)] sm:px-4">
 													{isDisabled ? (
-														<span className="text-slate-400">
+														<span className="[color:color-mix(in_srgb,var(--ink)_40%,transparent)]">
 															{row.display_name}
 														</span>
 													) : (
 														row.display_name
 													)}
 												</td>
-												<td className="px-3 py-3 font-mono text-xs text-slate-600 sm:px-4">
+												<td className="px-3 py-3 font-mono text-xs [color:color-mix(in_srgb,var(--ink)_60%,transparent)] sm:px-4">
 													{row.workspace_email}
 												</td>
 												<td className="px-3 py-3 sm:px-4">
@@ -336,7 +358,7 @@ export default function AdminRoute() {
 															type="button"
 															onClick={() => startEdit(row)}
 															disabled={isBusy || isDisabled || isEditing}
-															className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+															className="rounded-md border border-[var(--ink)]/20 [background:var(--cream)] px-3 py-1 text-xs font-medium [color:var(--ink)] hover:[background:color-mix(in_srgb,var(--lavender)_40%,var(--cream))] disabled:opacity-50 disabled:cursor-not-allowed"
 														>
 															Edit
 														</button>
@@ -345,7 +367,7 @@ export default function AdminRoute() {
 																type="button"
 																onClick={() => onDisable(row)}
 																disabled={isBusy}
-																className="rounded-md border border-rose-200 bg-white px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+																className="rounded-md border border-rose-200 [background:var(--cream)] px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
 															>
 																Disable
 															</button>
@@ -354,28 +376,29 @@ export default function AdminRoute() {
 												</td>
 											</tr>
 											{isEditing && editDraft && (
-												<tr key={`${row.id}-edit`}>
+												<tr>
 													<td
 														colSpan={5}
-														className="border-t border-slate-100 bg-slate-50 px-3 py-4 sm:px-4"
+														className="border-t border-[var(--ink)]/10 px-3 py-4 sm:px-4"
+														style={{ background: "var(--lavender)" }}
 													>
 														<div>
-															<p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+															<p className="text-xs font-semibold uppercase tracking-wide [color:color-mix(in_srgb,var(--ink)_60%,transparent)] mb-3">
 																Capabilities for {row.display_name}
 															</p>
 															<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
 																{CAPABILITY_KEYS.map((key) => (
 																	<label
 																		key={key}
-																		className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm cursor-pointer hover:bg-slate-50"
+																		className="flex items-center gap-2 rounded-md border border-[var(--ink)]/15 [background:var(--cream)] px-3 py-2 text-sm cursor-pointer hover:[background:color-mix(in_srgb,var(--lavender)_50%,var(--cream))]"
 																	>
 																		<input
 																			type="checkbox"
 																			checked={editDraft[key]}
 																			onChange={() => toggleDraft(key)}
-																			className="h-4 w-4 rounded border-slate-300"
+																			className="h-4 w-4 rounded border-[var(--ink)]/30"
 																		/>
-																		<span className="text-slate-700">
+																		<span className="[color:var(--ink)]">
 																			{CAPABILITY_LABELS[key]}
 																		</span>
 																	</label>
@@ -386,7 +409,7 @@ export default function AdminRoute() {
 																	type="button"
 																	onClick={() => submitCapabilityEdit(row)}
 																	disabled={isBusy}
-																	className="rounded-md bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 sm:py-1.5"
+																	className="rounded-md [background:var(--cobalt)] px-4 py-2 text-xs font-medium text-white hover:[background:color-mix(in_srgb,var(--cobalt)_80%,black)] disabled:opacity-50 sm:py-1.5"
 																>
 																	{isBusy ? "Saving…" : "Save capabilities"}
 																</button>
@@ -394,7 +417,7 @@ export default function AdminRoute() {
 																	type="button"
 																	onClick={cancelEdit}
 																	disabled={isBusy}
-																	className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:py-1.5"
+																	className="rounded-md border border-[var(--ink)]/20 [background:var(--cream)] px-4 py-2 text-xs font-medium [color:var(--ink)] hover:[background:color-mix(in_srgb,var(--lavender)_40%,var(--cream))] disabled:opacity-50 sm:py-1.5"
 																>
 																	Cancel
 																</button>
@@ -403,7 +426,7 @@ export default function AdminRoute() {
 													</td>
 												</tr>
 											)}
-										</>
+										</Fragment>
 									);
 									})}
 								</tbody>
@@ -419,6 +442,9 @@ export default function AdminRoute() {
 // — Subcomponents ————————————————————————————————————————————
 
 function StatusBadge({ status }: { status: EmployeeRow["status"] }) {
+	// StatusBadge keeps emerald/amber/slate tailwind classes — these are
+	// UI state indicators (success/pending/disabled), not branded surfaces.
+	// Per BRAND-V1.md edge-case rule, UI states are an allowed exception.
 	const style =
 		status === "active"
 			? "bg-emerald-100 text-emerald-800"
@@ -435,6 +461,8 @@ function StatusBadge({ status }: { status: EmployeeRow["status"] }) {
 }
 
 function CapabilityPills({ flags }: { flags: CapabilityFlags }) {
+	// Active pill uses lime (the CTA / default accent per BRAND-V1.md §4).
+	// Inactive pill uses ink at low opacity — an acceptable UI-state use.
 	return (
 		<div className="flex flex-wrap gap-1">
 			{CAPABILITY_KEYS.map((key) => {
@@ -444,8 +472,8 @@ function CapabilityPills({ flags }: { flags: CapabilityFlags }) {
 						key={key}
 						className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
 							active
-								? "bg-emerald-100 text-emerald-800"
-								: "bg-slate-100 text-slate-500"
+								? "[background:var(--lime)] [color:var(--ink)]"
+								: "[background:color-mix(in_srgb,var(--ink)_8%,transparent)] [color:color-mix(in_srgb,var(--ink)_50%,transparent)]"
 						}`}
 					>
 						{CAPABILITY_LABELS[key].toLowerCase()}

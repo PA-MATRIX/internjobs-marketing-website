@@ -19,7 +19,6 @@
 		"@clerk/react-router": "^3.2.7",
 		"@daily-co/daily-js": "^0.87.0",
 		"@daily-co/daily-react": "^0.25.2",
-		"@neondatabase/serverless": "^1.1.0",
 		"@phosphor-icons/react": "^2.1.10",
 		"@tanstack/react-query": "^5.99.0",
 		"@tiptap/extension-color": "3.20.2",
