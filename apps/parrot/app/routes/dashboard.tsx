@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { ParrotMascot } from "../components/ParrotMascot";
 import {
 	ResolvedTodoCard,
 	TodoCard,
@@ -46,6 +47,7 @@ import {
 	WorkspaceShell,
 } from "../components/WorkspaceShell";
 import { apiFetch } from "~/lib/api";
+import { fireConfetti } from "~/lib/confetti";
 
 type LoadState =
 	| { status: "loading" }
@@ -108,17 +110,8 @@ function DashboardSecondaryNav({ activeView }: { activeView: string }) {
 }
 
 function LoadingSkeleton() {
-	return (
-		<div className="space-y-3">
-			{[0, 1, 2].map((i) => (
-				<div
-					key={i}
-					className="animate-pulse bg-slate-200 rounded-xl h-16"
-					aria-hidden="true"
-				/>
-			))}
-		</div>
-	);
+	// v1.4 Phase 26 GENZ-03: parrot mascot replaces generic pulse skeleton.
+	return <ParrotMascot label="Loading your todos..." />;
 }
 
 function ErrorCard({ message }: { message: string }) {
@@ -284,6 +277,11 @@ export default function DashboardRoute() {
 								disappeared.forEach((id) => next.add(id));
 								return next;
 							});
+							// v1.4 Phase 26 GENZ-02: confetti on first todo resolved.
+							// The "first_todo_resolved" event is once-per-session
+							// (localStorage gate in fireConfetti itself). Fire
+							// asynchronously — don't await, don't block the polling tick.
+							void fireConfetti("first_todo_resolved");
 							// Show the first-agent-clear toast (best-effort; we don't
 							// know which resolution_source disappeared so we trigger on
 							// any disappearance — false positives are acceptable since

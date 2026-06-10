@@ -67,6 +67,43 @@ const MARK_CANDIDATE_SCHEMA = z.object({
 	]),
 });
 
+// v1.4 Phase 29-01 — SMS + Voice AI actions.
+//
+// show_candidate({thread_id?, position}) — fetch the Nth most-recent candidate
+// for the startup, formatted SMS-safe. `position` is 1-indexed (position=1 →
+// most recent). `thread_id` is reserved for future per-thread continuation
+// (e.g. "show me the next one" from an explicit thread cursor) but currently
+// ignored by the proxy endpoint — the position parameter is the load-bearing
+// selector for v1.4.
+const SHOW_CANDIDATE_SCHEMA = z.object({
+	thread_id: z.string().uuid().optional(),
+	position: z.number().int().min(1).max(9),
+});
+
+// register_startup({company, founder_name, founder_email, what_hiring_for,
+// channel_external_id, channel_type}) — onboarding action triggered by the
+// Voice AI agent (Phase 29-02) at the end of an intake call. Routes through
+// the loopback /admin/startups/new endpoint with STARTUP_MCP_ADMIN_SECRET as
+// Bearer so the Voice AI agent never holds the admin secret directly.
+//
+// SECURITY NOTES:
+//   • The work-email blocklist (see lib/workEmail.ts) rejects gmail/yahoo/etc.
+//     BEFORE the admin endpoint is invoked. Voice AI hears "please use a work
+//     email" and re-prompts.
+//   • args.startup_id MUST be 'onboarding' (sentinel) because there is no
+//     resolved startup context yet — the admin endpoint mints a fresh one.
+//     handleExecute strips startup_id from args via Zod (.strip default), but
+//     the audit-log row uses args.startup_id from the dispatch context, which
+//     is set to 'onboarding' upstream by routes/telnyx.ts for this action.
+const REGISTER_STARTUP_SCHEMA = z.object({
+	company: z.string().min(1).max(200),
+	founder_name: z.string().min(1).max(200),
+	founder_email: z.string().email(),
+	what_hiring_for: z.string().min(1).max(500),
+	channel_external_id: z.string().min(1),
+	channel_type: z.enum(["telnyx-voice", "telnyx-sms"]),
+});
+
 // ── Proxy fetch helpers ────────────────────────────────────────────────────────
 
 interface ProxyError extends Error {
@@ -110,6 +147,27 @@ async function proxyPatch(
 			Authorization: `Bearer ${secret}`,
 		},
 		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(10000),
+	});
+	const data = await res.json().catch(() => ({}));
+	if (!res.ok) {
+		const err = new Error("proxy_error") as ProxyError;
+		err.status = res.status;
+		err.data = data;
+		throw err;
+	}
+	return data;
+}
+
+async function proxyGet(
+	url: string,
+	secret: string,
+): Promise<unknown> {
+	const res = await fetch(url, {
+		method: "GET",
+		headers: {
+			Authorization: `Bearer ${secret}`,
+		},
 		signal: AbortSignal.timeout(10000),
 	});
 	const data = await res.json().catch(() => ({}));
@@ -255,6 +313,167 @@ async function handleMarkCandidate(
 	};
 }
 
+// ── Phase 29-01 handlers — show_candidate + register_startup ──────────────────
+
+async function handleShowCandidate(
+	startup_id: string,
+	params: z.infer<typeof SHOW_CANDIDATE_SCHEMA>,
+	env: Env,
+) {
+	// Fetch the Nth most-recent candidate thread for this startup. The Fly
+	// proxy enforces startup_id ownership server-side (WHERE startup_id = $1).
+	// position=1 means most recent; position=9 maps to OFFSET 8 LIMIT 1.
+	const base = env.STARTUP_API_URL.replace(/\/$/, "");
+	const url = `${base}/v1/startups/${encodeURIComponent(startup_id)}/candidates?position=${params.position}`;
+	const result = (await proxyGet(url, env.STARTUP_API_SECRET)) as {
+		candidate_name?: string;
+		role_title?: string;
+		application_summary?: string;
+		thread_id?: string;
+	};
+	return {
+		candidate_name: result?.candidate_name ?? "unknown",
+		role_title: result?.role_title ?? null,
+		application_summary: result?.application_summary ?? null,
+		thread_id: result?.thread_id ?? null,
+		position: params.position,
+	};
+}
+
+async function handleRegisterStartup(
+	_startup_id: string, // sentinel 'onboarding' — not used; admin endpoint mints fresh
+	params: z.infer<typeof REGISTER_STARTUP_SCHEMA>,
+	env: Env,
+) {
+	// Work-email enforcement (mirrors apps/startup/workers/routes/webhooks.ts
+	// blocklist; lib/workEmail.ts is the shared module added in Plan 29-01).
+	const { isPersonalEmailDomain } = await import("../lib/workEmail");
+	if (isPersonalEmailDomain(params.founder_email)) {
+		return {
+			ok: false,
+			error: "personal_email_rejected",
+			message:
+				"work emails only please — gmail/yahoo/outlook/etc are not accepted. retry with your company email.",
+		};
+	}
+
+	// Loopback to the local admin endpoint — Voice AI agent never holds the
+	// admin secret directly; it lives only in the Worker's env. We use the
+	// public hostname so the Worker self-routes through CF (no special internal
+	// dispatch wiring needed; ~1-2ms in same-region edge).
+	const adminSecret = env.STARTUP_MCP_ADMIN_SECRET;
+	if (!adminSecret) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				event: "startup_register_startup_no_admin_secret",
+				note: "STARTUP_MCP_ADMIN_SECRET not bound — cannot mint via /admin/startups/new",
+			}),
+		);
+		return {
+			ok: false,
+			error: "registration_unavailable",
+			message: "registration is temporarily offline — our team will follow up.",
+		};
+	}
+
+	const adminUrl = "https://mcp.internjobs.ai/admin/startups/new";
+	const res = await fetch(adminUrl, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${adminSecret}`,
+		},
+		body: JSON.stringify({
+			company: params.company,
+			founder_email: params.founder_email,
+			founder_phone: params.channel_external_id, // E.164 if telnyx-sms/voice
+			founder_name: params.founder_name,
+		}),
+		signal: AbortSignal.timeout(15000),
+	});
+	const data = (await res.json().catch(() => ({}))) as {
+		ok?: boolean;
+		startup_id?: string;
+		token?: string;
+		install_snippet?: unknown;
+		agent_email?: string | null;
+		error?: string;
+	};
+
+	if (res.status === 409) {
+		// Founder already registered — gracefully recover for Voice AI.
+		return {
+			ok: false,
+			error: "already_registered",
+			message:
+				"looks like you're already in our system. check your inbox for the welcome email or reach out to ridhi@internjobs.ai for help.",
+		};
+	}
+	if (!res.ok) {
+		console.error(
+			JSON.stringify({
+				level: "error",
+				event: "startup_register_startup_admin_failed",
+				status: res.status,
+				detail: data,
+			}),
+		);
+		return {
+			ok: false,
+			error: "registration_failed",
+			message:
+				"we couldn't complete the registration just now. our team will follow up shortly.",
+		};
+	}
+
+	// After successful mint, store the founder's stated role intent in the
+	// startup_channel_links metadata for the channel that registered them.
+	// Best-effort: a failure here doesn't undo the startup creation.
+	try {
+		const base = env.STARTUP_API_URL.replace(/\/$/, "");
+		await fetch(`${base}/v1/channel-links`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${env.STARTUP_API_SECRET}`,
+			},
+			body: JSON.stringify({
+				startup_id: data.startup_id,
+				channel_type: params.channel_type,
+				channel_external_id: params.channel_external_id,
+				status: "active",
+				opt_in_flags: { weekly_touchbase: true },
+				metadata: {
+					what_hiring_for: params.what_hiring_for,
+					founder_name: params.founder_name,
+					registered_via: params.channel_type,
+				},
+			}),
+			signal: AbortSignal.timeout(5000),
+		});
+	} catch (err) {
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				event: "startup_register_channel_link_upsert_failed",
+				error: (err as Error)?.message ?? String(err),
+				startup_id: data.startup_id,
+			}),
+		);
+	}
+
+	return {
+		ok: true,
+		startup_id: data.startup_id ?? null,
+		agent_email: data.agent_email ?? null,
+		mcp_install_snippet: data.install_snippet ?? null,
+		// Voice AI agent reads this to confirm to founder. Token NOT included
+		// in the SMS-safe voice response — founder gets it via the welcome SMS
+		// already fired by the admin endpoint.
+	};
+}
+
 // ── Action dispatch table ──────────────────────────────────────────────────────
 
 const ACTION_HANDLERS = {
@@ -268,6 +487,12 @@ const ACTION_HANDLERS = {
 	mark_candidate: {
 		schema: MARK_CANDIDATE_SCHEMA,
 		handler: handleMarkCandidate,
+	},
+	// v1.4 Phase 29-01 additions:
+	show_candidate: { schema: SHOW_CANDIDATE_SCHEMA, handler: handleShowCandidate },
+	register_startup: {
+		schema: REGISTER_STARTUP_SCHEMA,
+		handler: handleRegisterStartup,
 	},
 } as const;
 

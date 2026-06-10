@@ -26,6 +26,16 @@ import { buildMcpHandler } from "./server";
 import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
+import { handleInboundEmail } from "./routes/email";
+// Clerk webhook removed 2026-05-27: work-email enforcement now happens via
+// Clerk's native Restrictions blocklist (configured via PATCH /v1/instance/
+// restrictions + 26 personal-domain entries in /v1/blocklist_identifiers).
+// Rejection happens at the sign-up form itself; no post-creation cleanup
+// needed. See 28.5-OPTION-A-DECISION.md in the phase dir for the pivot
+// rationale.
+import { telnyxRouter } from "./routes/telnyx";
+import { voiceRouter } from "./routes/voice";
+import { scheduled as scheduledHandler } from "./routes/scheduled";
 import type { Env, StartupContext } from "./types";
 
 const app = new Hono<{
@@ -111,6 +121,30 @@ app.route("/admin", adminRouter);
 // internjobs.ai. NO auth — public marketing endpoint.
 app.route("/api", apiRouter);
 
+// ── Telnyx SMS inbound webhook (Phase 29-01 STARTUP-TELNYX-01..06) ───────────
+// POST /webhooks/telnyx/sms — Telnyx messaging profile (DEFER-29-01-D)
+// delivers inbound message events here. Handler ordering (load-bearing):
+//   1) STOP keyword check (BEFORE sig verify, per TCPA)
+//   2) Ed25519 signature verify (skipped with warning if
+//      TELNYX_WEBHOOK_PUBLIC_KEY unbound — DEFER-29-01-F)
+//   3) Parse 'message.received' event
+//   4) resolveChannelLink(env, 'telnyx-sms', from_phone) → invite if unknown
+//   5) classifyIntent(body, env) → regex fast-path or LLM fallback
+//   6) Dispatch to handleSearch() or handleExecute()
+//   7) formatForSms(result) + sendSms() reply
+// All branches write a startup_action_log row with channel='telnyx-sms'.
+app.route("/", telnyxRouter);
+
+// ── Telnyx Voice AI webhooks (Phase 29-02 STARTUP-VOICE-01..04) ──────────────
+// Three endpoints:
+//   POST /webhooks/telnyx/voice-init        — pre-call dynamic-variables hook
+//   POST /webhooks/telnyx/voice-postprocess — post-call insights (R2 audit log)
+//   POST /webhooks/telnyx/voice-tool        — webhook-tool fallback (when
+//                                             TELNYX_USE_MCP_INTEGRATION != 'true')
+// See routes/voice.ts and docs/VOICE_AGENT_CONFIG.md for portal config
+// (DEFER-29-02-A) + R2 bucket creation (DEFER-29-02-B).
+app.route("/", voiceRouter);
+
 // ── Root ─────────────────────────────────────────────────────────────────────
 app.get("/", (c) =>
 	c.json({
@@ -121,4 +155,28 @@ app.get("/", (c) =>
 	}),
 );
 
-export default { fetch: app.fetch };
+// v1.4 Phase 28.5 Plan 04 STARTUP-AGENT-EMAIL-02 — add `email()` export so
+// Cloudflare Email Routing (catch-all on employers.internjobs.ai) delivers
+// inbound mail into the Worker. The catch-all rule is configured in the
+// CF dashboard separately (see DEFER-28.5-01-E). Routing is independent
+// of the Worker's `fetch` HTTP surface, so the existing /mcp + /admin +
+// /api routes are unaffected.
+//
+// v1.4 Phase 29-03 STARTUP-TOUCHBASE-01..02 — add `scheduled()` export so
+// the weekly touchbase cron dispatches via the wrangler.jsonc `triggers.crons`
+// schedule (Monday 14:00 UTC). The cron handler queries the Fly proxy for
+// startups whose `opt_in_flags.weekly_touchbase=true` and whose
+// `last_touchbase_at` is null/older than 7 days, then sends the SMS through
+// the shared `lib/telnyx.ts` sendSms helper. Cron is gated on TELNYX_API_KEY
+// being bound (DEFER-29-01-E) — silent no-op otherwise.
+export default {
+	fetch: app.fetch,
+	async email(
+		message: ForwardableEmailMessage,
+		env: Env,
+		ctx: ExecutionContext,
+	): Promise<void> {
+		return handleInboundEmail(message, env, ctx);
+	},
+	scheduled: scheduledHandler,
+};

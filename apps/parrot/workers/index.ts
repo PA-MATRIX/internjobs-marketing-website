@@ -15,6 +15,8 @@ import {
 	handleForwardEmail,
 	handleComposeEmail,
 } from "./routes/reply-forward";
+// v1.4 Phase 23-03 ATTACH-DOWN-01..03: attachment download route.
+import { handleAttachmentDownload } from "./routes/attachments";
 import {
 	requireEmployeeMailbox,
 	type ParrotContext,
@@ -403,6 +405,17 @@ app.post(
 	"/api/inbox/messages/:id/forward",
 	requireEmployeeMailbox,
 	handleForwardEmail,
+);
+
+// v1.4 Phase 23-03 ATTACH-DOWN-01..03:
+// GET /api/inbox/messages/:messageId/attachments/:attachmentId — returns the
+// R2 blob for a single attachment with correct Content-Type and
+// Content-Disposition: attachment. Auth enforced by requireEmployeeMailbox;
+// ownership enforced inside handleAttachmentDownload via the employee's DO.
+app.get(
+	"/api/inbox/messages/:messageId/attachments/:attachmentId",
+	requireEmployeeMailbox,
+	handleAttachmentDownload,
 );
 
 // v1.3.1 Agent Lift: /api/inbox/agent/* — the React AgentPanel calls these

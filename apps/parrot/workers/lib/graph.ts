@@ -290,6 +290,9 @@ export interface RecordTodoFactArgs {
 	mentionedActors?: string[];
 	/** True if the source message @-mentions the employee directly. */
 	isMention: boolean;
+	/** Free-text blocker descriptions (from kimi extraction). Each becomes a
+	 *  :Person-like stub :Blocker node merged by the description string. */
+	blockedByIds?: string[];
 }
 
 export interface RecordTodoFactResult {
@@ -464,6 +467,35 @@ export async function recordTodoFact(
 					}),
 				);
 				// Keep going — partial mentions better than none.
+			}
+		}
+	}
+
+	// Step 5: MERGE each :BLOCKED_BY edge. Same fire-and-forget pattern as :MENTIONS.
+	// :Blocker nodes are stub nodes keyed by their description text — not true graph
+	// entities (no separate index), just anchors for future retrieval.
+	//
+	// :BLOCKED_BY is NOT gated by !skipped — blocker discovery on re-run is meaningful
+	// and the MERGE is idempotent, so writing the same edge twice is safe.
+	if (args.blockedByIds && args.blockedByIds.length > 0) {
+		for (const rawBlocker of args.blockedByIds) {
+			const desc = String(rawBlocker || "").trim().slice(0, 200);
+			if (!desc) continue;
+			const blockerRes = await graph.query(
+				`MERGE (b:Blocker {desc: $desc})
+				 MERGE (t:Todo {id: $tid})
+				 MERGE (t)-[:BLOCKED_BY]->(b)`,
+				{ params: { desc, tid: todoId } },
+			);
+			if (blockerRes === null) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						message: "parrot_graph_blocked_by_edge_failed",
+						todoId,
+						desc,
+					}),
+				);
 			}
 		}
 	}
@@ -825,5 +857,105 @@ export async function pingParrotGraph(env: GraphEnv): Promise<boolean> {
 			}),
 		);
 		return false;
+	}
+}
+
+// ─── Close-out write API ────────────────────────────────────────────────────
+//
+// v1.4 Phase 23-01 (CLOSETODO-01..04). Pairs with auto-clear.ts:
+//   1. Reply path detects an acknowledgement phrase (got it / fixed / done /
+//      sent / shipped) in an outbound reply body.
+//   2. closeTodoFact() POSTs to /close-todo on the graph-api Fly proxy,
+//      which SETs :Todo.valid_to = timestamp() on the matching node.
+//   3. The runAutoClear cron (≤5min interval) sees valid_to past the 5-min
+//      grace window and calls EmployeeMailboxDO.resolveTodo(source_id) →
+//      SQLite todo flips to resolved_at IS NOT NULL → Resolved view updates.
+//
+// Without this writer, v1.3 Phase 19's cron is inert — the WHERE valid_to
+// IS NOT NULL filter never matches because nothing was ever setting valid_to.
+
+export interface CloseTodoFactArgs {
+	/** Source id of the :Todo to close (matches t.source_id in FalkorDB). */
+	threadId: string;
+	/** Clerk user id of the owning employee (matches t.employee_id in FalkorDB). */
+	employeeId: string;
+	/** The acknowledgement phrase that triggered the close (for structured log). */
+	resolutionText?: string;
+}
+
+export interface CloseTodoFactResult {
+	/** Number of :Todo nodes that had valid_to set (0 = already closed or not found). */
+	closedCount: number;
+}
+
+/**
+ * Sets valid_to = timestamp() on the matching :Todo node via the
+ * graph-api POST /close-todo endpoint. Called from the reply handler
+ * when the agent reply body matches a resolution-acknowledgement phrase.
+ *
+ * Fail-soft: returns null on any error (proxy unavailable, network
+ * error, non-2xx). The reply is still sent — graph state is best-effort.
+ *
+ * REQUIREMENTS: CLOSETODO-01, CLOSETODO-02
+ */
+export async function closeTodoFact(
+	env: GraphEnv,
+	args: CloseTodoFactArgs,
+): Promise<CloseTodoFactResult | null> {
+	if (!env.GRAPH_API_URL || !env.GRAPH_API_SECRET) return null;
+	if (!args.threadId || !args.employeeId) return null;
+
+	try {
+		const res = await fetch(
+			env.GRAPH_API_URL.replace(/\/$/, "") + "/close-todo",
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${env.GRAPH_API_SECRET}`,
+				},
+				body: JSON.stringify({
+					thread_id: args.threadId,
+					employee_id: args.employeeId,
+					resolution_text: args.resolutionText ?? "",
+				}),
+				signal: AbortSignal.timeout(5000),
+			},
+		);
+		if (!res.ok) {
+			console.warn(
+				JSON.stringify({
+					level: "warn",
+					message: "parrot_graph_close_todo_error",
+					status: res.status,
+					threadId: args.threadId,
+				}),
+			);
+			return null;
+		}
+		const body = (await res.json()) as { ok?: boolean; closed_count?: number };
+		const closedCount = Number(body.closed_count ?? 0);
+		// Structured log — CLOSETODO-04
+		console.log(
+			JSON.stringify({
+				level: "info",
+				event: "todo_fact_closed",
+				thread_id: args.threadId,
+				employee_id: args.employeeId,
+				matched_phrase: args.resolutionText ?? "",
+				closed_count: closedCount,
+			}),
+		);
+		return { closedCount };
+	} catch (err) {
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				message: "parrot_graph_close_todo_fetch_failed",
+				error: (err as Error)?.message ?? String(err),
+				threadId: args.threadId,
+			}),
+		);
+		return null;
 	}
 }

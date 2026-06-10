@@ -29,6 +29,7 @@
 
 import { Hono } from "hono";
 import type { Env } from "../types";
+import { mintSlug, reserveUniqueSlug } from "../lib/slug";
 
 // ── Admin secret verification ─────────────────────────────────────────────────
 
@@ -262,6 +263,226 @@ async function createStartup(
 	}
 }
 
+// ── Phase 28.5 Plan 04 helpers — per-startup agent email + Clerk invite ──────
+
+/**
+ * Reserve a unique slug, write `<slug>@employers.internjobs.ai` to the
+ * startup's `agent_email` column, and insert a `startup_channel_links`
+ * row with channel_type='email' so the catch-all email handler in
+ * routes/email.ts can resolve inbound mail back to the startup.
+ *
+ * Returns the chosen `agent_email` on success. Throws on Fly proxy
+ * failure or slug-collision exhaustion — caller wraps in try/catch and
+ * surfaces best-effort to the response (the core startup row is already
+ * created at this point; agent email is an additive enrichment).
+ */
+async function provisionAgentEmail(
+	args: { startup_id: string; member_id: string; company: string },
+	env: Env,
+): Promise<string> {
+	const base = mintSlug(args.company);
+	if (!base) {
+		throw new Error("provisionAgentEmail: company name reduced to empty slug");
+	}
+	const slug = await reserveUniqueSlug(base, env.STARTUP_API_URL, env.STARTUP_API_SECRET);
+	const agentEmail = `${slug}@employers.internjobs.ai`;
+	const baseUrl = env.STARTUP_API_URL.replace(/\/$/, "");
+
+	// 1. Patch the startup row with the chosen agent_email.
+	const patchRes = await fetch(`${baseUrl}/v1/startups/${args.startup_id}/agent-email`, {
+		method: "PATCH",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${env.STARTUP_API_SECRET}`,
+		},
+		body: JSON.stringify({ agent_email: agentEmail }),
+		signal: AbortSignal.timeout(8000),
+	});
+	if (!patchRes.ok) {
+		const detail = await patchRes.text().catch(() => "");
+		throw new Error(
+			`provisionAgentEmail: PATCH agent-email failed (${patchRes.status}): ${detail.slice(0, 200)}`,
+		);
+	}
+
+	// 2. Insert the email channel link (UPSERT — re-runs are idempotent).
+	const linkRes = await fetch(`${baseUrl}/v1/channel-links`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${env.STARTUP_API_SECRET}`,
+		},
+		body: JSON.stringify({
+			startup_id: args.startup_id,
+			member_id: args.member_id,
+			channel_type: "email",
+			channel_external_id: agentEmail,
+			status: "active",
+		}),
+		signal: AbortSignal.timeout(8000),
+	});
+	if (!linkRes.ok) {
+		const detail = await linkRes.text().catch(() => "");
+		throw new Error(
+			`provisionAgentEmail: POST channel-links failed (${linkRes.status}): ${detail.slice(0, 200)}`,
+		);
+	}
+
+	return agentEmail;
+}
+
+/**
+ * POST a Clerk Backend API invitation for the founder's email. Idempotent
+ * at the Clerk-side: if the email already has a pending invitation the
+ * Clerk API returns 422 with a clear error code, which we treat as
+ * not-an-error for the admin endpoint (operator can re-run the onboarding
+ * to retry the welcome email without crashing on a duplicate invite).
+ *
+ * Throws on transport/auth errors. Caller should wrap in waitUntil() —
+ * the founder shouldn't have to wait on the Clerk roundtrip to get their
+ * MCP install snippet.
+ */
+async function sendClerkInvite(
+	args: { founder_email: string; startup_id: string },
+	env: Env,
+): Promise<{ ok: boolean; clerk_invitation_id: string | null }> {
+	if (!env.STARTUPS_CLERK_SECRET_KEY) {
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				event: "startup_admin_clerk_invite_skipped",
+				reason: "STARTUPS_CLERK_SECRET_KEY not bound — see DEFER-28.5-04-A",
+				founder_email: args.founder_email,
+			}),
+		);
+		return { ok: false, clerk_invitation_id: null };
+	}
+
+	const res = await fetch("https://api.clerk.com/v1/invitations", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${env.STARTUPS_CLERK_SECRET_KEY}`,
+		},
+		body: JSON.stringify({
+			email_address: args.founder_email,
+			public_metadata: { startup_id: args.startup_id, role: "admin" },
+			redirect_url: "https://employers.internjobs.ai/dashboard",
+		}),
+		signal: AbortSignal.timeout(10000),
+	});
+
+	if (res.ok) {
+		const body = (await res.json().catch(() => ({}))) as { id?: string };
+		console.log(
+			JSON.stringify({
+				level: "info",
+				event: "startup_admin_clerk_invite_sent",
+				founder_email: args.founder_email,
+				invitation_id: body.id ?? null,
+			}),
+		);
+		return { ok: true, clerk_invitation_id: body.id ?? null };
+	}
+
+	// 422 with `form_identifier_exists` (or similar) means the user is
+	// already invited or already exists — surface as ok=false but don't
+	// throw, so the admin endpoint can still return success for the
+	// startup-creation step.
+	const detail = await res.text().catch(() => "");
+	console.warn(
+		JSON.stringify({
+			level: "warn",
+			event: "startup_admin_clerk_invite_failed",
+			status: res.status,
+			founder_email: args.founder_email,
+			detail: detail.slice(0, 200),
+		}),
+	);
+	return { ok: false, clerk_invitation_id: null };
+}
+
+/**
+ * Send the welcome email from `welcome@employers.internjobs.ai` via the
+ * `send_email` binding. Falls back to log-only if the binding is missing
+ * OR if the send throws (CF rejects sends from un-verified domains —
+ * the binding will throw until DEFER-28.5-01-D closes).
+ *
+ * Brand voice: lowercase subject + body, cobalt-only signature. Mirror
+ * of apps/parrot/workers/lib/email.ts's "noreply@internjobs.ai" welcome
+ * pattern but with the per-startup agent email surfaced as the value the
+ * founder gets.
+ */
+async function sendWelcomeStartupEmail(
+	args: { founder_email: string; company: string; agent_email: string },
+	env: Env,
+): Promise<{ sent: boolean; transport: "binding" | "none" }> {
+	const subject = `welcome to internjobs.ai, ${args.company.toLowerCase()}`;
+	const text = [
+		`hey ${args.company} team,`,
+		``,
+		`welcome to internjobs.ai. your startup portal is live at https://employers.internjobs.ai`,
+		``,
+		`your agent email is ${args.agent_email} — when you reach out to candidates, they'll hear from this address. replies route straight back to your portal.`,
+		``,
+		`sign in to post your first role: https://employers.internjobs.ai/roles/new`,
+		``,
+		`— internjobs.ai`,
+	].join("\n");
+
+	const emailBinding = env.EMAIL;
+	if (!emailBinding || typeof emailBinding.send !== "function") {
+		console.log(
+			JSON.stringify({
+				level: "info",
+				event: "startup_admin_welcome_email_log_only",
+				reason: "EMAIL binding not bound — fallback to log",
+				founder_email: args.founder_email,
+				company: args.company,
+				agent_email: args.agent_email,
+				body_preview: text.slice(0, 120),
+			}),
+		);
+		return { sent: false, transport: "none" };
+	}
+
+	try {
+		await emailBinding.send({
+			from: {
+				email: "welcome@employers.internjobs.ai",
+				name: "internjobs.ai",
+			},
+			to: [{ email: args.founder_email }],
+			subject,
+			text,
+		} as Parameters<SendEmail["send"]>[0]);
+		console.log(
+			JSON.stringify({
+				level: "info",
+				event: "startup_admin_welcome_email_sent",
+				founder_email: args.founder_email,
+				agent_email: args.agent_email,
+			}),
+		);
+		return { sent: true, transport: "binding" };
+	} catch (err) {
+		// CF Email Routing throws when the `from` domain isn't verified
+		// (DEFER-28.5-01-D). Log the full body so Ridhi can manually
+		// re-send post-verification if needed.
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				event: "startup_admin_welcome_email_send_failed",
+				error: (err as Error)?.message ?? String(err),
+				founder_email: args.founder_email,
+				agent_email: args.agent_email,
+				body_preview: text.slice(0, 120),
+			}),
+		);
+		return { sent: false, transport: "binding" };
+	}
+}
+
 // ── Hono router ───────────────────────────────────────────────────────────────
 
 export const adminRouter = new Hono<{ Bindings: Env }>();
@@ -307,6 +528,69 @@ adminRouter.post("/startups/new", async (c) => {
 	}
 	const { startup_id, member_id, token } = created.result;
 
+	// 3b. Phase 28.5: provision the per-startup agent email + Clerk invite +
+	//     welcome email. The startup row + MCP token already exist at this
+	//     point; if any of the 28.5 enrichment steps fail we return the core
+	//     onboarding response (Ridhi can re-run /admin/startups/new on a
+	//     known-failed-enrichment startup to retry agent-email provisioning).
+	//
+	//     Slug reservation + agent_email PATCH + channel-link INSERT are
+	//     synchronous (we surface agent_email in the response body so Ridhi
+	//     can hand it to the founder immediately).
+	//
+	//     Clerk invite + welcome email are fire-and-forget via waitUntil —
+	//     they shouldn't gate the response, and either can fail soft (Clerk
+	//     422 = duplicate invite; EMAIL binding throws if domain unverified).
+	let agentEmail: string | null = null;
+	let agentEmailError: string | null = null;
+	try {
+		agentEmail = await provisionAgentEmail(
+			{ startup_id, member_id, company },
+			c.env,
+		);
+	} catch (err) {
+		// Non-fatal — the startup row already exists. Log and proceed.
+		agentEmailError = (err as Error)?.message ?? String(err);
+		console.warn(
+			JSON.stringify({
+				level: "warn",
+				event: "startup_admin_agent_email_failed",
+				startup_id,
+				company,
+				error: agentEmailError,
+			}),
+		);
+	}
+
+	if (agentEmail) {
+		// Clerk invite — fire-and-forget. STARTUPS_CLERK_SECRET_KEY may be
+		// unbound (DEFER-28.5-04-A) — sendClerkInvite handles that case
+		// internally with a log line, no exception bubbles up here.
+		c.executionCtx.waitUntil(
+			sendClerkInvite({ founder_email, startup_id }, c.env).catch((err) => {
+				console.error(
+					JSON.stringify({
+						level: "error",
+						event: "startup_admin_clerk_invite_error",
+						error: (err as Error)?.message ?? String(err),
+						founder_email,
+					}),
+				);
+			}),
+		);
+
+		// Welcome email — fire-and-forget. EMAIL binding may throw if the
+		// employers.internjobs.ai domain isn't verified yet (DEFER-28.5-01-D);
+		// sendWelcomeStartupEmail catches that and logs the body for manual
+		// resend, so this waitUntil is purely for non-blocking dispatch.
+		c.executionCtx.waitUntil(
+			sendWelcomeStartupEmail(
+				{ founder_email, company, agent_email: agentEmail },
+				c.env,
+			),
+		);
+	}
+
 	// 4. Build install snippet
 	const installSnippetBody = buildInstallSnippet(token);
 
@@ -325,6 +609,8 @@ adminRouter.post("/startups/new", async (c) => {
 			startup_id,
 			company,
 			sms_provider: smsProvider,
+			agent_email: agentEmail,
+			agent_email_provisioned: agentEmail != null,
 		}),
 	);
 
@@ -336,6 +622,8 @@ adminRouter.post("/startups/new", async (c) => {
 		startup_id,
 		member_id,
 		token,
+		agent_email: agentEmail,
+		agent_email_error: agentEmailError,
 		install_snippet: {
 			claude_code: `claude mcp add --transport http internjobs https://mcp.internjobs.ai/mcp --header "Authorization: Bearer ${token}"`,
 			cursor_mcp_json: {

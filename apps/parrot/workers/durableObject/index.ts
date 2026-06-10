@@ -977,6 +977,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					deadlineAt: t.deadline_at ?? null,
 					mentionedActors: t.mentioned_actors ?? [],
 					isMention: t.is_mention,
+					blockedByIds: t.blocked_by_ids ?? [],
 				});
 			}
 		} catch (err) {
@@ -1170,6 +1171,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					deadlineAt: t.deadline_at ?? null,
 					mentionedActors: t.mentioned_actors ?? [],
 					isMention: t.is_mention,
+					blockedByIds: t.blocked_by_ids ?? [],
 				});
 			}
 		} catch (err) {
