@@ -21,7 +21,8 @@ export type ConfettiEvent =
 	| "first_email_reviewed"
 	| "first_todo_resolved"
 	| "push_enabled"
-	| "birthday";
+	| "birthday"
+	| "5_emails_responded";
 
 const STORAGE_KEY_PREFIX = "parrot_confetti_fired:";
 
@@ -111,4 +112,26 @@ export function resetConfettiFlags(): void {
 		if (k?.startsWith(STORAGE_KEY_PREFIX)) keys.push(k);
 	}
 	keys.forEach((k) => window.localStorage.removeItem(k));
+}
+
+// v1.4 Phase 26: 5-emails-responded counter (per-session localStorage).
+// Counter key is separate from the confetti-fired key so we can increment
+// freely without conflating "count" and "already fired" semantics.
+const EMAIL_COUNT_KEY = "parrot_emails_responded_count";
+
+/** Increment the email-respond counter. Returns the new count.
+ *  Call this on every successful email send in ComposePane. */
+export function incrementEmailRespondedCount(): number {
+	if (typeof window === "undefined") return 0;
+	try {
+		const prev = parseInt(
+			window.localStorage.getItem(EMAIL_COUNT_KEY) ?? "0",
+			10,
+		);
+		const next = Number.isFinite(prev) ? prev + 1 : 1;
+		window.localStorage.setItem(EMAIL_COUNT_KEY, String(next));
+		return next;
+	} catch {
+		return 0; // private mode — return 0, caller skips confetti safely
+	}
 }

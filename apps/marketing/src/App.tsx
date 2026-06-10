@@ -2469,25 +2469,60 @@ function StartupRolePanel() {
 }
 
 function StartupAccessSection() {
+  // v1.4 Phase 28.5 Plan 05 STARTUP-WEB-CTA-01 — primary CTA flipped from
+  // RequestAccessForm to a direct link to https://employers.internjobs.ai/.
+  // The Vite-built founder portal (Clerk #3) handles sign-up; the marketing
+  // page no longer needs to be the intake form for the first cohort.
+  // RequestAccessForm is kept below as a fallback for founders without a
+  // work email (the new portal blocks personal-domain signups — see
+  // webhooks.ts STARTUP-WORK-EMAIL-01).
   return (
     <section id="startup-access" className="waitlist-band relative overflow-hidden px-5 py-24 text-white sm:px-6 lg:px-8">
       <div className="cta-spectrum" aria-hidden="true" />
       <div className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div>
           <BrandMark size="lg" />
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">request access</p>
+          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-white/60">sign up</p>
           <h2 className="mt-4 font-display text-5xl leading-none text-white sm:text-7xl lowercase">
             hire interns by text<span className="accent-dot">.</span>
           </h2>
           <p className="mt-5 max-w-md leading-7 text-white/74">
-            ridhi runs concierge onboarding for the first cohort. tell us who you are and what you're hiring for; we'll text the install snippet.
+            create your account in 60 seconds. work email only — we don't onboard from gmail or yahoo.
           </p>
           <p className="mt-6 max-w-md text-sm leading-6 text-white/54">
             works with claude, chatgpt, cursor, cline. mcp install in one command.
           </p>
         </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.075] p-5 backdrop-blur-xl sm:p-6">
-          <RequestAccessForm />
+        <div className="rounded-lg border border-white/10 bg-white/[0.075] p-6 backdrop-blur-xl sm:p-8">
+          <a
+            href="https://employers.internjobs.ai/"
+            className="inline-flex w-full items-center justify-center gap-2 lowercase"
+            style={{
+              background: "var(--lavender)",
+              color: "var(--cobalt)",
+              borderRadius: "var(--radius-pill)",
+              padding: "1rem 2rem",
+              fontWeight: 700,
+              fontSize: "1.1rem",
+              textDecoration: "none",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            sign up at employers.internjobs.ai
+            <ArrowRight className="size-4" />
+          </a>
+          <p className="mt-5 text-center text-sm leading-6 text-white/60">
+            no work email yet? <a href="#startup-fallback" className="underline" style={{ color: "var(--lavender)" }}>tell ridhi anyway</a>.
+          </p>
+          <details id="startup-fallback" className="mt-6">
+            <summary className="cursor-pointer text-sm font-bold text-white/70 lowercase">no work email — concierge onboarding</summary>
+            <div className="mt-5 border-t border-white/10 pt-5">
+              <p className="mb-4 text-sm leading-6 text-white/60">
+                tell us who you are and what you're hiring for; ridhi will text you the install snippet.
+              </p>
+              <RequestAccessForm />
+            </div>
+          </details>
         </div>
       </div>
     </section>

@@ -265,6 +265,12 @@ export async function receiveEmail(
 							sender_last4: senderEmail.slice(-4),
 							preview: emailBody.slice(0, 80),
 							employee_id: employee.id,
+							// SAFETY-VERIFY-LIVE-04 (Phase 23-02): RFC-5322 Message-ID of the
+							// inbound email, falling back to the locally-generated UUID if the
+							// sender omitted the header. Canonical link between a safety_events
+							// row and the originating email (for /ops/safety lookup + cross-
+							// channel audit per REQUIREMENTS source_id contract).
+							source_id: originalMessageId ?? messageId,
 						}),
 					}).catch((err: unknown) => {
 						console.error(

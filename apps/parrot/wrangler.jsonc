@@ -74,6 +74,13 @@
 		// prompt caching kick in. Override via wrangler vars to A/B a
 		// fallback model (e.g., @cf/meta/llama-3.3-70b-instruct-fp8-fast).
 		"KIMI_MODEL": "@cf/moonshotai/kimi-k2.6",
+		// v1.4 Phase 23-04: fast NON-reasoning model for the interactive agent
+		// actions (summarize / translate / draft-reply / extract / chat).
+		// kimi-k2.6's chain-of-thought made those actions 30s-1.7min and 503'd
+		// translate even at 4000 max_tokens (live-verified 2026-06-02), failing
+		// the <10s AGENT-UAT-02 target. A non-reasoning model has no CoT tax.
+		// kimi-k2.6 stays the model for the injection scanner + todo extraction.
+		"PARROT_FAST_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		// v1.2 Phase 13 Wave 1: Web Push VAPID public key (base64url).
 		// Safe to commit — it's literally the public half of the keypair.
 		// Generate via:  npx web-push generate-vapid-keys --json

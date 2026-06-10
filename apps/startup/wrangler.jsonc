@@ -20,22 +20,49 @@
 	"vars": {
 		// HTTPS URL of the internjobs-startup-api Fly proxy (Phase 28 Plan 01).
 		// Not a secret — it's an internet-facing HTTPS hostname.
-		"STARTUP_API_URL": "https://internjobs-startup-api.fly.dev"
+		"STARTUP_API_URL": "https://internjobs-startup-api.fly.dev",
+		// v1.4 Phase 28.5 — Startups Clerk app #3.
+		// See .planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-PLAN.md
+		// for the dashboard checkpoint instructions. JWKS_URL + ISSUER are not
+		// secrets (they're public Clerk endpoints) — set them via `wrangler secret put`
+		// only if you want to keep them out of git; otherwise leave empty here and
+		// populate at deploy time from Infisical /internjobs-ai env=prod keys
+		// STARTUPS_CLERK_ISSUER + STARTUPS_CLERK_JWKS_URL.
+		"STARTUPS_CLERK_JWKS_URL": "",
+		"STARTUPS_CLERK_ISSUER": ""
 	},
 	// Workers AI binding (Phase 28 Plan 03). Used by lib/embed.ts to compute
 	// 768-dim bge-base-en-v1.5 vectors directly via env.AI.run() — NO dependency
 	// on the student app. CF bills per-neuron, not per-binding (free to declare.)
 	"ai": { "binding": "AI" },
-	// Email binding (Phase 28 Plan 05). Used by routes/api.ts to deliver
-	// marketing-CTA leads to raj@internjobs.ai. The binding is OPTIONAL —
-	// routes/api.ts gracefully falls back to log-only if the EMAIL binding is
-	// missing (handy for local dev with `wrangler dev` where send_email isn't
-	// wired). Matches the apps/parrot/wrangler.jsonc pattern.
+	// Email binding (Phase 28 Plan 05 + Phase 28.5 Plan 04). Used by:
+	//   • routes/api.ts — marketing-CTA leads to raj@internjobs.ai (Plan 28-05)
+	//   • routes/admin.ts — per-startup welcome email from
+	//     welcome@employers.internjobs.ai during /admin/startups/new (Plan 28.5-04)
+	//   • routes/email.ts — inbound catch-all handler (the email() export on
+	//     the Worker default export, not this send binding — this binding only
+	//     covers outbound send via env.EMAIL.send())
+	// The binding is OPTIONAL — both routes/api.ts and routes/admin.ts
+	// gracefully fall back to log-only if env.EMAIL is unbound (handy for
+	// local dev with `wrangler dev` where send_email isn't wired, and for the
+	// pre-DEFER-28.5-01-D window where the employers.internjobs.ai domain is
+	// not yet verified in CF Email Routing).
+	// Matches the apps/parrot/wrangler.jsonc pattern.
 	"send_email": [
 		{
 			"name": "EMAIL"
 		}
-	]
+	],
+	// v1.4 Phase 29-03 STARTUP-TOUCHBASE-01..02 — weekly touchbase cron.
+	// "0 14 * * 1" = Monday 14:00 UTC = 9:00am EST (10:00am EDT in summer;
+	// 1h drift accepted for v1.4. Per-startup timezone scheduling is a v1.5
+	// polish — see PHASE-29-DEFERRED-OPS.md). The scheduled() handler is
+	// exported from workers/app.ts via routes/scheduled.ts; it queries the
+	// Fly proxy for due-startups and sends touchbase SMS via lib/telnyx.ts.
+	// Silent no-op until TELNYX_API_KEY is bound (DEFER-29-01-E).
+	"triggers": {
+		"crons": ["0 14 * * 1"]
+	},
 	// Secrets (set via `wrangler secret put`):
 	//   STARTUP_API_SECRET            — Bearer token for internjobs-startup-api proxy.
 	//                                   Value is the 64-hex secret minted by 28-01;
@@ -57,4 +84,58 @@
 	//                                   Infisical /internjobs-ai/TELNYX_FROM_NUMBER.
 	//   TELNYX_MESSAGING_PROFILE_ID   — (optional) Telnyx messaging profile id.
 	//                                   Recommended for US production deliverability.
+	//
+	// v1.4 Phase 28.5 STARTUPS_CLERK_* — Startups Clerk app #3 secrets.
+	// See .planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-PLAN.md
+	// for checkpoint instructions. Canonical store is Infisical /internjobs-ai env=prod.
+	//   STARTUPS_CLERK_SECRET_KEY     — Backend secret key (sk_live_...) for the
+	//                                   "InternJobs Startups" Clerk application.
+	//                                   Used by the webhook handler added in 28.5-04
+	//                                   to verify Clerk-signed payloads server-side
+	//                                   and by JWT verification in routes that accept
+	//                                   founder sessions.
+	//                                   Set via `wrangler secret put STARTUPS_CLERK_SECRET_KEY`.
+	//                                   Infisical key: STARTUPS_CLERK_SECRET_KEY.
+	//   STARTUPS_CLERK_WEBHOOK_SECRET — REMOVED 2026-05-27.
+	//                                   Work-email enforcement moved from a
+	//                                   user.created webhook to Clerk's native
+	//                                   Restrictions API (PATCH /v1/instance/
+	//                                   restrictions + 26 personal-domain entries
+	//                                   in /v1/blocklist_identifiers). Rejection
+	//                                   happens at the sign-up form itself — no
+	//                                   Worker handler involved.
+	//
+	// v1.4 Phase 29 TELNYX_* — Telnyx SMS + Voice AI secrets.
+	// See .planning/milestones/v1.4-pilot-readiness/phases/29-startup-telnyx-voice-sms/
+	// PHASE-29-DEFERRED-OPS.md for the secret-binding backlog (DEFER-29-01-E..H).
+	// Routes/telnyx.ts and lib/telnyx.ts both guard on these being unbound —
+	// the Worker won't 500, it logs a warning per-request instead.
+	//   TELNYX_WEBHOOK_PUBLIC_KEY  — Ed25519 public key from Telnyx portal
+	//                                (Messaging -> Webhooks). When unbound,
+	//                                routes/telnyx.ts skips sig verification
+	//                                and logs a warning (ops-deferred mode).
+	//                                Set via `wrangler secret put TELNYX_WEBHOOK_PUBLIC_KEY`.
+	//                                Infisical: /internjobs-ai/TELNYX_WEBHOOK_PUBLIC_KEY.
+	//   TELNYX_VOICE_AGENT_TOKEN   — Bearer token for Voice AI agent MCP calls
+	//                                (Phase 29-02). Distinct from per-startup install
+	//                                tokens — this is a single agent-wide token.
+	//                                Set via `wrangler secret put TELNYX_VOICE_AGENT_TOKEN`.
+	//                                Infisical: /internjobs-ai/TELNYX_VOICE_AGENT_TOKEN.
+	//   TELNYX_USE_MCP_INTEGRATION — 'true' | 'false'. Gates MCP vs webhook-tool
+	//                                path in Voice AI routes (Phase 29-02).
+	//                                Default off; flip on after confirming MCP
+	//                                tab is available on the Telnyx plan tier.
+	//
+	// Phase 29-03 — TOUCHBASE_CURSORS KV namespace (created 2026-05-26).
+	// Stores per-phone weekly touchbase cursors (TTL ~48h) so "reply 1/2/3"
+	// maps to a candidate uuid.
+	"kv_namespaces": [{ "binding": "TOUCHBASE_CURSORS", "id": "458947413a764ba9adf871c507bc2f67" }],
+
+	// Phase 29-02 R2 binding — internjobs-startup-call-audit (created 2026-05-26).
+	// Stores call recordings (mp3) + transcripts (json) from the Voice AI
+	// agent's post-call insights webhook (routes/voice.ts voice-postprocess).
+	// R2 layout:
+	//   recordings/<startup_id>/<call_control_id>.mp3
+	//   transcripts/<startup_id>/<call_control_id>.json
+	"r2_buckets": [{ "binding": "VOICE_AUDIT", "bucket_name": "internjobs-startup-call-audit" }],
 }
