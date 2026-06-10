@@ -256,10 +256,13 @@ export async function getFullThread(
 	};
 	const threadStub = stub as unknown as MailboxThreadReaderStub;
 
+	// DO RPC stubs return a function-like proxy for any property access, so
+	// `typeof stub.method === "function"` always passes even when the DO
+	// doesn't implement it. Use try/catch on the call instead.
 	let emails: EmailFull[];
-	if (typeof threadStub.getThreadEmails === "function") {
-		emails = await threadStub.getThreadEmails(threadId);
-	} else {
+	try {
+		emails = await threadStub.getThreadEmails!(threadId);
+	} catch {
 		const metadata = (await stub.getEmails({ thread_id: threadId })) as EmailFull[];
 		emails = await Promise.all(
 			metadata.map(async (m) => {

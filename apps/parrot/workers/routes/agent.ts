@@ -162,7 +162,20 @@ agent.post("/summarize", async (c: AppContext) => {
 		],
 		employee.employeeId,
 		c.env,
-		{ cacheTtl: 1800, maxTokens: 800 },
+		// maxTokens 4000 (was 800): kimi-k2.6 reasoning CoT (~1000-1700 tokens)
+		// is billed before the summary content lands — 800 was consumed entirely
+		// inside CoT, returning content=null → 503. Live-observed in tail
+		// 2026-06-02 ("chatCompletion: reasoning model hit max_tokens" on
+		// /summarize). The summary itself is short; the headroom is free since
+		// cost is per actual output token.
+		//
+		// 2026-06-02 follow-up: generation actions now run on a FAST
+		// non-reasoning model (PARROT_FAST_MODEL) instead of kimi-k2.6. kimi's
+		// CoT made these 30s-1.7min and starved translate to 503 even at 4000
+		// tokens, failing the <10s AGENT-UAT-02 target. kimi is kept only for
+		// the injection scanner. maxTokens stays 4000 (free headroom on a
+		// non-reasoning model — output tokens are the real answer, not CoT).
+		{ cacheTtl: 1800, maxTokens: 4000, model: c.env.PARROT_FAST_MODEL },
 	);
 
 	if (!summary) {
@@ -228,7 +241,12 @@ agent.post("/extract-actions", async (c: AppContext) => {
 		],
 		employee.employeeId,
 		c.env,
-		{ cacheTtl: 1800, maxTokens: 600 },
+		// maxTokens 4000 (was 600): same kimi-k2.6 reasoning-CoT starvation as
+		// /summarize — 600 was far below the CoT floor, guaranteeing content=null
+		// → 503 on every cold call. Bullet output is short; headroom is free.
+		// 2026-06-02: runs on PARROT_FAST_MODEL (non-reasoning) for <10s — see
+		// the /summarize handler note.
+		{ cacheTtl: 1800, maxTokens: 4000, model: c.env.PARROT_FAST_MODEL },
 	);
 
 	if (!response) {
@@ -286,9 +304,19 @@ agent.post("/translate", async (c: AppContext) => {
 		],
 		employee.employeeId,
 		c.env,
+		// maxTokens 4000 (was 2000): kimi-k2.6 is a reasoning model — its CoT
+		// in reasoning_content is billed against max_tokens before the
+		// translation lands in content. A 6000-char email translated into a
+		// verbose target (Hindi/Mandarin) blew past 2000 mid-CoT →
+		// finish_reason="length", content=null → "Agent unavailable" 503.
+		// Live-observed 2026-06-02. 4000 matches callAiGateway's documented
+		// comfortable ceiling; cost is per-output-token so the headroom is free
+		// when the real answer is short.
 		// Cache disabled — same source can be requested in different languages
 		// from the same user; key collisions would yield the wrong translation.
-		{ cacheTtl: 0, maxTokens: 2000 },
+		// 2026-06-02: runs on PARROT_FAST_MODEL (non-reasoning) — kimi starved
+		// this path to 503 even at 4000 tokens; see the /summarize handler note.
+		{ cacheTtl: 0, maxTokens: 4000, model: c.env.PARROT_FAST_MODEL },
 	);
 
 	if (!translation) {
@@ -380,7 +408,15 @@ agent.post("/draft-reply", async (c: AppContext) => {
 		],
 		employee.employeeId,
 		c.env,
-		{ cacheTtl: 0, maxTokens: 1500 },
+		// maxTokens 4000 (was 1500): same kimi-k2.6 reasoning-model starvation as
+		// translate — CoT + a multi-paragraph reply against thread context
+		// exceeded 1500 mid-CoT → content=null → "Agent unavailable" 503.
+		// Live-observed 2026-06-02. See chatCompletion's finish_reason="length"
+		// warn log in workers/lib/ai.ts.
+		// 2026-06-02: runs on PARROT_FAST_MODEL (non-reasoning) for <10s — see
+		// the /summarize handler note. (Draft still chains screen + draft +
+		// verify, but each is now a fast call instead of a kimi CoT call.)
+		{ cacheTtl: 0, maxTokens: 4000, model: c.env.PARROT_FAST_MODEL },
 	);
 
 	if (!draftText) {
@@ -506,7 +542,11 @@ agent.post("/chat", async (c: AppContext) => {
 
 	const reply = await chatCompletion(messages, employee.employeeId, c.env, {
 		cacheTtl: 0,
-		maxTokens: 2000,
+		// maxTokens 4000 matches the other agent actions.
+		// 2026-06-02: runs on PARROT_FAST_MODEL (non-reasoning) for <10s — see
+		// the /summarize handler note.
+		maxTokens: 4000,
+		model: c.env.PARROT_FAST_MODEL,
 	});
 
 	if (!reply) {

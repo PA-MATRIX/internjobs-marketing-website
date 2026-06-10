@@ -41,6 +41,7 @@ type CfEnvBase = Omit<
 	| "CLOUDFLARE_ACCOUNT_ID"
 	| "PARROT_AI_GATEWAY_ID"
 	| "KIMI_MODEL"
+	| "PARROT_FAST_MODEL"
 	| "MATTERMOST_BOT_TOKEN"
 	| "PARROT_DEV_MODE"
 	| "PUSH_VAPID_PRIVATE_KEY"
@@ -50,6 +51,7 @@ type CfEnvBase = Omit<
 	| "DAILY_API_KEY"
 	| "GRAPH_API_URL"
 	| "GRAPH_API_SECRET"
+	| "STUDENT_API_URL"
 >;
 
 export interface Env extends CfEnvBase {
@@ -107,6 +109,11 @@ export interface Env extends CfEnvBase {
 	PARROT_AI_GATEWAY_ID: string;
 	/** Workers AI model ID for todo extraction. Default: @cf/moonshotai/kimi-k2.6 */
 	KIMI_MODEL: string;
+	/** Fast NON-reasoning Workers AI model for interactive agent actions
+	 * (summarize/translate/draft/extract/chat). Default:
+	 * @cf/meta/llama-3.3-70b-instruct-fp8-fast. kimi-k2.6's CoT is too slow for
+	 * the <10s AGENT-UAT-02 target — see Phase 23-04. */
+	PARROT_FAST_MODEL: string;
 	/** Mattermost bot personal access token for REST API polling. */
 	MATTERMOST_BOT_TOKEN?: string;
 	/** Set to "1" in wrangler dev to enable dev-only smoke endpoints. Never set in production. */
