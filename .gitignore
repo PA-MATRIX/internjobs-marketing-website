@@ -15,3 +15,10 @@ apps/mac-bridge/node_modules
 .planning/.cache/
 .planning/SCOPE_CACHE.md
 .planning/scope-cache.json
+
+# RRR rolling state — local execution memory, regenerated each phase.
+# Never commit: every phase branch would otherwise collide with the last
+# on these single-file states (the recurring STATE.md merge conflict).
+.planning/STATE.md
+.planning/workstreams/*/STATE.md
+.planning/learnings.jsonl

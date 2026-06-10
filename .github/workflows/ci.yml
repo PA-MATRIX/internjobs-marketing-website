@@ -1,0 +1,80 @@
+name: CI
+
+# Runs on every PR into main or an integration/* branch, and on every push
+# to an integration/* branch (where the two teams' work is combined and must
+# build + test TOGETHER before it is promoted to main).
+on:
+  pull_request:
+    branches: [main, "integration/**"]
+  push:
+    branches: ["integration/**"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- Root npm workspaces: marketing (CMS) · app (student) · employers ----
+  workspaces:
+    name: workspaces (marketing · app · employers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: build marketing
+        run: npm run build:marketing
+      - name: build employers
+        run: npm run build --workspace apps/employers
+      - name: verify app (student)
+        run: npm run build:app
+
+  # ---- Workspace Worker (apps/parrot) — excluded from root workspaces ----
+  parrot:
+    name: workspace worker (parrot)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/parrot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/parrot/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # Advisory: validate the Worker bundles + binding contract without
+      # deploying. Non-blocking until prod creds are wired into Actions.
+      - name: wrangler dry-run (advisory)
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: npx wrangler deploy --dry-run --outdir /tmp/parrot-dry
+
+  # ---- Startups Worker (apps/startup) — excluded from root workspaces ----
+  startup:
+    name: startups worker (typecheck · tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/startup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/startup/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - name: unit tests (node:test via tsx)
+        run: npm test
+      - name: wrangler dry-run (advisory)
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: npx wrangler deploy --dry-run --outdir /tmp/startup-dry
