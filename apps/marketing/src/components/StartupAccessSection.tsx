@@ -13,7 +13,7 @@
 // Accent: cobalt — this is the /startups page accent (BRAND-LAYOUT-02).
 // No hex literals — CSS vars only (BRAND-LAYOUT-05).
 //
-// Note: this is a transitional surface. Phase 28.5 (startups.internjobs.ai)
+// Note: this is a transitional surface. Phase 28.5 (employers.internjobs.ai)
 // will replace the form with a clerk-backed sign-up flow. Don't over-engineer.
 
 import { useState } from "react";

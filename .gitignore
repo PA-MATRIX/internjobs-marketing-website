@@ -22,3 +22,9 @@ apps/mac-bridge/node_modules
 .planning/STATE.md
 .planning/workstreams/*/STATE.md
 .planning/learnings.jsonl
+
+# Playwright trace/screenshot output — local debug artifacts, never commit.
+test-results/
+playwright-report/
+**/playwright-report/
+**/test-results/
