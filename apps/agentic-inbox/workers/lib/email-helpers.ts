@@ -190,12 +190,6 @@ export function stripHtmlToText(html: string): string {
 }
 
 /**
- * Format a date string for use in quoted reply blocks.
- * @deprecated Use `formatQuotedDate` from `shared/dates` directly.
- */
-export const formatEmailDate = formatQuotedDate;
-
-/**
  * Build a quoted reply block HTML string from original email data.
  */
 export function buildQuotedReplyBlock(original: {
@@ -207,7 +201,7 @@ export function buildQuotedReplyBlock(original: {
 	
 	// HTML-escape sender and date to prevent injection
 	const originalSender = escapeHtml(original.sender || "unknown");
-	const originalDate = escapeHtml(formatEmailDate(original.date || ""));
+	const originalDate = escapeHtml(formatQuotedDate(original.date || ""));
 
 	// Sanitize the body to plain text to prevent stored XSS.
 	// The original HTML renders safely in the sandboxed iframe, but quoted
