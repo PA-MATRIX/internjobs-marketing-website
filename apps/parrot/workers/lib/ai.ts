@@ -39,6 +39,11 @@ export interface ExtractedTodo {
 	deadline_at?: string | null;
 	mentioned_actors?: string[];
 	is_mention: boolean;
+	/** Ids of other todos that this todo is blocked by. Extracted by kimi when
+	 *  "blocked by", "waiting on", "depends on" language is present in the source.
+	 *  Array of free-text blocker descriptions (not graph ids — those are hashed
+	 *  at write-time). Empty array is the default. */
+	blocked_by_ids?: string[];
 }
 
 /**
@@ -54,6 +59,7 @@ export interface ExtractedTodo {
  *   - deadline_at nullable ISO-8601 or null
  *   - mentioned_actors array of strings (names parsed from message)
  *   - is_mention boolean — true if message @-mentions the recipient
+ *   - blocked_by_ids array of strings (free-text blocker descriptions)
  */
 export const TODO_EXTRACTION_SCHEMA = {
 	type: "object",
@@ -70,6 +76,11 @@ export const TODO_EXTRACTION_SCHEMA = {
 					deadline_at: { type: ["string", "null"] },
 					mentioned_actors: { type: "array", items: { type: "string" } },
 					is_mention: { type: "boolean" },
+					blocked_by_ids: {
+						type: "array",
+						items: { type: "string" },
+						description: "Descriptions of blockers. Empty array if none.",
+					},
 				},
 			},
 		},
@@ -273,6 +284,8 @@ is_mention=true when the message opens with the recipient's name, addresses them
 title: 6-12 word summary in imperative form starting with a verb ("Finalize Q4 deck", "Confirm Friday standup time"). No trailing punctuation.
 
 mentioned_actors: OTHER people named in the action (not the recipient). Empty array if none.
+
+blocked_by_ids: free-text descriptions of anything this todo is explicitly blocked by or waiting on ("blocked by legal review", "waiting on Alice's approval"). Empty array if none.
 
 deadline_at: ISO 8601 date if explicitly stated. null if vague ("soon", "ASAP" without a date, "by EOD" without weekday).
 
