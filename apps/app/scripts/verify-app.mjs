@@ -18,13 +18,11 @@ const child = spawn(process.execPath, ["src/server.mjs"], {
 });
 
 try {
-  // v1.2 Phase 04: Mastra (@mastra/core + @mastra/pg) imports add ~300ms
-  // to cold-start. The previous 450ms delay flakes on the first run after
-  // a clean install. 1000ms gives headroom for cold ESM resolution without
-  // making the suite noticeably slower.
-  await delay(1000);
-
-  const health = await fetch(`${baseUrl}/healthz`);
+  // v1.2 Phase 04: Mastra (@mastra/core + @mastra/pg) imports make cold-start
+  // vary widely — ~300ms on a warm laptop, several seconds on a cold CI
+  // runner — so a fixed delay flakes with ECONNREFUSED. Poll /healthz until
+  // the server answers (or we hit the budget) instead of sleeping once.
+  const health = await waitForHealth(`${baseUrl}/healthz`);
   assert(health.ok, `health check returned ${health.status}`);
   const healthBody = await health.json();
   assert(healthBody.ok === true && healthBody.service === "internjobs-app", "health check returned unexpected payload");
@@ -122,4 +120,22 @@ try {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function waitForHealth(url, { timeoutMs = 30000, intervalMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res;
+      lastErr = new Error(`health check returned ${res.status}`);
+    } catch (err) {
+      lastErr = err;
+    }
+    await delay(intervalMs);
+  }
+  throw new Error(
+    `server did not become ready within ${timeoutMs}ms: ${lastErr?.message ?? "unknown"}`,
+  );
 }
