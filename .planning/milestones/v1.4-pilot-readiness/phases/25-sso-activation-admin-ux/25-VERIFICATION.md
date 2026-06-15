@@ -1,9 +1,10 @@
 ---
 phase: 25-sso-activation-admin-ux
 team: team-workspace
-status: human_needed
-verified_at: 2026-05-26
+status: passed
+verified_at: 2026-06-15
 goal: Workspace SSO activation + admin UX complete + orphan Neon dep removed
+note: "SC-1 accepted as blocked-by-license (MM Team Edition, unlicensed — OpenID Connect is a paid feature); SC-2 met via native provisioning instead of OIDC; SC-3/SC-4 human_verified 2026-06-12. See Licensing Finding 2026-06-15."
 ---
 
 # Phase 25: SSO Activation + Admin UX -- Verification Report
@@ -42,10 +43,10 @@ ROADMAP.md advisory: The diff in c05a71a touches only the Phase 25 plan-list blo
 
 | SC# | Description | Status | Evidence |
 |---|---|---|---|
-| SC-1 | User clicks GitLab on chat.internjobs.ai, OIDC bounce, Mattermost in <5s | deferred_to_operator | mmctl script + runbook shipped; live run needs mmctl admin + Fly restart |
-| SC-2 | New employee auto-provisions Mattermost user on first OIDC sign-in | deferred_to_operator | Confirmed native Mattermost behavior in runbook; MMSSO-02 checklist item 6 is the gate |
-| SC-3 | Ridhi can open /admin, see employees with 6 capability toggles, edit post-invite | code_verified | admin.tsx 486 lines; 3 API wires confirmed; brand tokens applied; Fragment key fixed |
-| SC-4 | Invite form creates Clerk user + CF Email Routing + WorkspaceDO row + welcome email | code_verified | admin.invite.tsx 409 lines; POST /api/admin/employees wired; success banner surfaces all 4 outcomes |
+| SC-1 | User clicks GitLab on chat.internjobs.ai, OIDC bounce, Mattermost in <5s | **blocked_by_license (2026-06-15)** | NOT achievable on the current server. MM is v11.6.2 **Team Edition, unlicensed** (`BuildEnterpriseReady:false`, `IsLicensed:false`). OpenID Connect SSO is a paid Enterprise feature, and the old free GitLab login button is removed in v11 (no `EnableSignUpWithGitLab` flag exists; `EnableSignUpWithOpenId:false` regardless of config). Worker-side OIDC bridge verified healthy (JWKS populated; client_id `mm-adf4e352b196b075` + redirect both match worker secrets → `/oidc/authorize` returns 302→/sign-in). Accepted as won't-fix without a Mattermost license purchase (business decision). See Licensing Finding below. |
+| SC-2 | New employee auto-provisions Mattermost user on first OIDC sign-in | **met_via_native (2026-06-15)** | Underlying goal — every invited employee gets a working MM account — is delivered **natively**, not via OIDC: eager provisioning at invite (`admin-employees.ts` step 2c) + lazy at chat-open (`index.ts` `/api/chat/bootstrap`), using the `parrot-admin` PAT (`MATTERMOST_ADMIN_TOKEN`). Deployed `internjobs-parrot` v `8e998c22`; verified live (POST `/api/v4/users` → 201). Repo-reconciled via PR #8. |
+| SC-3 | Ridhi can open /admin, see employees with 6 capability toggles, edit post-invite | **human_verified (2026-06-12)** | Operator confirmed /admin renders the employee directory with 6 capability pills per row and brand tokens applied; edit/save round-trip confirmed |
+| SC-4 | Invite form creates Clerk user + CF Email Routing + WorkspaceDO row + welcome email | **human_verified (2026-06-12)** | Live browser invite of `testvk` (2026-06-11) returned the success banner with Workspace email, Clerk user, Routing rule, **Welcome email: sent**, + 6 capabilities. Worker tail zero warnings. Welcome-email bug fixed+deployed (`1e3ebffd`); hard-delete idempotency fixed (`0a7a735`) |
 | SC-5 | @neondatabase/serverless removed; npm run build passes | code_verified | grep exit 1 (no match in package.json); workers/ grep clean; build green per 25-03-SUMMARY.md |
 
 ---
@@ -142,42 +143,51 @@ Pass 2 (INFORMATIONAL) not run. Invoke with mode: deep-review to enable.
 
 ## Human Verification Required
 
-### 1. SSO Round-Trip (SC-1 + SC-2)
+### 1. SSO Round-Trip (SC-1 + SC-2) — ❌ RESOLVED 2026-06-15: BLOCKED BY LICENSE
 
-**Test:** Export 4 MM_* env vars from Wrangler secrets, run bash apps/parrot/test/25-01-mmctl-commands.sh, restart Mattermost (fly machine restart --app internjobs-mattermost), then open https://chat.internjobs.ai in incognito and complete the MMSSO-02 checklist in the runbook.
-**Expected:** GitLab button visible on login page; full OIDC bounce completes in <5s; new-invite user auto-provisioned with workspace email from /oidc/userinfo.
-**Why human:** Requires mmctl admin credentials for chat.internjobs.ai + Fly deploy permission. Cannot run autonomously.
-**Runbook:** apps/parrot/test/25-01-mattermost-sso-runbook.md
+**Operator window run 2026-06-15.** Live SSO activation was attempted end-to-end and is **not achievable on the current Mattermost** — see the Licensing Finding below. SC-1 accepted as blocked-by-license; SC-2's goal is met via native provisioning. No further human action fixes SC-1 short of purchasing a Mattermost license.
+**Runbook (retained, now superseded):** apps/parrot/test/25-01-mattermost-sso-runbook.md
 
-### 2. /admin Browser Walkthrough (SC-3)
+### 2. /admin Browser Walkthrough (SC-3) — ✅ COMPLETED 2026-06-12
 
-**Test:** Sign in as Ridhi (role=ceo) at workspace.internjobs.ai, navigate to /admin. Verify employee list loads with 6 capability pills per row. Click Edit on a row, toggle a capability, click Save, confirm UI reflects new state without page reload.
-**Expected:** Lavender background, cream table card, ink text, cobalt add-employee button, lime active capability pills. Save updates pills without full page reload.
-**Why human:** Visual brand correctness and real-time state update cannot be verified by static code analysis.
+**Result:** Operator confirmed /admin renders the employee directory with 6 capability pills per row and brand tokens applied; edit/save round-trip confirmed. **PASS.**
 
-### 3. /admin/invite Form End-to-End (SC-4)
+### 3. /admin/invite Form End-to-End (SC-4) — ✅ COMPLETED 2026-06-12
 
-**Test:** From /admin, click add employee. Fill First name, Last name, Personal email, Phone (E.164). Leave all 6 capabilities checked. Click Send invite.
-**Expected:** Success banner shows Workspace email, Clerk user ID, Routing rule ID, "Welcome email: sent", and 6 active capabilities. Clicking Go to admin list shows the new employee in the directory.
-**Why human:** End-to-end requires live Clerk user creation, CF Email Routing API call, WorkspaceDO write, and Resend email delivery -- cannot be mocked in static verification.
+**Result:** Live invite of `testvk` (2026-06-11) returned the success banner with Workspace email `test.vk@internjobs.ai`, Clerk user, Routing rule, **Welcome email: sent**, and all 6 capabilities; worker tail zero warnings. Welcome-email regression fixed+deployed (`1e3ebffd`); re-invite idempotency fixed (`0a7a735`). **PASS.**
+
+---
+
+## Licensing Finding (2026-06-15) — SSO is not viable on this Mattermost
+
+During the operator window we attempted to activate the SSO round-trip and hit a hard licensing wall, not a config problem:
+
+- **Server is Mattermost v11.6.2 Team Edition, unlicensed.** `GET /api/v4/config/client?format=old` → `BuildEnterpriseReady:false`, `BuildHashEnterprise:none`; `GET /api/v4/license/client` → `IsLicensed:false`.
+- **OpenID Connect SSO is a paid (Enterprise/Professional) feature.** Setting `GitLabSettings.DiscoveryEndpoint` puts the provider in OpenID-Connect mode (`EnableSignUpWithOpenId`), which stays `false` on an unlicensed build no matter the config.
+- **The old free "GitLab button" path is gone in v11** — no `EnableSignUpWithGitLab` field in the client config at all.
+- **Confirmed by elimination:** restart (no change) → clearing legacy `AuthEndpoint`/`TokenEndpoint`/`UserApiEndpoint` to force pure-OIDC (no change) → `IsLicensed:false`. MM GitLab/OIDC settings are pinned by **Fly env vars** (`MM_GITLABSETTINGS_*`) that override `mmctl config set/reset`.
+- **Worker-side OIDC bridge is fully healthy** — JWKS populated, client_id `mm-adf4e352b196b075` + redirect both match worker secrets (`/oidc/authorize` → 302→/sign-in). The block is entirely on the Mattermost edition/license side.
+
+**Decision:** native chat is the committed path (no license; uses the MM REST API, not OIDC login). SC-1 won't-fix without a license purchase; SC-2 met via native provisioning. The OIDC bridge code (`oidc.ts`) and runbook are retained in case a license is ever bought. (To re-open: restore the 3 unset `MM_GITLABSETTINGS_{AUTH,TOKEN,USERAPI}ENDPOINT` env vars to the `https://workspace.internjobs.ai/oidc/*` URLs.)
 
 ---
 
 ## Gaps Summary
 
-No automated gaps found. All 5 success criteria have code shipped and verified structurally:
+No actionable code gaps. Success-criteria disposition:
 
-- SC-5 is fully closed (dep removed, workers/ clean, build passed per SUMMARY).
-- SC-3 and SC-4 are code-complete with all API wires confirmed; pending browser walkthrough.
-- SC-1 and SC-2 are deliberately operator-deferred with a complete runbook and shell script.
+- SC-5 fully closed (dep removed, workers/ clean, build re-confirmed green on the current tree).
+- **SC-3 and SC-4 human_verified (2026-06-12)** via live operator walkthrough + the `testvk` end-to-end invite.
+- **SC-2 met via native provisioning (2026-06-15)** — employees get MM accounts at invite/chat-open without OIDC (repo-reconciled via PR #8).
+- **SC-1 blocked-by-license (2026-06-15)** — accepted won't-fix; requires a Mattermost license purchase (business decision), not a code change. See Licensing Finding above.
 
 ---
 
 ## Recommended Next Steps for Coordinator
 
-1. **SC-1 + SC-2 (SSO activation):** Schedule a ~30-minute operator window per apps/parrot/test/25-01-mattermost-sso-runbook.md. Requires: mmctl authenticated against chat.internjobs.ai system_admin, wrangler CLI logged in to the CF account owning internjobs-parrot, and fly CLI with deploy permission for internjobs-mattermost. After execution: tick the MMSSO-02 checklist boxes in the runbook and update .planning/workstreams/team-workspace/STATE.md open items to mark MMSSO-02 verified.
+1. **SC-1 + SC-2 (SSO activation): CLOSED 2026-06-15 — operator window run, blocked by license.** SSO/OIDC is not viable on the current MM v11.6.2 Team Edition (unlicensed); see the Licensing Finding. SC-1 won't-fix without a license purchase; SC-2 met via native provisioning (repo-reconciled via PR #8). No further operator window needed.
 
-2. **SC-3 + SC-4 (Admin UX visual):** During the same operator window, perform the /admin and /admin/invite browser walkthrough (human verification items 2 and 3 above). Capture a screenshot as visual proof per the Phase 23 ATTACH-DOWN pattern.
+2. **SC-3 + SC-4 (Admin UX visual): DONE 2026-06-12** — operator walked /admin + /admin/invite live; both human_verified.
 
 3. **ROADMAP.md edit advisory:** Confirm with coordinator that the plan-list-only update in commit c05a71a is acceptable under team-mode rules (no goal or success-criteria text was changed; only placeholder bullets were replaced with PLAN.md filenames).
 
