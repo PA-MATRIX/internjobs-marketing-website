@@ -38,6 +38,7 @@ import {
 	disableEmailRoutingRule,
 	sendWelcomeEmail,
 } from "../lib/email";
+import { ensureMmWorkspaceMembership } from "../lib/mattermost";
 import { getWorkspaceStub } from "../durableObject/workspace";
 
 const adminEmployees = new Hono<ParrotContext>();
@@ -175,6 +176,38 @@ adminEmployees.post("/", async (c) => {
 		}
 	}
 
+	// 2c) Provision the Mattermost chat account up-front so the new employee
+	// can use the side-panel chat the moment they first sign in. Best-effort:
+	// a chat-provision failure must NOT fail the invite (mirrors the routing /
+	// welcome soft-fails). Requires MATTERMOST_ADMIN_TOKEN — the bot token is
+	// barred from creating users; if it's unset this no-ops and the chat-open
+	// path will retry later.
+	let chatProvisioned = false;
+	let chatError: string | null = null;
+	if (c.env.MATTERMOST_URL && c.env.MATTERMOST_BOT_TOKEN) {
+		try {
+			const membership = await ensureMmWorkspaceMembership(
+				c.env.MATTERMOST_URL,
+				c.env.MATTERMOST_BOT_TOKEN,
+				workspaceEmail,
+				{
+					displayName: parsed.data.displayName || name,
+					givenName: firstName,
+					familyName: lastName,
+				},
+				c.env.MATTERMOST_ADMIN_TOKEN,
+			);
+			chatProvisioned = membership.ok;
+			if (!membership.ok) chatError = membership.reason;
+		} catch (e) {
+			chatError = (e as Error).message;
+			console.warn(
+				`Mattermost provisioning failed for ${workspaceEmail}:`,
+				chatError,
+			);
+		}
+	}
+
 	// 3) Add Email Routing rule. Soft-fail — we report it but don't
 	// undo the Clerk user; operator can retry separately.
 	let routingRuleId: string | null = null;
@@ -235,6 +268,8 @@ adminEmployees.post("/", async (c) => {
 		routing_error: routingError,
 		welcome_email_sent: welcomeSent,
 		welcome_error: welcomeError,
+		chat_provisioned: chatProvisioned,
+		chat_error: chatError,
 	}, 201);
 });
 

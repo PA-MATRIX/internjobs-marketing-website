@@ -79,6 +79,26 @@ class ChatApiError extends Error {
 	}
 }
 
+// Map the worker's `reason` codes (see workers/index.ts /api/chat/*) to
+// human-readable copy. Without this the pane only ever showed the opaque
+// "Chat request failed (404)" because chatFetch read message/error, not reason.
+function friendlyChatReason(reason?: string): string | null {
+	switch (reason) {
+		case "user_not_found":
+			return "Your chat account is still being set up. Refresh in a moment — if this keeps happening, contact an admin.";
+		case "mattermost_bot_not_configured":
+			return "Chat isn't configured yet (missing bot token). Contact an admin.";
+		case "team_unavailable":
+			return "The chat workspace is unavailable right now. Please try again.";
+		case "channel_unavailable":
+			return "No chat channels are available yet.";
+		case "membership_failed":
+			return "Couldn't add you to the chat workspace. Please try again.";
+		default:
+			return null;
+	}
+}
+
 async function chatFetch<T>(
 	path: string,
 	init: RequestInit = {},
@@ -93,11 +113,14 @@ async function chatFetch<T>(
 	});
 	if (!res.ok) {
 		const body = (await res.json().catch(() => null)) as
-			| { message?: string; error?: string }
+			| { message?: string; error?: string; reason?: string }
 			| null;
 		throw new ChatApiError(
 			res.status,
-			body?.message || body?.error || `Chat request failed (${res.status})`,
+			body?.message ||
+				body?.error ||
+				friendlyChatReason(body?.reason) ||
+				`Chat request failed (${res.status})`,
 		);
 	}
 	if (res.status === 204) return undefined as T;
