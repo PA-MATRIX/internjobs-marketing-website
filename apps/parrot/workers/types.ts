@@ -43,6 +43,7 @@ type CfEnvBase = Omit<
 	| "KIMI_MODEL"
 	| "PARROT_FAST_MODEL"
 	| "MATTERMOST_BOT_TOKEN"
+	| "MATTERMOST_ADMIN_TOKEN"
 	| "PARROT_DEV_MODE"
 	| "PUSH_VAPID_PRIVATE_KEY"
 	| "PUSH_VAPID_PUBLIC_KEY"
@@ -116,6 +117,10 @@ export interface Env extends CfEnvBase {
 	PARROT_FAST_MODEL: string;
 	/** Mattermost bot personal access token for REST API polling. */
 	MATTERMOST_BOT_TOKEN?: string;
+	/** Mattermost SYSTEM-ADMIN user PAT (non-bot account `parrot-admin`).
+	 *  Required for creating MM user accounts — bot tokens are barred from
+	 *  POST /api/v4/users. Used only by createMmUser during provisioning. */
+	MATTERMOST_ADMIN_TOKEN?: string;
 	/** Set to "1" in wrangler dev to enable dev-only smoke endpoints. Never set in production. */
 	PARROT_DEV_MODE?: string;
 

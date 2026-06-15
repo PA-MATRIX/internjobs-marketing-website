@@ -847,6 +847,12 @@ async function loadChatContext(c: AppContext):
 		c.env.MATTERMOST_URL,
 		botToken,
 		employee.email,
+		{
+			displayName: employee.displayName,
+			givenName: employee.givenName,
+			familyName: employee.familyName,
+		},
+		c.env.MATTERMOST_ADMIN_TOKEN,
 	);
 	if (!membership.ok) {
 		return {
@@ -935,6 +941,12 @@ app.post(
 			c.env.MATTERMOST_URL,
 			botToken,
 			employee.email,
+			{
+				displayName: employee.displayName,
+				givenName: employee.givenName,
+				familyName: employee.familyName,
+			},
+			c.env.MATTERMOST_ADMIN_TOKEN,
 		);
 		if (!result.ok) {
 			const status = result.reason === "user_not_found" ? 404 : 502;

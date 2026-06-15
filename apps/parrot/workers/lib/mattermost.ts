@@ -109,6 +109,63 @@ export async function getMmUserByEmail(
 	}
 }
 
+/**
+ * Derive a valid Mattermost username from an email local-part.
+ * MM usernames must be 3–22 chars, start with a letter, and contain only
+ * lowercase letters, numbers, '.', '-', '_'.
+ */
+function deriveMmUsername(email: string): string {
+	const local = (email.split("@")[0] ?? "user").toLowerCase();
+	let username = local.replace(/[^a-z0-9._-]/g, "");
+	if (!/^[a-z]/.test(username)) username = `u${username}`;
+	username = username.slice(0, 22);
+	if (username.length < 3) username = `${username}user`.slice(0, 22);
+	return username;
+}
+
+/**
+ * Create a Mattermost account for an employee that doesn't have one yet.
+ *
+ * Employees sign into Workspace via Clerk (phone-OTP) and reach chat only
+ * through the bot-proxied /api/chat/* surface — they never log into
+ * Mattermost directly — so this is a "shadow" identity used for message
+ * attribution and team/channel membership. The password is random and
+ * unused. The account is keyed by the employee's @internjobs.ai email, so a
+ * later SSO login (OIDC bridge) links to it by email. Returns null if
+ * creation fails; on a lost create race we re-resolve the existing user by
+ * email rather than surface a spurious failure.
+ */
+export async function createMmUser(
+	mattermostUrl: string,
+	botToken: string,
+	profile: {
+		email: string;
+		displayName?: string;
+		givenName?: string;
+		familyName?: string;
+	},
+): Promise<MattermostUser | null> {
+	const created = await mmFetch<MattermostUser>(
+		mattermostUrl,
+		botToken,
+		"/api/v4/users",
+		{
+			method: "POST",
+			body: JSON.stringify({
+				email: profile.email,
+				username: deriveMmUsername(profile.email),
+				password: `Aa1!${crypto.randomUUID()}${crypto.randomUUID()}`,
+				first_name: profile.givenName ?? "",
+				last_name: profile.familyName ?? "",
+				nickname: profile.displayName ?? "",
+			}),
+		},
+	);
+	if (created.ok) return created.data;
+	// Lost a create race (email/username already taken) — re-resolve by email.
+	return await getMmUserByEmail(mattermostUrl, botToken, profile.email);
+}
+
 async function getOrCreateTeam(
 	mattermostUrl: string,
 	botToken: string,
@@ -209,6 +266,8 @@ export async function ensureMmWorkspaceMembership(
 	mattermostUrl: string,
 	botToken: string,
 	email: string,
+	profile?: { displayName?: string; givenName?: string; familyName?: string },
+	adminToken?: string,
 ): Promise<
 	| {
 			ok: true;
@@ -221,7 +280,20 @@ export async function ensureMmWorkspaceMembership(
 			reason: "user_not_found" | "team_unavailable" | "membership_failed";
 	  }
 > {
-	const userId = await resolveMmUserId(mattermostUrl, botToken, email);
+	let userId = await resolveMmUserId(mattermostUrl, botToken, email);
+	if (!userId) {
+		// Auto-provision: the employee exists in Clerk but not yet in
+		// Mattermost. Create the shadow MM account so native chat works without
+		// manual setup. User creation REQUIRES a system-admin USER token — the
+		// bot token is barred from POST /api/v4/users — so prefer adminToken
+		// and only fall back to botToken (which will fail) when it's unset.
+		const created = await createMmUser(
+			mattermostUrl,
+			adminToken || botToken,
+			{ email, ...profile },
+		);
+		userId = created?.id ?? null;
+	}
 	if (!userId) return { ok: false, reason: "user_not_found" };
 	const team = await getOrCreateTeam(mattermostUrl, botToken);
 	if (!team) return { ok: false, reason: "team_unavailable" };
