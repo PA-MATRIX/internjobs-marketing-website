@@ -918,6 +918,26 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		);
 	}
 
+	/**
+	 * v1.4 Phase 26 follow-up: resolve the dashboard todo(s) for an email the
+	 * user just replied to. Called from handleReplyEmail so the todo clears on
+	 * the next 10s dashboard poll instead of waiting on the auto-clear cron
+	 * (graph close + 5-min grace + the every-5-min cron = ~10-15 min, and only
+	 * if the agent decides the reply satisfied it). `emailId` is the original
+	 * email id,
+	 * which equals the todo's `source_id`. Mirrors the delete-path cleanup SQL;
+	 * resolution_source stays NULL = user-resolved.
+	 */
+	async resolveTodosForEmail(emailId: string): Promise<{ resolved: boolean }> {
+		const cursor = this.ctx.storage.sql.exec(
+			`UPDATE todos SET resolved_at = datetime('now')
+			 WHERE source_channel = 'email' AND source_id = ?
+				 AND resolved_at IS NULL`,
+			emailId,
+		);
+		return { resolved: cursor.rowsWritten > 0 };
+	}
+
 	private async extractTodosFromEmail(email: EmailData, employeeId: string) {
 		try {
 			const text = [email.subject, email.body].filter(Boolean).join("\n\n");
