@@ -48,6 +48,8 @@ jobs:
           cache-dependency-path: apps/parrot/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - name: unit tests (vitest)
+        run: npm test
       - run: npm run build
       # Advisory: validate the Worker bundles + binding contract without
       # deploying. Non-blocking until prod creds are wired into Actions.

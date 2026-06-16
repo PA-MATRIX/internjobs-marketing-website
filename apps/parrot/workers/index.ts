@@ -354,6 +354,36 @@ app.get(
 	},
 );
 
+// STAR-API-01: PATCH /api/inbox/messages/:id — toggle starred/read state.
+// Body: { starred?: boolean; read?: boolean }
+// The EmployeeMailboxDO.updateEmail() method already exists and handles the
+// SQLite UPDATE. This route is the missing HTTP surface the EmailPanel needs.
+app.patch(
+	"/api/inbox/messages/:id",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const id = c.req.param("id");
+		if (!id) return c.json({ error: "Missing message id" }, 400);
+		const body = (await c.req.json().catch(() => null)) as {
+			starred?: boolean;
+			read?: boolean;
+		} | null;
+		if (!body || (body.starred === undefined && body.read === undefined)) {
+			return c.json({ error: "Body must include starred or read field" }, 400);
+		}
+		const updated = await c.var.mailboxStub.updateEmail(id, {
+			starred: body.starred,
+			read: body.read,
+		});
+		if (!updated) return c.json({ error: "Email not found" }, 404);
+		return c.json({
+			id: updated.id,
+			starred: !!updated.starred,
+			read: !!updated.read,
+		});
+	},
+);
+
 // v1.3.1 BACKFILL: /api/inbox/send is now a real send.
 //
 // Previously a Wave 1 stub that only wrote to the Sent folder. The full

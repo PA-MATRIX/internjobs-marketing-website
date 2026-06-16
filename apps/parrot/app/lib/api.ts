@@ -158,6 +158,12 @@ export const api = {
 		request<InboxMessage & { body?: string; attachments?: Attachment[] }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
 		),
+	// STAR-API-01: toggle the starred/read flags on a single message.
+	patchMessage: (id: string, patch: { starred?: boolean; read?: boolean }) =>
+		request<{ id: string; starred: boolean; read: boolean }>(
+			`/api/inbox/messages/${encodeURIComponent(id)}`,
+			{ method: "PATCH", body: JSON.stringify(patch) },
+		),
 	// v1.3.1 BACKFILL: sendEmail / replyEmail / forwardEmail.
 	//
 	// All three hit the real reply-forward.ts route handlers (no longer

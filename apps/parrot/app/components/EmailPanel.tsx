@@ -27,7 +27,8 @@
 //     (when wired in Commit C; for v1.3.1 they call the onAgentAction
 //     callback that InboxPane plumbs).
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Forward,
 	PaperclipIcon,
@@ -64,11 +65,34 @@ export function EmailPanel({
 	onForward,
 	onAgentAction,
 }: EmailPanelProps) {
+	const queryClient = useQueryClient();
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["parrot", "inbox", "message", emailId],
 		queryFn: () => api.getMessage(emailId),
 		enabled: !!emailId,
 	});
+
+	// STAR-API-01: live star toggle. Initialised from the query result; once
+	// the user clicks, local state drives the icon (optimistic update).
+	const [starred, setStarred] = useState(false);
+	// Keep local star state in sync with the loaded message.
+	const [starredEmailId, setStarredEmailId] = useState<string | null>(null);
+	if (data && starredEmailId !== emailId) {
+		setStarredEmailId(emailId);
+		setStarred(data.starred ?? false);
+	}
+
+	async function handleStar() {
+		const next = !starred;
+		setStarred(next); // optimistic
+		try {
+			await api.patchMessage(emailId, { starred: next });
+			// Invalidate so the list view reflects the new starred state.
+			queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+		} catch {
+			setStarred(!next); // revert on error
+		}
+	}
 
 	if (isLoading) {
 		return (
@@ -128,19 +152,22 @@ export function EmailPanel({
 							)}
 						</p>
 					</div>
-					{/* Star toggle — visible but read-only in v1.3.1.
-					    TODO PARROT-STAR-API: wire /api/inbox/messages/:id PATCH
-					    once that route lands. */}
+					{/* STAR-API-01: live star toggle wired to PATCH
+					    /api/inbox/messages/:id via api.patchMessage. */}
 					<button
 						type="button"
-						title="Star (coming soon)"
-						aria-label="Star (coming soon)"
-						className="text-slate-300 hover:text-amber-400 disabled:cursor-not-allowed"
-						disabled
+						title={starred ? "Unstar" : "Star"}
+						aria-label={starred ? "Unstar" : "Star"}
+						onClick={handleStar}
+						className={`transition-colors ${
+							starred
+								? "text-amber-400 hover:text-amber-500"
+								: "text-slate-300 hover:text-amber-400"
+						}`}
 					>
 						<Star
 							size={16}
-							fill={email.starred ? "currentColor" : "none"}
+							fill={starred ? "currentColor" : "none"}
 						/>
 					</button>
 				</div>
