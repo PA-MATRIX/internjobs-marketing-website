@@ -164,6 +164,23 @@ export const api = {
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
 			{ method: "PATCH", body: JSON.stringify(patch) },
 		),
+	// PARROT-FOLDER-ACTIONS-01: move message to target folder.
+	moveMessage: (id: string, folder: string) =>
+		request<{ ok: boolean; id: string; folder: string }>(
+			`/api/inbox/messages/${encodeURIComponent(id)}/move`,
+			{ method: "POST", body: JSON.stringify({ folder }) },
+		),
+	// PARROT-FOLDER-ACTIONS-01: two-stage delete.
+	// Server returns { movedToTrash: true } or { hardDeleted: true }.
+	deleteMessage: (id: string) =>
+		request<{
+			ok: boolean;
+			id: string;
+			movedToTrash?: boolean;
+			hardDeleted?: boolean;
+		}>(`/api/inbox/messages/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		}),
 	// v1.3.1 BACKFILL: sendEmail / replyEmail / forwardEmail.
 	//
 	// All three hit the real reply-forward.ts route handlers (no longer

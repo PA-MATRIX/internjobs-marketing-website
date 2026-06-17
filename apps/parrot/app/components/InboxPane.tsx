@@ -44,6 +44,8 @@ function folderTitle(folder: string): string {
 			return "Archive";
 		case "trash":
 			return "Trash";
+		case "starred":
+			return "Starred";
 		default:
 			return "Inbox";
 	}

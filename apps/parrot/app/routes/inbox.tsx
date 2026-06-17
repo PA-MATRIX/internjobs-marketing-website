@@ -5,6 +5,7 @@ import {
 	FileEdit,
 	Inbox as InboxIcon,
 	Send,
+	Star,
 	Tag,
 	Trash2,
 } from "lucide-react";
@@ -12,7 +13,14 @@ import { useSearchParams } from "react-router";
 import { InboxPane } from "~/components/InboxPane";
 import { SecondaryNavItem, WorkspaceShell } from "~/components/WorkspaceShell";
 
-const FOLDERS = new Set(["inbox", "sent", "draft", "archive", "trash"]);
+const FOLDERS = new Set([
+	"inbox",
+	"sent",
+	"draft",
+	"archive",
+	"trash",
+	"starred",
+]);
 
 function normalizeFolder(value: string | null): string {
 	if (!value) return "inbox";
@@ -55,6 +63,12 @@ function EmailSecondaryNav({ activeFolder }: { activeFolder: string }) {
 				active={activeFolder === "trash"}
 				label="Trash"
 				icon={<Trash2 size={15} />}
+			/>
+			<SecondaryNavItem
+				href="/inbox?folder=starred"
+				active={activeFolder === "starred"}
+				label="Starred"
+				icon={<Star size={15} className="text-amber-400" />}
 			/>
 			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
 				Labels
