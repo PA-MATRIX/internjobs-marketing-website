@@ -373,27 +373,31 @@ Plans:
 
 ### Phase 30: Parrot Email-Pane Parity
 
-**Goal**: Close the remaining gaps between the Parrot Workspace email pane and the upstream agentic-inbox reference, WITHOUT regressing Parrot's multi-channel shell. Four tracks: (1) **email actions** — enable the Star toggle, add Archive + Delete, and add a cross-folder Starred view (the DO already has `updateEmail`/`moveEmail`/`deleteEmail`; this is HTTP routes + client helpers + toolbar buttons); (2) **Agent | MCP tabs** — promote the existing chat/"Tools" toggle in AgentPanel into proper segmented Agent | MCP tabs; (3) **auto-draft feed** — generate a draft reply on inbound email and surface a live agent activity feed (the largest track; needs a new inbound backend pipeline and reverses the documented "todo-extraction-not-auto-draft" stance, so scope is locked in discuss-phase); (4) keep the InternJobs-branded multi-channel layout intact (no Kumo skin, no email-only shell).
+**Goal**: Close the remaining gaps between the Parrot Workspace email pane and the upstream agentic-inbox reference, WITHOUT regressing Parrot's multi-channel shell. Four tracks: (1) **email actions** — starred filter in DO + move/delete HTTP routes + Archive & Delete toolbar buttons + toast+Undo + cross-folder Starred view; (2) **Agent | MCP tabs** — promote the existing chat/Tools toggle into proper segmented Agent | MCP tabs; (3) **on-demand agent activity feed** — session-scoped feed logging agent actions + one-click Draft reply; (4) keep the InternJobs multi-channel shell intact (no Kumo skin, no email-only layout). NOTE: auto-draft on inbound is EXPLICITLY OUT OF SCOPE — feed is on-demand only (see 30-CONTEXT.md Decision 1).
 
 **Team owner**: `team-workspace`
 **Branch**: `rrr/v1.4/team-workspace-30` (off `main`)
-**Depends on**: Phase 27 (sequential on team-workspace; star-toggle API seam STAR-API-01 originated there). Soft dependency on PR #12 (`resolveTodosForEmail`) only if track 3 touches the reply path.
+**Depends on**: Phase 27 (sequential on team-workspace; STAR-API-01 PATCH route and EmailPanel star wiring already shipped in prior work). Soft dependency on PR #12 (`resolveTodosForEmail`) not applicable (Track 3 is on-demand only, no reply path touched).
 
-**Requirements**: TBD (defined in /rrr:define-requirements or surfaced in /rrr:discuss-phase 30 — provisional keys: PARROT-STAR-01, PARROT-FOLDER-ACTIONS-01 (archive/delete), PARROT-STARRED-VIEW-01, PARROT-AGENT-MCP-TABS-01, PARROT-AUTODRAFT-01..0N)
+**Requirements**: PARROT-FOLDER-ACTIONS-01 (archive/delete/move), PARROT-STARRED-VIEW-01, PARROT-AGENT-MCP-TABS-01, PARROT-AGENT-FEED-01 (on-demand activity feed)
 
-**Success Criteria** (what must be TRUE): TBD — define during planning. Provisional:
-1. Star button in EmailPanel persists via `PATCH /api/inbox/messages/:id`; the star reflects immediately and survives refresh
-2. Archive moves a message to the Archive folder and Delete moves to Trash (or hard-deletes from Trash); both update the list without a full reload
+**Success Criteria** (what must be TRUE):
+1. Star button in EmailPanel is already live (STAR-API-01 shipped); star persists via `PATCH /api/inbox/messages/:id` and survives refresh
+2. Archive moves a message to Archive; Delete moves to Trash (or hard-deletes from Trash); both update the list without a full reload + show toast with Undo
 3. A "Starred" entry in the email sidebar lists starred messages across all folders
-4. AgentPanel header shows two real tabs — Agent and MCP — and the MCP tab surfaces the tool catalog
-5. (auto-draft, scope TBD) inbound email produces a saved draft + a visible agent-feed entry; prompt-injection-blocked emails do NOT auto-draft
+4. AgentPanel header shows two real segmented tabs — Agent and MCP — and the MCP tab surfaces the existing tool catalog
+5. Agent tab shows a session-scoped activity feed accumulating entries when the user triggers agent actions; each draft entry has a one-click "Draft reply" button (save=true); NO inbound auto-draft pipeline
 
-**Plans**: TBD (run /rrr:plan-phase 30 to break down)
+**Plans**: 5 plans in 3 waves
 
 Plans:
-- [ ] TBD (run /rrr:discuss-phase 30 then /rrr:plan-phase 30 --team team-workspace)
+- [ ] 30-01-PLAN.md — DO starred filter + move/delete HTTP routes (Wave 1, backend)
+- [ ] 30-02-PLAN.md — AgentPanel Agent | MCP segmented tabs (Wave 1, independent)
+- [ ] 30-03-PLAN.md — Client helpers + EmailPanel Archive/Delete + toast+Undo + Starred nav (Wave 2, depends on 30-01)
+- [ ] 30-04-PLAN.md — On-demand agent activity feed in AgentPanel (Wave 2, depends on 30-02)
+- [ ] 30-05-PLAN.md — Vitest smoke tests for new routes + typecheck (Wave 3, depends on 30-01)
 
-**Research flags**: Likely on track 3 (auto-draft) — inbound pipeline + per-inbound LLM cost + injection-safety reuse of the existing `blocked` path need confirming; tracks 1, 2, 4 are wiring on existing code.
+**Research flags**: None — all four tracks are wiring on existing code; on-demand feed uses existing agent endpoints; no new external dependencies.
 
 ---
 
