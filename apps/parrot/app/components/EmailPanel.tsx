@@ -30,11 +30,13 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	Archive,
 	Forward,
 	PaperclipIcon,
 	Reply,
 	Sparkles,
 	Star,
+	Trash2,
 } from "lucide-react";
 import EmailIframe from "./EmailIframe";
 import { EmailAttachmentList } from "./EmailAttachmentList";
@@ -50,6 +52,12 @@ interface EmailPanelProps {
 	onAgentAction?: (
 		action: "summarize" | "draft" | "translate" | "extract" | "chat",
 	) => void;
+	/**
+	 * PARROT-FOLDER-ACTIONS-01: fired after a successful archive/delete so
+	 * InboxPane can clear the selection, invalidate the inbox queries, and
+	 * show a toast (with Undo for archive / move-to-trash).
+	 */
+	onActioned?: (action: "archived" | "deleted" | "moved-to-trash") => void;
 }
 
 function formatDate(iso: string | null | undefined) {
@@ -64,6 +72,7 @@ export function EmailPanel({
 	onReply,
 	onForward,
 	onAgentAction,
+	onActioned,
 }: EmailPanelProps) {
 	const queryClient = useQueryClient();
 	const { data, isLoading, error } = useQuery({
@@ -92,6 +101,21 @@ export function EmailPanel({
 		} catch {
 			setStarred(!next); // revert on error
 		}
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: archive moves the message to the Archive
+	// folder; InboxPane handles list refresh + Undo via onActioned.
+	async function handleArchive() {
+		await api.moveMessage(emailId, "archive");
+		onActioned?.("archived");
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: two-stage delete. The server moves a
+	// non-Trash message to Trash (movedToTrash) or hard-deletes a message
+	// already in Trash (hardDeleted). InboxPane shows the matching toast.
+	async function handleDelete() {
+		const result = await api.deleteMessage(emailId);
+		onActioned?.(result.movedToTrash ? "moved-to-trash" : "deleted");
 	}
 
 	if (isLoading) {
@@ -189,6 +213,22 @@ export function EmailPanel({
 					>
 						<Forward size={12} />
 						Forward
+					</button>
+					<button
+						type="button"
+						onClick={handleArchive}
+						className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+					>
+						<Archive size={12} />
+						Archive
+					</button>
+					<button
+						type="button"
+						onClick={handleDelete}
+						className="inline-flex items-center gap-1.5 rounded-md border border-red-100 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+					>
+						<Trash2 size={12} />
+						Delete
 					</button>
 					<EmailToChat emailId={emailId} />
 					<StartMeeting />

@@ -34,6 +34,12 @@ interface InboxPaneProps {
 	initialMessageId?: string | null;
 }
 
+// PARROT-FOLDER-ACTIONS-01: inline archive/delete toast.
+interface ToastState {
+	message: string;
+	undoFn?: () => void;
+}
+
 function folderTitle(folder: string): string {
 	switch (folder) {
 		case "sent":
@@ -97,6 +103,45 @@ export function InboxPane({
 	const [agentOpen, setAgentOpen] = useState(false);
 	const [agentInitialAction, setAgentInitialAction] =
 		useState<AgentInitialAction | null>(null);
+
+	// PARROT-FOLDER-ACTIONS-01: inline toast for archive/delete feedback.
+	// undoFn is undefined for hard-deletes (no undo possible).
+	const [toast, setToast] = useState<ToastState | null>(null);
+
+	function showToast(message: string, undoFn?: () => void) {
+		setToast({ message, undoFn });
+		setTimeout(() => setToast(null), 4000);
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: EmailPanel calls this after a successful
+	// archive/delete. We clear the selection (EmailPanel unmounts), invalidate
+	// the inbox queries (prefix match cascades to folder lists + message
+	// caches), and show the matching toast. Archive / move-to-trash get an
+	// Undo that re-moves the message back to the folder we were viewing.
+	async function handleActioned(
+		action: "archived" | "deleted" | "moved-to-trash",
+	) {
+		const previousFolder = folder;
+		const previousId = selectedId;
+
+		setSelectedId(null);
+		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+
+		if (action === "archived" || action === "moved-to-trash") {
+			const label =
+				action === "archived" ? "Archived — Undo" : "Moved to Trash — Undo";
+			showToast(label, async () => {
+				if (previousId) {
+					await api.moveMessage(previousId, previousFolder);
+					queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+				}
+				setToast(null);
+			});
+		} else {
+			// hard-deleted: no undo possible
+			showToast("Deleted permanently");
+		}
+	}
 
 	function openCompose(mode: ComposeMode) {
 		setComposeMode(mode);
@@ -164,7 +209,7 @@ export function InboxPane({
 	return (
 		<div className="relative flex h-full min-h-0">
 			<div
-				className={`w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:block md:w-80 lg:w-96 ${
+				className={`relative w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:block md:w-80 lg:w-96 ${
 					selectedId ? "hidden" : "block"
 				}`}
 			>
@@ -248,6 +293,21 @@ export function InboxPane({
 						))}
 					</ul>
 				)}
+				{/* PARROT-FOLDER-ACTIONS-01: archive/delete toast with Undo. */}
+				{toast && (
+					<div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-slate-800 px-4 py-2.5 text-xs text-white shadow-lg">
+						<span>{toast.message}</span>
+						{toast.undoFn && (
+							<button
+								type="button"
+								onClick={toast.undoFn}
+								className="font-semibold underline hover:no-underline"
+							>
+								Undo
+							</button>
+						)}
+					</div>
+				)}
 			</div>
 
 			{/* Email viewer pane — uses EmailPanel which itself uses
@@ -279,6 +339,7 @@ export function InboxPane({
 							onReply={() => openCompose("reply")}
 							onForward={() => openCompose("forward")}
 							onAgentAction={(action) => openAgent(action)}
+							onActioned={handleActioned}
 						/>
 					</div>
 				) : (
