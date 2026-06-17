@@ -286,18 +286,33 @@ export function AgentPanel({
 					</span>
 				</div>
 				<div className="flex items-center gap-1">
+					{/* Segmented tab: Agent */}
 					<button
 						type="button"
-						onClick={() => setTab(tab === "tools" ? "chat" : "tools")}
-						className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+						onClick={() => setTab("chat")}
+						className={`inline-flex items-center gap-0.5 rounded-l border px-2 py-0.5 text-[10px] font-medium ${
+							tab === "chat"
+								? "border-indigo-300 bg-indigo-50 text-indigo-700"
+								: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+						}`}
+						title="Agent chat and quick actions"
+					>
+						<Sparkles size={10} />
+						Agent
+					</button>
+					{/* Segmented tab: MCP */}
+					<button
+						type="button"
+						onClick={() => setTab("tools")}
+						className={`inline-flex items-center gap-0.5 rounded-r border-t border-r border-b px-2 py-0.5 text-[10px] font-medium ${
 							tab === "tools"
 								? "border-indigo-300 bg-indigo-50 text-indigo-700"
 								: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
 						}`}
-						title="Show tool catalog"
+						title="MCP tool catalog"
 					>
 						<Wrench size={10} />
-						Tools
+						MCP
 					</button>
 					<button
 						type="button"
