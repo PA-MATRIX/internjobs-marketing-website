@@ -1,13 +1,15 @@
 ---
 phase: 30-parrot-email-pane-parity
 verified: 2026-06-18
-status: human_needed
-score: 17/17 automated must-haves verified
+status: passed
+score: 17/17 automated must-haves + 6/6 browser UAT verified
 ---
 
 # Phase 30: Parrot Email-Pane Parity — Verification Report
 
-**Status:** `human_needed` — all automated/code-side checks pass; the live browser walkthrough is deferred to the operator window (Clerk prod keys are domain-locked, so local visual UAT is blocked — a known workstream constraint, not a code gap).
+**Status:** `passed` — all 17 code-side must-haves verified AND all 6 browser UAT checks passed by the operator on 2026-06-18 against the deployed branch (Worker Version `680fd480-a009-4530-b5ec-879150ba966b` on `workspace.internjobs.ai`). 6/6: star persistence, cross-folder Starred view, Archive+Undo, two-stage Delete, Agent|MCP tabs, on-demand feed cross-email correctness.
+
+> **Open before PR:** operator has a few additional UI refinements to make within this phase (2026-06-19) before drafting the PR. Phase stays in-progress until those land.
 
 **Gates:** `npm test` → **13/13 passed** (7 files; 3 new inbox-actions smoke tests + 10 prior). `npm run typecheck` (tsc -b) → **exit 0**.
 
