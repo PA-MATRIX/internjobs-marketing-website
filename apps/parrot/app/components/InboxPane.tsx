@@ -15,7 +15,7 @@
 // invalidated so the new message lands in Sent on next pane switch.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, PenSquare, Sparkles } from "lucide-react";
+import { ArrowLeft, PenSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
 import { AgentPanel, type AgentInitialAction } from "./AgentPanel";
@@ -119,7 +119,7 @@ export function InboxPane({
 	// caches), and show the matching toast. Archive / move-to-trash get an
 	// Undo that re-moves the message back to the folder we were viewing.
 	async function handleActioned(
-		action: "archived" | "deleted" | "moved-to-trash",
+		action: "archived" | "unarchived" | "deleted" | "moved-to-trash",
 	) {
 		const previousFolder = folder;
 		const previousId = selectedId;
@@ -127,9 +127,17 @@ export function InboxPane({
 		setSelectedId(null);
 		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
 
-		if (action === "archived" || action === "moved-to-trash") {
+		if (
+			action === "archived" ||
+			action === "unarchived" ||
+			action === "moved-to-trash"
+		) {
 			const label =
-				action === "archived" ? "Archived — Undo" : "Moved to Trash — Undo";
+				action === "archived"
+					? "Archived — Undo"
+					: action === "unarchived"
+						? "Moved to Inbox — Undo"
+						: "Moved to Trash — Undo";
 			showToast(label, async () => {
 				if (previousId) {
 					await api.moveMessage(previousId, previousFolder);
@@ -213,7 +221,10 @@ export function InboxPane({
 					selectedId ? "hidden" : "block"
 				}`}
 			>
-				{/* v1.3.1 BACKFILL: Compose button + Agent toggle. */}
+				{/* v1.3.1 BACKFILL: Compose button. The Parrot Agent is now
+				    opened from the Agent button inside an open email
+				    (EmailPanel), since the agent always operates on the
+				    currently-viewed message. */}
 				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between gap-2">
 					<div className="min-w-0">
 						<p className="truncate text-sm font-semibold text-slate-900">
@@ -229,19 +240,6 @@ export function InboxPane({
 						>
 							<PenSquare size={13} />
 							Compose
-						</button>
-						<button
-							type="button"
-							onClick={() => setAgentOpen((v) => !v)}
-							className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
-								agentOpen
-									? "border-indigo-300 bg-indigo-50 text-indigo-700"
-									: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-							}`}
-							title="Toggle Parrot Agent"
-						>
-							<Sparkles size={12} />
-							Agent
 						</button>
 					</div>
 				</div>
@@ -336,9 +334,10 @@ export function InboxPane({
 					<div className="min-h-0 flex-1">
 						<EmailPanel
 							emailId={selectedId}
+							folder={folder}
 							onReply={() => openCompose("reply")}
 							onForward={() => openCompose("forward")}
-							onAgentAction={(action) => openAgent(action)}
+							onOpenAgent={() => openAgent()}
 							onActioned={handleActioned}
 						/>
 					</div>
