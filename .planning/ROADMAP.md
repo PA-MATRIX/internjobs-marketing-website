@@ -6,7 +6,7 @@
 - ✅ **v1.1 Seamless Waitlist and Student Threading** — Phase 07 (shipped 2026-05-15)
 - ✅ **v1.2 Two-Sided Agent MVP** — Phases 08–17 (shipped 2026-05-19)
 - ✅ **v1.3 Pilot Hardening** — Phases 18–20 shipped; Phase 21 skipped (sole-user deferral). Plus un-roadmapped Neon-exit shipped 2026-05-21.
-- 🚧 **v1.4 Pilot Readiness** — Phases 22–27 (first team-mode milestone: `team-cms` + `team-workspace`)
+- ✅ **v1.4 Pilot Readiness** — Phases 22–29 (first team-mode milestone: `team-cms` + `team-workspace`; shipped to `main` 2026-06-16)
 
 ## Overview
 
@@ -18,12 +18,12 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - Integer phases (22-27): Planned v1.4 work
 - Decimal phases (e.g., 22.1): Reserved for urgent insertions during execution
 
-- [ ] **Phase 22: Lakera Verification + Marketing Brand Refresh** — *team-cms*. Verify Lakera (Cisco AI Defense) v2 schema in production + run 3 student-SMS-path safety tests live + apply v1.0 brand system to `apps/marketing/` (lavender anchor + ink + lime/tangerine/cobalt accents + Inter type + new logo pack + voice rewrites)
-- [ ] **Phase 23: Workspace Pilot Closeouts** — *team-workspace*. closeTodoFact writer + Workspace email Lakera test + attachment download + agent-lift authenticated UAT
+- [x] **Phase 22: Lakera Verification + Marketing Brand Refresh** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans). Lakera live-verified in production (9 injection prompts hard-blocked, sender_last4=4287, 21:06–21:19Z; pre/post smoking gun v54 score=0→v55 score=1); v1.0 brand system live on `https://internjobs.ai` (7 rounds iterative visual QA, e83d122→ae1f5cb). **Deferred to v1.5:** VERIFY-LIVE-03 (fail-open via invalid key — destructive, user declined; substitutes accepted) + Lakera tier/quota confirmation at dashboard sign-in (`infra/LAKERA-PRICING.md`).
+- [x] **Phase 23: Workspace Pilot Closeouts** — *team-workspace* — SHIPPED 2026-06-10 (4/4 plans). closeTodoFact writer + Workspace email Lakera test + attachment download + agent-lift authenticated UAT.
 - [x] **Phase 24: Neon-Exit Closeout** — *team-cms* — SHIPPED 2026-05-25 (2/2 plans). End-to-end verification of new student-app `/internal/safety-events` API + planning doc refresh.
-- [ ] **Phase 25: SSO Activation + Admin UX** — *team-workspace*. Mattermost OIDC SSO activation + frontend admin page with capability toggles + orphan Neon dep cleanup
-- [ ] **Phase 26: Knowledge Graph + GenZ Polish** — *team-workspace*. FalkorDB `:Employee` namespace reuse for Workspace agent + Mattermost GIF picker + canvas-confetti micro-animations
-- [ ] **Phase 27: Polish + Test Floor** — *team-workspace*. Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes
+- [x] **Phase 25: SSO Activation + Admin UX** — *team-workspace* — SHIPPED 2026-06-08 (3/3 plans). Mattermost OIDC SSO activation + frontend admin page with capability toggles + orphan Neon dep cleanup.
+- [x] **Phase 26: Knowledge Graph + GenZ Polish** — *team-workspace* — SHIPPED 2026-06-10 (2/2 plans). FalkorDB `:Employee` namespace reuse for Workspace agent + Mattermost GIF picker + canvas-confetti micro-animations.
+- [x] **Phase 27: Polish + Test Floor** — *team-workspace* — SHIPPED 2026-06-16 (2/2 plans). Daily.co theme retry + star-toggle API + `formatQuotedDate` cleanup + Vitest smoke tests for Workspace Worker routes (now CI-enforced via the parrot job).
 - [x] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01 per explicit user decision). New `apps/startup/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
 - [x] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms* — CODE-COMPLETE 2026-05-25 (5/5 plans; ops-config deferred to PHASE-28.5-DEFERRED-OPS.md — 12 user-action steps including DNS, Email Routing domain verification, wrangler secret put for STARTUPS_CLERK_*, Clerk webhook registration). Inserted between Phase 28 and Phase 29 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
 - [x] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms* — CODE-COMPLETE 2026-05-25 (3/3 plans; ops-config deferred to PHASE-29-DEFERRED-OPS.md — 22 user-action steps spanning DEFER-29-01-A..K + 29-02-A..F + 29-03-A..E, including Telnyx account signup + BRN submission + number purchase + API key + Voice AI portal config + R2 bucket + KV namespace + cron deploy + first pilot E2E). Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
@@ -384,12 +384,12 @@ Plans:
 
 | Phase | Milestone | Owner | Plans Complete | Status | Completed |
 |-------|-----------|-------|----------------|--------|-----------|
-| 22. Lakera Verification + Marketing Brand Refresh | v1.4 | team-cms | 0/5 | In progress (4/5 plans ✓ shipped + brand patches) | — |
-| 23. Workspace Pilot Closeouts | v1.4 | team-workspace | 0/TBD | Not started | — |
+| 22. Lakera Verification + Marketing Brand Refresh | v1.4 | team-cms | 5/5 | ✓ Shipped (Lakera live-verified; brand live; VERIFY-LIVE-03 → v1.5) | 2026-05-25 |
+| 23. Workspace Pilot Closeouts | v1.4 | team-workspace | 4/4 | ✓ Shipped (PR #5) | 2026-06-10 |
 | 24. Neon-Exit Closeout | v1.4 | team-cms | 2/2 | ✓ Shipped | 2026-05-25 |
-| 25. SSO Activation + Admin UX | v1.4 | team-workspace | 0/TBD | Not started | — |
-| 26. Knowledge Graph + GenZ Polish | v1.4 | team-workspace | 0/TBD | Not started | — |
-| 27. Polish + Test Floor | v1.4 | team-workspace | 0/TBD | Not started | — |
+| 25. SSO Activation + Admin UX | v1.4 | team-workspace | 3/3 | ✓ Shipped (PR #3) | 2026-06-08 |
+| 26. Knowledge Graph + GenZ Polish | v1.4 | team-workspace | 2/2 | ✓ Shipped (PR #5) | 2026-06-10 |
+| 27. Polish + Test Floor | v1.4 | team-workspace | 2/2 | ✓ Shipped (PR #7) | 2026-06-16 |
 | 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 5/5 | ✓ Shipped (live pilot test deferred to v1.5) | 2026-05-25 |
 | 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 5/5 | ✓ Code-complete (ops deferred) | 2026-05-25 |
 | 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 3/3 | ✓ Code-complete (ops deferred) | 2026-05-25 |
