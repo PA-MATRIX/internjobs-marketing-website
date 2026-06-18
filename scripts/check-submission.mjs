@@ -15,11 +15,14 @@
 //   - the phase encoded in the branch name is in `phases_completed`
 //   - its recorded `head_sha` is in this branch's history (tamper / staleness)
 //
-// Non-team branches (e.g. an integration -> main promotion PR) are not subject
-// to the gate: the script reports "not applicable" and exits 0.
+// Two classes of PR are exempt and pass as "not applicable":
+//   - non-team branches (e.g. an integration -> main promotion PR)
+//   - documentation-only PRs (only `.md` / `.planning/**` changed) — these ship
+//     no code, so they carry no submission obligation. Requires a base SHA to
+//     compute the diff; without one we fall through to the normal check.
 //
 // Usage:
-//   node scripts/check-submission.mjs --head-ref <ref> [--head-sha <sha>]
+//   node scripts/check-submission.mjs --head-ref <ref> [--head-sha <sha>] [--base-sha <sha>]
 //   node scripts/check-submission.mjs            # derive ref/sha from local git
 
 import { readFileSync } from "node:fs";
@@ -31,9 +34,15 @@ const repoRoot = process.cwd();
 
 const headRef = args["head-ref"] || gitHeadRef();
 const headSha = args["head-sha"] || gitHeadSha();
+const baseSha = args["base-sha"] || null;
 
-// rrr/<ver>/team-<name>[-<phase>]   e.g. rrr/v1.4/team-workspace-27, rrr/v1.4/team-cms
-const TEAM_BRANCH = /^rrr\/[^/]+\/(team-[a-z0-9-]+?)(?:-(\d+(?:\.\d+)?))?$/;
+// rrr/<ver>/team-<name>[-<phase>][-<suffix>]
+//   team  = "team-" + letter words (cms, workspace) — never digits
+//   phase = first numeric token after the team (optional; e.g. 26, 28.5)
+//   suffix= optional descriptive tail (e.g. -docs, -chat-provisioning)
+// Examples: team-workspace-27, team-workspace-26-docs, team-cms-28.5, team-cms
+const TEAM_BRANCH =
+  /^rrr\/[^/]+\/(team-[a-z]+(?:-[a-z]+)*)(?:-(\d+(?:\.\d+)?))?(?:-[a-z][a-z0-9-]*)?$/;
 
 const match = headRef ? TEAM_BRANCH.exec(headRef) : null;
 if (!match) {
@@ -42,6 +51,15 @@ if (!match) {
 
 const team = match[1];
 const branchPhase = match[2] || null; // may be null for a bare team branch
+
+// Documentation-only exemption — a PR that touches no code ships no phase.
+const changed = changedFiles(baseSha, headSha);
+if (changed && changed.length && changed.every(isDocFile)) {
+  pass(
+    `docs-only PR (${changed.length} file(s), all .md/.planning) — no code shipped, gate not applicable.`,
+  );
+}
+
 const submissionPath = path.join(repoRoot, ".planning", "workstreams", team, "SUBMISSION.json");
 
 let submission;
@@ -120,6 +138,24 @@ function parseArgs(argv) {
 
 function normalizePhase(p) {
   return String(p).trim().replace(/^0+(?=\d)/, "");
+}
+
+// Files a PR adds relative to its base, via three-dot (merge-base..head) so a
+// stale branch isn't charged with everything the base has moved on to. Returns
+// null when we can't compute it (no base sha or no git) — caller then skips the
+// docs exemption rather than guessing.
+function changedFiles(base, head) {
+  if (!base || !head || !gitAvailable()) return null;
+  try {
+    const out = git(["diff", "--name-only", `${base}...${head}`]);
+    return out ? out.split("\n").map(s => s.trim()).filter(Boolean) : [];
+  } catch {
+    return null;
+  }
+}
+
+function isDocFile(f) {
+  return f.startsWith(".planning/") || /\.mdx?$/.test(f);
 }
 
 function git(argv) {

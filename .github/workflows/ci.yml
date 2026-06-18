@@ -26,9 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
+      # Default checkout = the PR merge ref (head merged onto base). This keeps
+      # the gate script present even when the head branch predates the gate, as
+      # long as the base branch carries it — so a stale team branch can't dodge
+      # the check just by not having the script.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -38,6 +41,7 @@ jobs:
           node scripts/check-submission.mjs
           --head-ref "${{ github.head_ref }}"
           --head-sha "${{ github.event.pull_request.head.sha }}"
+          --base-sha "${{ github.event.pull_request.base.sha }}"
 
   # ---- Root npm workspaces: marketing (CMS) · app (student) · employers ----
   workspaces:
