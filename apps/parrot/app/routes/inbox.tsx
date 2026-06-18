@@ -68,7 +68,7 @@ function EmailSecondaryNav({ activeFolder }: { activeFolder: string }) {
 				href="/inbox?folder=starred"
 				active={activeFolder === "starred"}
 				label="Starred"
-				icon={<Star size={15} className="text-amber-400" />}
+				icon={<Star size={15} />}
 			/>
 			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
 				Labels
