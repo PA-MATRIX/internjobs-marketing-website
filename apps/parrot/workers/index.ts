@@ -350,6 +350,27 @@ app.get("/api/inbox/messages", requireEmployeeMailbox, async (c: AppContext) => 
 	return c.json({ emails, totalCount, folder });
 });
 
+// PARROT-FOLDER-COUNTS-01: total message count per folder, for the sidebar
+// badges. "starred" is the cross-folder virtual view (same as the list
+// route). One COUNT(*) per folder — cheap, and the result is cached/
+// invalidated alongside the inbox queries on the client.
+app.get(
+	"/api/inbox/folder-counts",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const stub = c.var.mailboxStub;
+		const [inbox, sent, draft, archive, trash, starred] = await Promise.all([
+			stub.countEmails({ folder: "inbox" }),
+			stub.countEmails({ folder: "sent" }),
+			stub.countEmails({ folder: "draft" }),
+			stub.countEmails({ folder: "archive" }),
+			stub.countEmails({ folder: "trash" }),
+			stub.countEmails({ starred: true }),
+		]);
+		return c.json({ inbox, sent, draft, archive, trash, starred });
+	},
+);
+
 app.get(
 	"/api/inbox/messages/:id",
 	requireEmployeeMailbox,

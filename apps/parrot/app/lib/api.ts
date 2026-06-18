@@ -131,6 +131,16 @@ export interface InboxListResponse {
 	folder: string;
 }
 
+// PARROT-FOLDER-COUNTS-01: total message count per folder (sidebar badges).
+export interface FolderCounts {
+	inbox: number;
+	sent: number;
+	draft: number;
+	archive: number;
+	trash: number;
+	starred: number;
+}
+
 // — Phase 13 Wave 1: notifications + push.
 export interface NotificationItem {
 	id: string;
@@ -154,6 +164,9 @@ export const api = {
 		request<InboxListResponse>(
 			`/api/inbox/messages?folder=${encodeURIComponent(folder)}`,
 		),
+	// PARROT-FOLDER-COUNTS-01: total message count per folder for the
+	// sidebar badges.
+	getFolderCounts: () => request<FolderCounts>("/api/inbox/folder-counts"),
 	getMessage: (id: string) =>
 		request<InboxMessage & { body?: string; attachments?: Attachment[] }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}`,

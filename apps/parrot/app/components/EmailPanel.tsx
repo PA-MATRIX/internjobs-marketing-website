@@ -27,7 +27,7 @@
 //     (when wired in Commit C; for v1.3.1 they call the onAgentAction
 //     callback that InboxPane plumbs).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Archive,
@@ -98,6 +98,23 @@ export function EmailPanel({
 		setStarredEmailId(emailId);
 		setStarred(data.starred ?? false);
 	}
+
+	// READ-ON-OPEN-01: mark an unread message read as soon as it is opened, so
+	// the bold/unread styling in the list clears. The guard on `data.read`
+	// means the PATCH fires once; the subsequent inbox invalidation refetches
+	// the message with read=true, which keeps the effect from re-firing.
+	useEffect(() => {
+		if (data && !data.read) {
+			api
+				.patchMessage(emailId, { read: true })
+				.then(() => {
+					queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+				})
+				.catch(() => {
+					// Non-fatal: failing to mark read just leaves the row bold.
+				});
+		}
+	}, [data, emailId, queryClient]);
 
 	async function handleStar() {
 		const next = !starred;
