@@ -454,10 +454,22 @@ Marketing site + LinkedIn Clerk auth + Postgres schema + Photon/Spectrum SMS + w
 - **KGRAPH-METRICS** — Quantitative metric on duplicate-todo-rate reduction (qualitative pass in v1.4).
 - **PARROT-NAME-AUDIT** — Decide whether to rename `apps/parrot/` → `apps/workspace/` (cosmetic).
 
+**Workspace surfaces — truthful thin integration (team-workspace):**
+- **WORKSPACE-TRUE-INTEGRATION** — Make each Workspace pane a faithful, thin *entry point* into its real backing service so the Workspace reflects reality. **Do NOT redo or reinvent the underlying UX/UI; integrate, don't rebuild. Existing Workspace UI stays as-is.** (Directive: Raj → Nithin, 2026-06-17.)
+  - **Mail** → direct integration of the **Agent Inbox** (`apps/agentic-inbox` / `agent.internjobs.ai` MCP mailbox) — the email pane *is* the agent inbox, not a separate reimplementation.
+  - **Chat** → **Mattermost** (existing white-label proxy) as the chat surface.
+  - **SMS + phone call** → **Parrot** (ParrotAgent — Telnyx + Cloudflare Voice per the phone/SMS dialer architecture) as the call/text surface.
+  - Scope is wiring/integration + navigation entry only — no new UX, no redesign of any backing tool.
+
+**Startup pilot bring-up — ops + live (team-cms):**
+- **STARTUP-28.5-OPS-LIVE** — Execute `PHASE-28.5-DEFERRED-OPS.md` (12 user-action steps: DNS, Email Routing domain verification, `wrangler secret put STARTUPS_CLERK_*`, Clerk webhook registration) to bring `startups.internjobs.ai` + per-startup agent email live.
+- **STARTUP-29-OPS-LIVE** — Execute `PHASE-29-DEFERRED-OPS.md` (22 user-action steps: Telnyx signup + toll-free number + BRN submission + API key + Voice AI portal config + R2 bucket + KV namespace + cron deploy) to bring Telnyx SMS + Voice AI live.
+- **LAKERA-VERIFY-LIVE-03 + TIER-CONFIRM** — Reopen the deferred Lakera fail-open test (if pilot-critical) + tier/quota confirmation at dashboard sign-in (`infra/LAKERA-PRICING.md`).
+- (STARTUP-PILOT-LIVE-01, STARTUP-SLACK/DISCORD/TEAMS/EMAIL adapters, and STARTUP-A2P-10DLC-MIGRATE listed above remain team-cms and pilot-demand-gated.)
+
 ---
 
 **Next Steps:**
-1. (Optional) `/rrr:assign-phases` — formalize team assignments per phase in `.planning/team-mode.json`
-2. `/rrr:plan-phase 22` — Build the execution plan for Phase 22 (Lakera Production Verification) — *team-cms*
-3. In parallel: `/rrr:dispatch-team --team team-workspace` to prep the Workspace branch
-4. Optionally `/rrr:discuss-phase 22` first to surface implementation context
+1. v1.4 is shipped to `main` (2026-06-16). To open v1.5: `/rrr:new-milestone` → `/rrr:discuss-milestone` → `/rrr:create-roadmap`, promoting the v1.5 Candidates above into numbered phases.
+2. `/rrr:assign-phases` — assign the v1.5 phases across `team-cms` (startup bring-up) and `team-workspace` (WORKSPACE-TRUE-INTEGRATION) in `.planning/team-mode.json`.
+3. The coordinator cuts `integration/v1.5` (inherits the `integration/**` ruleset automatically) before either team branches off it.
