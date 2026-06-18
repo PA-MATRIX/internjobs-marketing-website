@@ -9,7 +9,7 @@ score: 17/17 automated must-haves + 6/6 browser UAT verified
 
 **Status:** `passed` — all 17 code-side must-haves verified AND all 6 browser UAT checks passed by the operator on 2026-06-18 against the deployed branch (Worker Version `680fd480-a009-4530-b5ec-879150ba966b` on `workspace.internjobs.ai`). 6/6: star persistence, cross-folder Starred view, Archive+Undo, two-stage Delete, Agent|MCP tabs, on-demand feed cross-email correctness.
 
-> **Open before PR:** operator has a few additional UI refinements to make within this phase (2026-06-19) before drafting the PR. Phase stays in-progress until those land.
+> **Post-UAT UI refinements (landed + operator-verified 2026-06-18, Worker `32e7e24d-29c8-4d3f-a3dd-e88a451b0420`):** six follow-up tweaks requested by the operator after the 6/6 UAT, each deployed and visually verified before the next. See "Post-UAT UI refinements" section below. PR drafted after all six landed.
 
 **Gates:** `npm test` → **13/13 passed** (7 files; 3 new inbox-actions smoke tests + 10 prior). `npm run typecheck` (tsc -b) → **exit 0**.
 
@@ -42,6 +42,24 @@ Run when an operator session with valid Clerk prod auth is available:
 3. Delete from Inbox → moves to Trash (Undo works); Delete again from Trash → permanent (no Undo).
 4. AgentPanel: Agent | MCP tabs switch; MCP tab shows the tool catalog.
 5. Trigger Summarize/Draft on email A → feed entry appears; navigate to email B → click email A's feed "Draft reply" → draft is for A, not B.
+
+## Post-UAT UI refinements (2026-06-18)
+
+Operator-requested follow-ups after the 6/6 UAT. Each was implemented on
+`rrr/v1.4/team-workspace-30`, typecheck (`tsc -b` exit 0) + `npm test`
+(13/13) re-run, deployed, and visually verified by the operator before the
+next one. Final deployed Worker: `32e7e24d-29c8-4d3f-a3dd-e88a451b0420`.
+
+| Commit | Change | Verified |
+|--------|--------|----------|
+| `d70270e` | Starred folder nav icon: drop `text-amber-400` so it matches the other folder icons | ✓ |
+| `82cf4ad` | Email toolbar: Reply/Forward/Archive/Delete → icon-only with title+aria-label tooltips; three inline AI buttons + the list-header Agent toggle replaced by a single "Agent" button in the email toolbar that opens the right panel; Archive button becomes "Unarchive" (→ Inbox) when viewing the Archive folder | ✓ |
+| `e1fd002` | Clicking a Drafts row opens the draft in the ComposePane editor ("Edit draft", new `draft` mode) instead of the read-only viewer; sends threaded when `in_reply_to` present, then removes the draft from Drafts | ✓ |
+| `2b0b85b` | Per-folder count badges via new `GET /api/inbox/folder-counts` (total per folder, wired into `SecondaryNavItem`); mark-read on open (EmailPanel PATCHes `read=true` so the unread/bold styling clears) | ✓ |
+
+Known follow-up (out of scope, not blocking): editing a draft and closing
+without sending does not persist the edits back to the draft — there is no
+update-draft endpoint yet.
 
 ## Notes
 - Star toggle + `PATCH /api/inbox/messages/:id` were already shipped on `main` by Phase 27; Phase 30 did not re-implement them.
