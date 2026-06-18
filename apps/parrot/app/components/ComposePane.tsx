@@ -5,14 +5,22 @@
 // dependency. Parrot doesn't use Kumo anywhere else (see InboxPane.tsx,
 // WorkspaceShell.tsx) and we're not going to take it on just for compose.
 //
-// Three modes:
+// Four modes:
 //   - mode='compose'  — fresh email, POSTs to /api/inbox/send
 //   - mode='reply'    — threaded reply, POSTs to /api/inbox/messages/:id/reply
 //   - mode='forward'  — new thread, POSTs to /api/inbox/messages/:id/forward
+//   - mode='draft'    — continue editing a saved draft (the agent's
+//                       "Draft reply" / "Draft email"). Loads the draft's
+//                       own to/subject/body verbatim. On send it threads as
+//                       a reply when the draft has an in_reply_to pointer,
+//                       otherwise sends fresh; InboxPane then removes the
+//                       draft from the Drafts folder.
 //
 // Pre-filled fields:
 //   - reply: to = original sender, subject prefixed with "Re:"
 //   - forward: subject prefixed with "Fwd:", body quotes original
+//   - draft: to/subject/body taken straight from the saved draft (the
+//     quoted original, if any, is already baked into the draft body)
 //
 // The Banner-style error display, the Send button states, and the close
 // behavior all follow Parrot's existing slate-tone Tailwind palette so
@@ -24,20 +32,30 @@ import { api, ApiError, type InboxMessage } from "~/lib/api";
 import { fireConfetti, incrementEmailRespondedCount } from "~/lib/confetti";
 import RichTextEditor from "./RichTextEditor";
 
-export type ComposeMode = "compose" | "reply" | "forward";
+export type ComposeMode = "compose" | "reply" | "forward" | "draft";
 
 interface ComposePaneProps {
 	mode: ComposeMode;
 	/**
-	 * Original message for reply/forward modes.
+	 * Original message for reply/forward modes, or the saved draft itself
+	 * for draft mode.
 	 *
 	 * v1.3.1 Agent Lift: `agent_draft_body` is an optional shadow field
 	 * injected by InboxPane when the user clicks "Edit in compose" on an
 	 * agent-generated draft. When present, the reply body is pre-filled
 	 * with the agent text followed by the standard quoted block.
+	 *
+	 * For draft mode, `cc` / `bcc` / `in_reply_to` come straight off the
+	 * saved draft row (the message GET returns the full record).
 	 */
 	original?:
-		| (InboxMessage & { body?: string; agent_draft_body?: string })
+		| (InboxMessage & {
+				body?: string;
+				agent_draft_body?: string;
+				cc?: string | null;
+				bcc?: string | null;
+				in_reply_to?: string | null;
+		  })
 		| null;
 	onClose: () => void;
 	onSent?: (sentMessageId: string) => void;
@@ -102,12 +120,33 @@ export function ComposePane({
 			setTo("");
 			setSubject(prefixSubject("Fwd:", original.subject));
 			setBody(buildQuotedHtml(original));
+		} else if (mode === "draft" && original) {
+			// Continue a saved draft: load its own fields verbatim. The draft
+			// body already contains any quoted-original block, so we do NOT
+			// re-quote here.
+			setTo(original.recipient ?? "");
+			if (original.cc) {
+				setCc(original.cc);
+				setShowCcBcc(true);
+			}
+			if (original.bcc) {
+				setBcc(original.bcc);
+				setShowCcBcc(true);
+			}
+			setSubject(original.subject ?? "");
+			setBody(original.body ?? "");
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const formTitle =
-		mode === "reply" ? "Reply" : mode === "forward" ? "Forward" : "New message";
+		mode === "reply"
+			? "Reply"
+			: mode === "forward"
+				? "Forward"
+				: mode === "draft"
+					? "Edit draft"
+					: "New message";
 
 	async function handleSend(e: React.FormEvent) {
 		e.preventDefault();
@@ -153,6 +192,14 @@ export function ComposePane({
 				result = await api.replyEmail(original.id, payload);
 			} else if (mode === "forward" && original) {
 				result = await api.forwardEmail(original.id, payload);
+			} else if (mode === "draft" && original) {
+				// Send the saved draft. If it points at an original email
+				// (agent reply draft), thread it via the reply route so the
+				// In-Reply-To/References headers are preserved; otherwise send
+				// it as a fresh email.
+				result = original.in_reply_to
+					? await api.replyEmail(original.in_reply_to, payload)
+					: await api.sendEmail(payload);
 			} else {
 				result = await api.sendEmail(payload);
 			}

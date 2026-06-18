@@ -97,6 +97,14 @@ export function InboxPane({
 	// modal is open. `composeOriginal` is only set for reply/forward.
 	const [composeMode, setComposeMode] = useState<ComposeMode | null>(null);
 
+	// PARROT-DRAFT-EDIT-01: the saved draft currently being edited. Set when
+	// the user clicks a row in the Drafts folder; ComposePane opens in
+	// 'draft' mode pre-filled with this message and, on send, the draft is
+	// removed from Drafts.
+	const [draftMessage, setDraftMessage] = useState<
+		(InboxMessage & { body?: string }) | null
+	>(null);
+
 	// v1.3.1 Agent Lift: agent panel state. `agentOpen` controls the
 	// right-side AgentPanel visibility; `agentInitialAction` triggers a
 	// quick-action on open (summarize / draft / extract / translate).
@@ -157,11 +165,38 @@ export function InboxPane({
 
 	function closeCompose() {
 		setComposeMode(null);
+		setDraftMessage(null);
 	}
 
 	function handleSent() {
 		// Invalidate so the Sent folder (and inbox unread counts) refresh on
 		// next pane switch. Compose pane already closes itself.
+		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+	}
+
+	// PARROT-DRAFT-EDIT-01: clicking a Drafts row opens the draft in the
+	// ComposePane editor (not the read-only EmailPanel). We fetch the full
+	// record first so the editor can pre-fill to/subject/body (+ cc/bcc and
+	// the in_reply_to threading pointer).
+	async function openDraft(id: string) {
+		const full = await api.getMessage(id);
+		setDraftMessage(full);
+		setComposeMode("draft");
+	}
+
+	// PARROT-DRAFT-EDIT-01: after a draft is sent, remove it from the Drafts
+	// folder (the sent copy now lives in Sent) and refresh the lists.
+	async function handleDraftSent() {
+		const draftId = draftMessage?.id;
+		if (draftId) {
+			try {
+				await api.deleteMessage(draftId);
+			} catch {
+				// Non-fatal: the email already sent; a lingering draft is
+				// recoverable by the user. Don't surface an error for it.
+			}
+		}
+		setDraftMessage(null);
 		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
 	}
 
@@ -257,7 +292,11 @@ export function InboxPane({
 							<li key={msg.id}>
 								<button
 									type="button"
-									onClick={() => setSelectedId(msg.id)}
+									onClick={() =>
+										folder === "draft"
+											? openDraft(msg.id)
+											: setSelectedId(msg.id)
+									}
 									className={`w-full text-left px-4 py-3 hover:bg-slate-50 ${
 										selectedId === msg.id ? "bg-slate-100" : ""
 									}`}
@@ -385,9 +424,15 @@ export function InboxPane({
 			{composeMode && (
 				<ComposePane
 					mode={composeMode}
-					original={composeMode === "compose" ? null : selected ?? null}
+					original={
+						composeMode === "compose"
+							? null
+							: composeMode === "draft"
+								? draftMessage
+								: selected ?? null
+					}
 					onClose={closeCompose}
-					onSent={handleSent}
+					onSent={composeMode === "draft" ? handleDraftSent : handleSent}
 				/>
 			)}
 		</div>
