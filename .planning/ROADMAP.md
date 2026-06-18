@@ -407,7 +407,15 @@ Plans:
 
 **Open technical decisions** (for research/planning): per-user token storage (Workers KV vs DO vs Clerk privateMetadata vs encrypted column); keep the bot for system/agent messages (hybrid); WebSocket path (browser→MM direct vs Worker-proxied Cloudflare WS).
 
-**Plans**: TBD (likely 6, ~one per wave)
+**Plans**: 6 plans
+
+Plans:
+- [ ] 31-01-PLAN.md — Wave 0: per-user MM PAT in WorkspaceDO + mmFetchAsUser + backfill (CHAT-TOKEN-01..03)
+- [ ] 31-02-PLAN.md — Wave 1: channel browser/create/join + thread panel + edit/delete/pin (CHAT-CHAN-01..04)
+- [ ] 31-03-PLAN.md — Wave 2: DMs + group DMs + user picker + DM section in nav (CHAT-DM-01..03)
+- [ ] 31-04-PLAN.md — Wave 3: file upload streaming proxy + search + reactions + @mentions (CHAT-RICH-01..04)
+- [ ] 31-05-PLAN.md — Wave 4: Worker-proxied WebSocket + typing/presence + unread + offline email (CHAT-RT-01..04)
+- [ ] 31-06-PLAN.md — Wave 5: Fly secret hygiene + Vitest coverage + employee UAT (CHAT-HARD-01..03)
 
 **Research flags**: Likely (MM WebSocket auth from a Worker-proxied browser session; per-user PAT minting + storage; multipart file upload through the Worker proxy)
 
