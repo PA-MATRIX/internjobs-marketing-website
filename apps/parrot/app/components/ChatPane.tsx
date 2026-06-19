@@ -16,6 +16,7 @@
 //   - Per-message action row: Reply / Edit (own) / Delete (own) / Pin.
 
 import {
+	useCallback,
 	useEffect,
 	useMemo,
 	useRef,
@@ -236,6 +237,20 @@ function mmUserDisplayName(user: MmUser): string {
 	return user.nickname || full || user.username || user.email || "Teammate";
 }
 
+// Wave 4 (31-05): presence dot color for an MM status string.
+function presenceDotClass(status: string | null | undefined): string {
+	switch (status) {
+		case "online":
+			return "bg-emerald-500";
+		case "away":
+			return "bg-amber-400";
+		case "dnd":
+			return "bg-rose-500";
+		default:
+			return "bg-slate-300"; // offline / unknown
+	}
+}
+
 function orderedPosts(data?: MmPostList): MmPost[] {
 	if (!data?.posts) return [];
 	const values = Object.values(data.posts);
@@ -376,6 +391,117 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 	return parts.length ? parts : text;
 }
 
+// ── Wave 4 (31-05): real-time WebSocket hook ──────────────────────────
+//
+// Replaces the 5s post polling. Connects to the Worker-proxied /api/chat/ws
+// (the Worker authenticates with the employee PAT server-side — the browser
+// never sees the token). Dispatches MM events (`posted`, `typing`,
+// `status_change`, `channel_viewed`) to the provided callbacks. Reconnects
+// with exponential backoff. Returns `sendTyping()` to emit `user_typing`.
+//
+// Callbacks are held in a ref so the socket handlers always see the latest
+// closures WITHOUT tearing down + reconnecting the socket on every render.
+interface ChatWsCallbacks {
+	onPosted: (post: MmPost) => void;
+	onTyping: (channelId: string, userId: string) => void;
+	onStatusChange: (userId: string, status: string) => void;
+	onChannelViewed: (channelId: string) => void;
+}
+
+function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
+	const wsRef = useRef<WebSocket | null>(null);
+	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const attemptsRef = useRef(0);
+	const closedByUnmountRef = useRef(false);
+	const cbRef = useRef(callbacks);
+	cbRef.current = callbacks;
+
+	useEffect(() => {
+		if (!enabled) return;
+		if (typeof window === "undefined") return;
+		closedByUnmountRef.current = false;
+
+		function connect() {
+			if (wsRef.current?.readyState === WebSocket.OPEN) return;
+			const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+			const ws = new WebSocket(
+				`${protocol}//${window.location.host}/api/chat/ws`,
+			);
+			wsRef.current = ws;
+
+			ws.onopen = () => {
+				attemptsRef.current = 0;
+			};
+
+			ws.onmessage = (evt) => {
+				try {
+					const msg = JSON.parse(evt.data as string) as {
+						event?: string;
+						data?: Record<string, unknown>;
+					};
+					const cb = cbRef.current;
+					if (msg.event === "posted") {
+						const raw = msg.data?.post;
+						const post =
+							typeof raw === "string"
+								? (JSON.parse(raw) as MmPost)
+								: (raw as MmPost | undefined);
+						if (post?.id) cb.onPosted(post);
+					} else if (msg.event === "typing") {
+						const channelId = msg.data?.channel_id as string | undefined;
+						const userId = msg.data?.user_id as string | undefined;
+						if (channelId && userId) cb.onTyping(channelId, userId);
+					} else if (msg.event === "status_change") {
+						const userId = msg.data?.user_id as string | undefined;
+						const status = msg.data?.status as string | undefined;
+						if (userId && status) cb.onStatusChange(userId, status);
+					} else if (msg.event === "channel_viewed") {
+						const channelId = msg.data?.channel_id as string | undefined;
+						if (channelId) cb.onChannelViewed(channelId);
+					}
+				} catch {
+					/* malformed frame (e.g. MM "hello"/"pong" non-JSON) — ignore */
+				}
+			};
+
+			ws.onclose = () => {
+				if (closedByUnmountRef.current) return;
+				// Exponential backoff: 2s → 4s → 8s → 16s, capped at 30s.
+				const delay = Math.min(2000 * 2 ** attemptsRef.current, 30000);
+				attemptsRef.current = Math.min(attemptsRef.current + 1, 4);
+				reconnectTimerRef.current = setTimeout(connect, delay);
+			};
+
+			ws.onerror = () => {
+				ws.close();
+			};
+		}
+
+		connect();
+
+		return () => {
+			closedByUnmountRef.current = true;
+			if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+			wsRef.current?.close(1000, "component_unmount");
+			wsRef.current = null;
+		};
+	}, [enabled]);
+
+	const sendTyping = useCallback((channelId: string) => {
+		if (wsRef.current?.readyState === WebSocket.OPEN) {
+			wsRef.current.send(
+				JSON.stringify({
+					seq: Date.now(),
+					action: "user_typing",
+					data: { channel_id: channelId, parent_id: "" },
+				}),
+			);
+		}
+	}, []);
+
+	return { sendTyping };
+}
+
 export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const queryClient = useQueryClient();
 	const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -417,6 +543,23 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	// @mention autocomplete.
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 	const draftRef = useRef<HTMLTextAreaElement | null>(null);
+
+	// Wave 4 (31-05): real-time state.
+	// typingState[channelId][userId] = last-typing timestamp (ms). Pruned every 1s.
+	const [typingState, setTypingState] = useState<
+		Record<string, Record<string, number>>
+	>({});
+	// presenceMap[userId] = "online" | "away" | "offline" | "dnd".
+	const [presenceMap, setPresenceMap] = useState<Record<string, string>>({});
+	// Channels/DMs with unread posts (not currently viewed).
+	const [unreadChannels, setUnreadChannels] = useState<Set<string>>(
+		() => new Set(),
+	);
+	// Debounce guard so we emit at most one user_typing per 2s.
+	const lastTypingSentRef = useRef(0);
+	// Keep the active channel id in a ref so WS callbacks (stable closures) can
+	// read the CURRENT active channel without re-subscribing the socket.
+	const activeIdRef = useRef<string | null>(null);
 
 	const bootstrap = useQuery({
 		queryKey: ["native-chat", "bootstrap"],
@@ -472,10 +615,12 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		}
 	}, [activeChannelId, channels]);
 
+	// Wave 4 (31-05): WebSocket delivers new posts in real time, so the 5s
+	// polling is gone. The query still runs once on channel switch for the
+	// initial backfill; live updates arrive via the `posted` WS event below.
 	const postsQuery = useQuery({
 		queryKey: ["native-chat", "posts", activeId],
 		enabled: Boolean(activeId),
-		refetchInterval: 5_000,
 		retry: false,
 		queryFn: () =>
 			chatFetch<MmPostList>(
@@ -548,6 +693,187 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 			)
 			.slice(0, 6);
 	}, [mentionQuery, teamMembersQuery.data]);
+
+	// ── Wave 4 (31-05): real-time wiring ──────────────────────────────
+
+	// Keep the active-channel ref current for the stable WS callbacks.
+	useEffect(() => {
+		activeIdRef.current = activeId;
+	}, [activeId]);
+
+	// Mark-read mutation: clears MM's unread tracking for the employee.
+	const markRead = useMutation({
+		mutationFn: (channelId: string) =>
+			chatFetch<{ ok: boolean }>(
+				`/api/chat/channels/${channelId}/mark-read`,
+				{ method: "POST" },
+			),
+	});
+
+	// Initial presence for everyone the employee might see (DM partners + team
+	// members). Refreshed live via the `status_change` WS event; this query just
+	// seeds the map and re-syncs every 60s as a safety net.
+	const presenceIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const u of teamMembersQuery.data ?? []) ids.add(u.id);
+		for (const user of usersQuery.data ?? []) ids.add(user.id);
+		if (me?.id) ids.delete(me.id);
+		return [...ids];
+	}, [teamMembersQuery.data, usersQuery.data, me?.id]);
+
+	const presenceQuery = useQuery({
+		queryKey: ["native-chat", "presence", presenceIds.join(",")],
+		enabled: Boolean(bootstrap.data) && presenceIds.length > 0,
+		refetchInterval: 60_000,
+		retry: false,
+		queryFn: () =>
+			chatFetch<Array<{ user_id: string; status: string }>>(
+				`/api/chat/presence?ids=${encodeURIComponent(presenceIds.join(","))}`,
+			),
+	});
+
+	useEffect(() => {
+		if (!presenceQuery.data) return;
+		setPresenceMap((prev) => {
+			const next = { ...prev };
+			for (const s of presenceQuery.data) next[s.user_id] = s.status;
+			return next;
+		});
+	}, [presenceQuery.data]);
+
+	// WS callbacks. Stable identities (the hook holds them in a ref), so they may
+	// freely read activeIdRef / queryClient without re-subscribing the socket.
+	const handlePosted = useCallback(
+		(post: MmPost) => {
+			const currentActive = activeIdRef.current;
+			if (post.channel_id === currentActive) {
+				// Append to the active channel's cache so it renders instantly.
+				queryClient.setQueryData<MmPostList>(
+					["native-chat", "posts", currentActive],
+					(prev) => {
+						const posts = { ...(prev?.posts ?? {}) };
+						if (posts[post.id]) return prev; // dedupe (we may have just sent it)
+						posts[post.id] = post;
+						const order = prev?.order ? [...prev.order] : [];
+						if (!order.includes(post.id)) order.unshift(post.id);
+						return { ...prev, posts, order };
+					},
+				);
+			} else {
+				// A post in a channel we're not viewing → mark unread.
+				setUnreadChannels((prev) => {
+					if (prev.has(post.channel_id)) return prev;
+					const next = new Set(prev);
+					next.add(post.channel_id);
+					return next;
+				});
+			}
+		},
+		[queryClient],
+	);
+
+	const handleTyping = useCallback((channelId: string, userId: string) => {
+		setTypingState((prev) => ({
+			...prev,
+			[channelId]: { ...(prev[channelId] ?? {}), [userId]: Date.now() },
+		}));
+	}, []);
+
+	const handleStatusChange = useCallback((userId: string, status: string) => {
+		setPresenceMap((prev) => ({ ...prev, [userId]: status }));
+	}, []);
+
+	const handleChannelViewed = useCallback((channelId: string) => {
+		setUnreadChannels((prev) => {
+			if (!prev.has(channelId)) return prev;
+			const next = new Set(prev);
+			next.delete(channelId);
+			return next;
+		});
+	}, []);
+
+	const { sendTyping } = useChatWebSocket(Boolean(bootstrap.data), {
+		onPosted: handlePosted,
+		onTyping: handleTyping,
+		onStatusChange: handleStatusChange,
+		onChannelViewed: handleChannelViewed,
+	});
+
+	// Prune stale typing entries (older than 3s) once per second.
+	useEffect(() => {
+		const interval = setInterval(() => {
+			const cutoff = Date.now() - 3000;
+			setTypingState((prev) => {
+				let changed = false;
+				const next: Record<string, Record<string, number>> = {};
+				for (const [channelId, users] of Object.entries(prev)) {
+					const kept: Record<string, number> = {};
+					for (const [userId, ts] of Object.entries(users)) {
+						if (ts >= cutoff) kept[userId] = ts;
+						else changed = true;
+					}
+					if (Object.keys(kept).length) next[channelId] = kept;
+				}
+				return changed ? next : prev;
+			});
+		}, 1000);
+		return () => clearInterval(interval);
+	}, []);
+
+	// Dispatch a window event whenever the unread-channel count changes so
+	// WorkspaceShell can drive the Chat nav badge (see Task 3 listener).
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("chat-unread-change", {
+				detail: { count: unreadChannels.size },
+			}),
+		);
+	}, [unreadChannels]);
+
+	// When the active channel changes, clear its unread flag (optimistically) and
+	// tell MM to mark it read.
+	useEffect(() => {
+		if (!activeId) return;
+		setUnreadChannels((prev) => {
+			if (!prev.has(activeId)) return prev;
+			const next = new Set(prev);
+			next.delete(activeId);
+			return next;
+		});
+		markRead.mutate(activeId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeId]);
+
+	// Map a display name → status, so a DM row (which carries partner NAMES, not
+	// ids) can show a presence dot by resolving the name against team members.
+	const statusByName = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const u of teamMembersQuery.data ?? []) {
+			const status = presenceMap[u.id];
+			if (status) map.set(mmUserDisplayName(u).toLowerCase(), status);
+		}
+		return map;
+	}, [teamMembersQuery.data, presenceMap]);
+
+	function dmPresence(dm: MmChannel): string | null {
+		if (dm.type !== "D") return null; // only 1:1 DMs get a single dot
+		const partner = dm.dm_partner_names?.[0];
+		if (!partner) return null;
+		return statusByName.get(partner.toLowerCase()) ?? null;
+	}
+
+	// Names of teammates currently typing in the active channel (excluding self).
+	const typingNames = useMemo(() => {
+		if (!activeId) return [] as string[];
+		const users = typingState[activeId] ?? {};
+		return Object.keys(users)
+			.filter((uid) => uid !== me?.id)
+			.map((uid) => {
+				const u = usersById.get(uid);
+				return u ? mmUserDisplayName(u) : "Someone";
+			});
+	}, [typingState, activeId, me?.id, usersById]);
 
 	const sendMessage = useMutation({
 		mutationFn: (input: { message: string; fileIds: string[] }) =>
@@ -814,6 +1140,13 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		const upToCaret = value.slice(0, caret);
 		const match = /\B@(\w*)$/.exec(upToCaret);
 		setMentionQuery(match ? match[1] : null);
+		// Wave 4 (31-05): emit a typing event (debounced to once per 2s) so other
+		// employees viewing this channel see the typing indicator.
+		const now = Date.now();
+		if (activeId && value && now - lastTypingSentRef.current > 2000) {
+			lastTypingSentRef.current = now;
+			sendTyping(activeId);
+		}
 	}
 
 	function insertMention(username: string) {
@@ -905,7 +1238,8 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									<Icon size={14} className="shrink-0 text-slate-400" />
 									<span className="truncate">{channelLabel(channel)}</span>
 								</span>
-								{channel.has_unreads && (
+								{(channel.has_unreads ||
+									unreadChannels.has(channel.id)) && (
 									<span
 										aria-hidden="true"
 										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
@@ -944,6 +1278,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 					dms.map((dm) => {
 						const active = dm.id === activeId;
 						const label = dmLabel(dm);
+						const presence = dmPresence(dm);
 						return (
 							<button
 								key={dm.id}
@@ -956,16 +1291,23 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								}`}
 							>
 								<span className="flex min-w-0 items-center gap-2">
-									<span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
+									<span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
 										{dm.type === "G" ? (
 											<Users size={11} />
 										) : (
 											initials(label)
 										)}
+										{presence && (
+											<span
+												aria-hidden="true"
+												title={presence}
+												className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-white ${presenceDotClass(presence)}`}
+											/>
+										)}
 									</span>
 									<span className="truncate">{label}</span>
 								</span>
-								{dm.has_unreads && (
+								{(dm.has_unreads || unreadChannels.has(dm.id)) && (
 									<span
 										aria-hidden="true"
 										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
@@ -1377,6 +1719,24 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								})
 							)}
 						</div>
+
+						{/* Wave 4 (31-05): typing indicator */}
+						{typingNames.length > 0 && (
+							<div className="flex items-center gap-1.5 px-4 pb-1 text-xs italic text-slate-500 sm:px-6">
+								<span className="flex gap-0.5">
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+								</span>
+								<span>
+									{typingNames.length === 1
+										? `${typingNames[0]} is typing…`
+										: typingNames.length === 2
+											? `${typingNames[0]} and ${typingNames[1]} are typing…`
+											: "Several people are typing…"}
+								</span>
+							</div>
+						)}
 
 						<form
 							onSubmit={onSubmit}
