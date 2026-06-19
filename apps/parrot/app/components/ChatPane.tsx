@@ -427,6 +427,14 @@ interface ChatWsCallbacks {
 	onTyping: (channelId: string, userId: string) => void;
 	onStatusChange: (userId: string, status: string) => void;
 	onChannelViewed: (channelId: string) => void;
+	// #6b: a post was edited / deleted by anyone (live for other viewers).
+	onPostEdited: (post: MmPost) => void;
+	onPostDeleted: (postId: string, channelId: string) => void;
+	// #12b: a reaction was added/removed by anyone (live for all viewers).
+	onReaction: (
+		kind: "added" | "removed",
+		reaction: MmReaction & { post_id: string },
+	) => void;
 }
 
 function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
@@ -461,13 +469,38 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 						data?: Record<string, unknown>;
 					};
 					const cb = cbRef.current;
+					// MM embeds the post object as a JSON STRING in data.post for
+					// posted/post_edited; parse it once here.
+					const parsePost = (raw: unknown): MmPost | undefined =>
+						typeof raw === "string"
+							? (JSON.parse(raw) as MmPost)
+							: (raw as MmPost | undefined);
 					if (msg.event === "posted") {
-						const raw = msg.data?.post;
-						const post =
-							typeof raw === "string"
-								? (JSON.parse(raw) as MmPost)
-								: (raw as MmPost | undefined);
+						const post = parsePost(msg.data?.post);
 						if (post?.id) cb.onPosted(post);
+					} else if (msg.event === "post_edited") {
+						// #6b: live edit — replace the post text in place.
+						const post = parsePost(msg.data?.post);
+						if (post?.id) cb.onPostEdited(post);
+					} else if (msg.event === "post_deleted") {
+						// #6b: live delete — remove the post for other viewers.
+						const post = parsePost(msg.data?.post);
+						if (post?.id) cb.onPostDeleted(post.id, post.channel_id);
+					} else if (
+						msg.event === "reaction_added" ||
+						msg.event === "reaction_removed"
+					) {
+						// #12b: MM sends the reaction as a JSON string in data.reaction.
+						const raw = msg.data?.reaction;
+						const reaction = (
+							typeof raw === "string" ? JSON.parse(raw) : raw
+						) as (MmReaction & { post_id?: string }) | undefined;
+						if (reaction?.post_id && reaction.emoji_name && reaction.user_id) {
+							cb.onReaction(
+								msg.event === "reaction_added" ? "added" : "removed",
+								reaction as MmReaction & { post_id: string },
+							);
+						}
 					} else if (msg.event === "typing") {
 						const channelId = msg.data?.channel_id as string | undefined;
 						const userId = msg.data?.user_id as string | undefined;
@@ -793,6 +826,91 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		[queryClient],
 	);
 
+	// #6b: live edit — replace the post text/metadata in its channel cache.
+	const handlePostEdited = useCallback(
+		(post: MmPost) => {
+			queryClient.setQueryData<MmPostList>(
+				["native-chat", "posts", post.channel_id],
+				(prev) => {
+					if (!prev?.posts?.[post.id]) return prev;
+					return {
+						...prev,
+						posts: {
+							...prev.posts,
+							// Merge so we keep any fields the WS payload omits (e.g. reactions).
+							[post.id]: { ...prev.posts[post.id], ...post },
+						},
+					};
+				},
+			);
+		},
+		[queryClient],
+	);
+
+	// #6b: live delete — drop the post from its channel cache for other viewers.
+	const handlePostDeleted = useCallback(
+		(postId: string, channelId: string) => {
+			queryClient.setQueryData<MmPostList>(
+				["native-chat", "posts", channelId],
+				(prev) => {
+					if (!prev?.posts?.[postId]) return prev;
+					const posts = { ...prev.posts };
+					delete posts[postId];
+					return {
+						...prev,
+						posts,
+						order: prev.order?.filter((id) => id !== postId),
+					};
+				},
+			);
+		},
+		[queryClient],
+	);
+
+	// #12b: live reaction add/remove — patch the target post's reactions array
+	// in its channel cache so the chip count updates for every viewer.
+	const handleReaction = useCallback(
+		(kind: "added" | "removed", reaction: MmReaction & { post_id: string }) => {
+			// We don't know which channel the post is in from the reaction payload,
+			// so patch across every cached channel post-list that holds the post.
+			const queries = queryClient.getQueryCache().findAll({
+				queryKey: ["native-chat", "posts"],
+			});
+			for (const q of queries) {
+				queryClient.setQueryData<MmPostList>(q.queryKey, (prev) => {
+					const target = prev?.posts?.[reaction.post_id];
+					if (!target) return prev;
+					const current = target.reactions ?? [];
+					let nextReactions: MmReaction[];
+					if (kind === "added") {
+						const exists = current.some(
+							(r) =>
+								r.user_id === reaction.user_id &&
+								r.emoji_name === reaction.emoji_name,
+						);
+						nextReactions = exists ? current : [...current, reaction];
+					} else {
+						nextReactions = current.filter(
+							(r) =>
+								!(
+									r.user_id === reaction.user_id &&
+									r.emoji_name === reaction.emoji_name
+								),
+						);
+					}
+					return {
+						...prev,
+						posts: {
+							...prev!.posts,
+							[reaction.post_id]: { ...target, reactions: nextReactions },
+						},
+					};
+				});
+			}
+		},
+		[queryClient],
+	);
+
 	const handleTyping = useCallback((channelId: string, userId: string) => {
 		setTypingState((prev) => ({
 			...prev,
@@ -818,6 +936,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		onTyping: handleTyping,
 		onStatusChange: handleStatusChange,
 		onChannelViewed: handleChannelViewed,
+		onPostEdited: handlePostEdited,
+		onPostDeleted: handlePostDeleted,
+		onReaction: handleReaction,
 	});
 
 	// Prune stale typing entries (older than 3s) once per second.
@@ -1026,9 +1147,11 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		onSuccess: () => setPinToast("Pinned"),
 	});
 
-	// Wave 3 (31-04): toggle an emoji reaction. POST to add, DELETE to remove —
-	// the caller passes `mine` to pick the direction. Optimistic-free: we just
-	// refetch the channel posts (MM embeds reactions on the post object).
+	// Wave 3 (31-04) / #12b: toggle an emoji reaction. POST to add, DELETE to
+	// remove — the caller passes `mine` to pick the direction. We OPTIMISTICALLY
+	// patch the active channel's cached post so the chip appears/disappears
+	// instantly; the WS reaction_added/reaction_removed event then keeps every
+	// other viewer in sync (and reconciles us). On error we roll back.
 	const toggleReaction = useMutation({
 		mutationFn: (input: { postId: string; emojiName: string; mine: boolean }) =>
 			chatFetch<{ ok: boolean }>("/api/chat/reactions", {
@@ -1038,11 +1161,56 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 					emoji_name: input.emojiName,
 				}),
 			}),
-		onSuccess: async () => {
+		onMutate: async (input) => {
 			setReactionPickerPostId(null);
-			await queryClient.invalidateQueries({
-				queryKey: ["native-chat", "posts", activeId],
+			const key = ["native-chat", "posts", activeId];
+			await queryClient.cancelQueries({ queryKey: key });
+			const previous = queryClient.getQueryData<MmPostList>(key);
+			queryClient.setQueryData<MmPostList>(key, (prev) => {
+				const target = prev?.posts?.[input.postId];
+				if (!target) return prev;
+				const current = target.reactions ?? [];
+				let nextReactions: MmReaction[];
+				if (input.mine) {
+					nextReactions = current.filter(
+						(r) =>
+							!(
+								r.user_id === me?.id && r.emoji_name === input.emojiName
+							),
+					);
+				} else {
+					const exists = current.some(
+						(r) =>
+							r.user_id === me?.id && r.emoji_name === input.emojiName,
+					);
+					nextReactions = exists
+						? current
+						: [
+								...current,
+								{
+									user_id: me?.id ?? "",
+									emoji_name: input.emojiName,
+									post_id: input.postId,
+								},
+							];
+				}
+				return {
+					...prev,
+					posts: {
+						...prev!.posts,
+						[input.postId]: { ...target, reactions: nextReactions },
+					},
+				};
 			});
+			return { previous };
+		},
+		onError: (_err, _input, context) => {
+			if (context?.previous) {
+				queryClient.setQueryData(
+					["native-chat", "posts", activeId],
+					context.previous,
+				);
+			}
 		},
 	});
 
@@ -1741,7 +1909,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							)}
 						</div>
 
-						{/* Wave 4 (31-05): typing indicator */}
+						{/* #15: typing indicator with animated waving dots, just above the
+						    composer. In a DM we show only the dots; in a channel/group we
+						    name the typer(s). */}
 						{typingNames.length > 0 && (
 							<div className="flex items-center gap-1.5 px-4 pb-1 text-xs italic text-slate-500 sm:px-6">
 								<span className="flex gap-0.5">
@@ -1749,13 +1919,15 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
 									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
 								</span>
-								<span>
-									{typingNames.length === 1
-										? `${typingNames[0]} is typing…`
-										: typingNames.length === 2
-											? `${typingNames[0]} and ${typingNames[1]} are typing…`
-											: "Several people are typing…"}
-								</span>
+								{!activeIsDm && (
+									<span>
+										{typingNames.length === 1
+											? `${typingNames[0]} is typing…`
+											: typingNames.length === 2
+												? `${typingNames[0]} and ${typingNames[1]} are typing…`
+												: "Several people are typing…"}
+									</span>
+								)}
 							</div>
 						)}
 
