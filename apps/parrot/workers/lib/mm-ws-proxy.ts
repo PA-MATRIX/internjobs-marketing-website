@@ -52,29 +52,51 @@ export async function handleChatWebSocket(
 	const client = pair[0];
 	const server = pair[1];
 
-	// Derive the WS URL from MATTERMOST_URL (https:// → wss://). If the nginx
-	// proxy can't pass WS upgrades, MATTERMOST_WS_URL overrides it (see header).
-	const mmWsUrl =
-		((env as unknown as { MATTERMOST_WS_URL?: string }).MATTERMOST_WS_URL ||
-			env.MATTERMOST_URL.replace(/^https/, "wss").replace(/^http/, "ws")) +
-		"/api/v4/websocket";
+	// Derive the upstream URL. Cloudflare Workers open OUTBOUND WebSockets via
+	// `fetch()` with an `Upgrade: websocket` header (the browser-style
+	// `new WebSocket(url)` constructor is NOT supported for client connections in
+	// the Workers runtime), so we use the http(s):// scheme here, not ws(s)://.
+	// MATTERMOST_WS_URL overrides the host if the nginx proxy can't pass WS
+	// upgrades (see header); it may be given as ws(s):// or http(s):// — normalize.
+	const wsOverride = (env as unknown as { MATTERMOST_WS_URL?: string })
+		.MATTERMOST_WS_URL;
+	const mmUpgradeUrl =
+		(wsOverride
+			? wsOverride.replace(/^wss/, "https").replace(/^ws/, "http")
+			: env.MATTERMOST_URL) + "/api/v4/websocket";
 
-	// Open the upstream connection to Mattermost's WebSocket.
-	const upstream = new WebSocket(mmWsUrl);
+	// Open the upstream connection to Mattermost's WebSocket via fetch upgrade.
+	let upstream: WebSocket;
+	try {
+		const upstreamResp = await fetch(mmUpgradeUrl, {
+			headers: { Upgrade: "websocket", Connection: "Upgrade" },
+		});
+		const ws = upstreamResp.webSocket;
+		if (!ws) {
+			return Response.json(
+				{ error: "upstream_ws_failed", status: upstreamResp.status },
+				{ status: 502 },
+			);
+		}
+		upstream = ws;
+	} catch {
+		return Response.json({ error: "upstream_ws_unreachable" }, { status: 502 });
+	}
 
-	upstream.addEventListener("open", () => {
-		// Authenticate upstream with the PAT. This frame is sent to MM ONLY and
-		// is never forwarded to the browser — the browser's `server` socket only
-		// ever receives MM's RESPONSE frames (hello / posted / typing / …),
-		// none of which echo the token back.
-		upstream.send(
-			JSON.stringify({
-				seq: 1,
-				action: "authentication_challenge",
-				data: { token: tokenRow.token },
-			}),
-		);
-	});
+	// Accept the upstream socket, then authenticate with the PAT. This frame is
+	// sent to MM ONLY and is never forwarded to the browser — the browser's
+	// `server` socket only ever receives MM's RESPONSE frames (hello / posted /
+	// typing / …), none of which echo the token back. With the fetch-upgrade
+	// pattern the socket is already open after accept(), so there is no "open"
+	// event to wait for — send the challenge immediately.
+	upstream.accept();
+	upstream.send(
+		JSON.stringify({
+			seq: 1,
+			action: "authentication_challenge",
+			data: { token: tokenRow.token },
+		}),
+	);
 
 	// Bidirectional proxy. No filtering is required: the only place the PAT
 	// appears is the authentication_challenge above, which is sent on `upstream`
