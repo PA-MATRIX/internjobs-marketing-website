@@ -65,8 +65,31 @@ export function WorkspaceShell({
 	title,
 }: WorkspaceShellProps) {
 	const location = useLocation();
+	const navigate = useNavigate();
 	const { data: me } = useCurrentEmployee();
 	const [drawerOpen, setDrawerOpen] = useState(false);
+	// #11: the global header search was a disabled input (cursor-not-allowed,
+	// untypeable). Make it a real search box that drives the Chat pane search.
+	const [headerSearch, setHeaderSearch] = useState("");
+
+	function runHeaderSearch() {
+		const term = headerSearch.trim();
+		if (!term) return;
+		// Ask the Chat pane to open its search with this term. If we're not on the
+		// chat route, navigate there first — ChatPane mounts and the event fires
+		// after a tick so the listener is ready.
+		const onChat = location.pathname.startsWith("/chat");
+		const dispatch = () =>
+			window.dispatchEvent(
+				new CustomEvent("chat-search", { detail: { term } }),
+			);
+		if (onChat) {
+			dispatch();
+		} else {
+			navigate("/chat");
+			setTimeout(dispatch, 150);
+		}
+	}
 
 	// Phase 13 Wave 1: register the push service worker once on mount.
 	// The actual push opt-in lives in the onboarding wizard (Plan 13-03);
@@ -246,9 +269,16 @@ export function WorkspaceShell({
 					<div className="flex items-center gap-3">
 						<input
 							type="search"
-							placeholder="Search"
-							disabled
-							className="hidden md:block w-64 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm placeholder:text-slate-400 disabled:cursor-not-allowed"
+							placeholder="Search messages"
+							value={headerSearch}
+							onChange={(e) => setHeaderSearch(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									runHeaderSearch();
+								}
+							}}
+							className="hidden md:block w-64 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
 						/>
 						{/* Phase 13 Wave 1: notification bell. Red dot when unread > 0. */}
 						<button

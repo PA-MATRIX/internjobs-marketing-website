@@ -1421,6 +1421,20 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [searchOpen]);
 
+	// #11: the WorkspaceShell header search dispatches a `chat-search` event;
+	// open the in-pane search with the supplied term (which then runs
+	// POST /api/chat/search via the debounce effect above).
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		function onChatSearch(e: Event) {
+			const term = (e as CustomEvent<{ term?: string }>).detail?.term ?? "";
+			setSearchOpen(true);
+			setSearchValue(term);
+		}
+		window.addEventListener("chat-search", onChatSearch);
+		return () => window.removeEventListener("chat-search", onChatSearch);
+	}, []);
+
 	function closeSearch() {
 		setSearchOpen(false);
 		setSearchValue("");
