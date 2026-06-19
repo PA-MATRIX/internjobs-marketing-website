@@ -563,3 +563,153 @@ export async function mmFetchAsUser<T>(
 
 	return result;
 }
+
+// ── Phase 31 Wave 1 (plan 31-02): channel CRUD + thread ops ─────────
+//
+// All of these take a bearer token directly. The Worker routes pass the
+// employee's own PAT (via mmFetchAsUser) so channel creates/joins, post
+// edits/deletes/pins, and thread replies are authored AS the real MM user —
+// reusing the Wave 0 identity rather than the parrot bot.
+
+/**
+ * Create a Mattermost channel. type "O" = public (any employee), "P" =
+ * private (operator-only, gated in the route). Returns the channel or null.
+ */
+export async function createMmChannel(
+	mattermostUrl: string,
+	token: string,
+	teamId: string,
+	name: string,
+	displayName: string,
+	type: "O" | "P",
+): Promise<MattermostChannel | null> {
+	const resp = await mmFetch<MattermostChannel>(
+		mattermostUrl,
+		token,
+		"/api/v4/channels",
+		{
+			method: "POST",
+			body: JSON.stringify({
+				team_id: teamId,
+				name,
+				display_name: displayName,
+				type,
+			}),
+		},
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * Add the given user to a channel (the employee joins themselves). MM returns
+ * 201 on success and 400 if already a member — both are treated as success.
+ */
+export async function joinMmChannel(
+	mattermostUrl: string,
+	token: string,
+	channelId: string,
+	userId: string,
+): Promise<boolean> {
+	const resp = await mmFetch<unknown>(
+		mattermostUrl,
+		token,
+		`/api/v4/channels/${channelId}/members`,
+		{ method: "POST", body: JSON.stringify({ user_id: userId }) },
+	);
+	return resp.ok || resp.status === 400;
+}
+
+/** Edit a post's message. Returns the updated post or null. */
+export async function editMmPost(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+	message: string,
+): Promise<MattermostPost | null> {
+	const resp = await mmFetch<MattermostPost>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}`,
+		{ method: "PUT", body: JSON.stringify({ id: postId, message }) },
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/** Delete a post. Returns true on success. */
+export async function deleteMmPost(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+): Promise<boolean> {
+	const resp = await mmFetch<unknown>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}`,
+		{ method: "DELETE" },
+	);
+	return resp.ok;
+}
+
+/** Pin a post to its channel. Returns true on success. */
+export async function pinMmPost(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+): Promise<boolean> {
+	// MM v4 pins via the post resource: POST /api/v4/posts/{id}/pin.
+	const resp = await mmFetch<unknown>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}/pin`,
+		{ method: "POST" },
+	);
+	return resp.ok;
+}
+
+/** Fetch the full thread (root + replies) for a post. */
+export async function getMmPostThread(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+): Promise<MattermostPostList | null> {
+	const resp = await mmFetch<MattermostPostList>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}/thread`,
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/** Fetch a single post (used to verify authorship before edit/delete). */
+export async function getMmPost(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+): Promise<MattermostPost | null> {
+	const resp = await mmFetch<MattermostPost>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}`,
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * List the public channels of a team using the EMPLOYEE's PAT (not the bot),
+ * so the response reflects the user's own visibility/membership state. MM
+ * returns only channels the requesting user can see for a non-admin token.
+ */
+export async function getMmTeamPublicChannels(
+	mattermostUrl: string,
+	token: string,
+	teamId: string,
+	page = 0,
+	perPage = 100,
+): Promise<MattermostChannel[]> {
+	const resp = await mmFetch<MattermostChannel[]>(
+		mattermostUrl,
+		token,
+		`/api/v4/teams/${teamId}/channels?page=${page}&per_page=${perPage}`,
+	);
+	return resp.ok ? resp.data : [];
+}
