@@ -38,6 +38,22 @@ export const requireEmployeeMailbox = createMiddleware<ParrotContext>(
 		const stub = ns.get(id);
 
 		c.set("mailboxStub", stub);
+
+		// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): record activity for offline
+		// detection. Fire-and-forget — do NOT await; this must never add latency
+		// to the request or fail it. The DO alarm reads last_seen_at to decide
+		// whether to send the offline @mention/DM email.
+		try {
+			c.executionCtx.waitUntil(
+				stub.touchLastSeen().catch((err) => {
+					console.warn("touchLastSeen failed (non-fatal)", err);
+				}),
+			);
+		} catch {
+			// c.executionCtx is unavailable in some test/runtime contexts —
+			// touch is best-effort, so swallow and continue.
+		}
+
 		await next();
 	},
 );

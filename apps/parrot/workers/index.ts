@@ -19,6 +19,8 @@ import {
 import { handleAttachmentDownload } from "./routes/attachments";
 // Phase 31 Wave 3 (31-04): file/image upload + download streaming proxy.
 import { chatFilesRoute } from "./routes/chat-files";
+// Phase 31 Wave 4 (31-05): Worker-proxied real-time WebSocket (PAT server-side).
+import { handleChatWebSocket } from "./lib/mm-ws-proxy";
 import {
 	requireEmployeeMailbox,
 	type ParrotContext,
@@ -1698,6 +1700,74 @@ app.delete("/api/chat/reactions", requireEmployeeMailbox, async (c: AppContext) 
 	}
 	return c.json({ ok: true, post_id: postId, emoji_name: emojiName });
 });
+
+// ── Phase 31 Wave 4 (plan 31-05): real-time WebSocket + presence + mark-read ──
+//
+// /api/chat/ws is the browser's single real-time connection. The Worker
+// authenticates with Mattermost using the employee PAT SERVER-SIDE (the PAT
+// never reaches the browser — see lib/mm-ws-proxy.ts). This replaces the 5s
+// post polling in ChatPane.
+//
+// /api/chat/presence returns online/away/offline/dnd for a batch of MM user
+// ids (bot token, since status is workspace-wide read).
+//
+// /api/chat/channels/:id/mark-read clears MM's unread tracking for the
+// employee on a channel (posted AS the employee via their PAT).
+
+// GET /api/chat/ws — WebSocket upgrade endpoint.
+app.get("/api/chat/ws", requireEmployeeMailbox, async (c: AppContext) => {
+	return handleChatWebSocket(c.req.raw, c.env, c.var.employee);
+});
+
+// GET /api/chat/presence?ids=uid1,uid2 — batch presence lookup.
+// Returns the MM status array: [{ user_id, status: "online"|"away"|"offline"|"dnd" }].
+app.get("/api/chat/presence", requireEmployeeMailbox, async (c: AppContext) => {
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	if (!botToken) return c.json({ error: "chat_not_provisioned" }, 503);
+	const idsParam = c.req.query("ids") ?? "";
+	const ids = idsParam
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	if (ids.length === 0) return c.json([]);
+	const result = await mmFetch<
+		Array<{ user_id: string; status: string }>
+	>(c.env.MATTERMOST_URL, botToken, "/api/v4/users/status/ids", {
+		method: "POST",
+		body: JSON.stringify(ids),
+	});
+	if (!result.ok) return c.json({ error: "Presence unavailable" }, 502);
+	return c.json(result.data, 200, { "Cache-Control": "private, max-age=15" });
+});
+
+// POST /api/chat/channels/:id/mark-read — mark a channel read for the employee
+// in Mattermost (clears MM's unread/mention tracking for that user on the
+// channel). Proxied AS the employee via their PAT.
+app.post(
+	"/api/chat/channels/:id/mark-read",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const channelId = c.req.param("id");
+		if (!channelId) return c.json({ error: "Missing channel id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const result = await proxy.call<unknown>(
+			`/api/v4/channels/members/${tokenRow.mmUserId}/view`,
+			{
+				method: "POST",
+				body: JSON.stringify({ channel_id: channelId }),
+			},
+		);
+		if (!result.ok) {
+			if (result.status === 503)
+				return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Mark-read failed" }, 502);
+		}
+		return c.json({ ok: true, channel_id: channelId });
+	},
+);
 
 // ── Phase 31 Wave 0: operator-gated PAT backfill ────────────────────
 //

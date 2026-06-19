@@ -35,6 +35,8 @@ import {
 } from "../lib/mattermost";
 import { buildVapidAuthHeader } from "../lib/vapid";
 import { createRoom } from "../lib/daily";
+// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): offline @mention/DM email.
+import { sendOfflineChatNotification } from "../lib/email-sender";
 // Phase 14 Wave 2: graph wiring (fail-soft when FALKORDB_URL absent).
 import {
 	getEmployeeContext,
@@ -196,6 +198,25 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			`UPDATE profile SET onboarded_at = ?1, updated_at = ?1 WHERE id = 1`,
 			now,
 		);
+	}
+
+	/**
+	 * Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): record activity for the
+	 * offline-detection path. Called fire-and-forget from requireEmployeeMailbox
+	 * (via c.executionCtx.waitUntil) on every authenticated request, so
+	 * `last_seen_at` always reflects the employee's most recent Workspace touch.
+	 *
+	 * Stored as `datetime('now')` (UTC, SQLite text) so the alarm can compare it
+	 * directly against `datetime('now', '-5 minutes')`. Cheap single-row UPDATE;
+	 * no profile row yet (pre-/api/me) is a harmless no-op (0 rows written).
+	 */
+	async touchLastSeen(): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`UPDATE profile SET last_seen_at = datetime('now') WHERE id = 1`,
+		);
+		// Employee is active again → reset the offline-email high-water mark so a
+		// future away-period re-notifies from scratch (see maybeSendOfflineChatEmail).
+		await this.ctx.storage.delete("offline_chat_notified_count");
 	}
 
 	/**
@@ -1012,9 +1033,74 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			await this.pollMattermostNewPosts();
 		} catch (err) {
 			console.error("Parrot alarm: Mattermost poll failed", err);
+		}
+		// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): offline @mention/DM email.
+		// Run in its own try/catch so a poll failure above never skips it and an
+		// email failure never blocks the reschedule below.
+		try {
+			await this.maybeSendOfflineChatEmail();
+		} catch (err) {
+			console.error("Parrot alarm: offline chat email check failed", err);
 		} finally {
 			// Always reschedule unconditionally (at-least-once guarantee)
 			await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+		}
+	}
+
+	/**
+	 * Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): when the employee has been
+	 * offline (last_seen_at older than 5 minutes) AND has unread `chat_mention`
+	 * notifications, email them so they don't miss mentions/DMs while the
+	 * Workspace tab is closed.
+	 *
+	 * De-dupe: we only email when there are NEW unread mentions since the last
+	 * email we sent. The high-water mark is the count we last notified about,
+	 * stored in DO KV (`offline_chat_notified_count`). This keeps the 2-minute
+	 * alarm from spamming a fresh email every cycle while the employee stays
+	 * away — a follow-up email only fires when the unread-mention count grows.
+	 *
+	 * Fail-soft: sendOfflineChatNotification never throws; any read/email error
+	 * is swallowed by the alarm's wrapping try/catch.
+	 */
+	private async maybeSendOfflineChatEmail(): Promise<void> {
+		const profileRow = [
+			...this.ctx.storage.sql.exec(
+				`SELECT email, last_seen_at FROM profile WHERE id = 1`,
+			),
+		][0] as { email: string; last_seen_at: string | null } | undefined;
+		if (!profileRow) return;
+
+		const lastSeen = profileRow.last_seen_at
+			? new Date(`${profileRow.last_seen_at}Z`)
+			: null;
+		// No last_seen_at yet → employee never touched the WS-era request path;
+		// treat as "not offline" to avoid false-positive emails on first deploy.
+		if (!lastSeen) return;
+		const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+		if (lastSeen >= fiveMinutesAgo) return; // still active — no email
+
+		const unreadRow = [
+			...this.ctx.storage.sql.exec(
+				`SELECT COUNT(*) AS cnt FROM notifications
+				 WHERE event_type = 'chat_mention' AND read = 0`,
+			),
+		][0] as { cnt: number } | undefined;
+		const unreadCount = unreadRow?.cnt ?? 0;
+		if (unreadCount === 0) return;
+
+		// Only email when the unread count has GROWN since our last notification,
+		// so a stationary backlog doesn't re-email every 2 minutes.
+		const lastNotified =
+			(await this.ctx.storage.get<number>("offline_chat_notified_count")) ?? 0;
+		if (unreadCount <= lastNotified) return;
+
+		const result = await sendOfflineChatNotification(
+			this.env,
+			profileRow.email,
+			unreadCount,
+		);
+		if (result.ok) {
+			await this.ctx.storage.put("offline_chat_notified_count", unreadCount);
 		}
 	}
 
