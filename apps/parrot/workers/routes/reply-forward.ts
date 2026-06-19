@@ -203,6 +203,23 @@ export async function handleReplyEmail(c: AppContext) {
 		);
 	}
 
+	// v1.4 Phase 26 follow-up (#12): also clear the dashboard todo (DO/SQLite)
+	// for this email the moment the user replies, so it disappears on the next
+	// 10s poll instead of waiting ~10-15 min for the auto-clear cron. This is
+	// the graph-independent counterpart to closeTodoFact above. `id` is the
+	// original email id === the todo's source_id. Best-effort: a failure here
+	// must not fail the reply, which has already been committed above.
+	if (id) {
+		try {
+			await stub.resolveTodosForEmail(id);
+		} catch (e) {
+			console.error(
+				"[parrot] resolveTodosForEmail after reply failed:",
+				(e as Error).message,
+			);
+		}
+	}
+
 	// Deferred outbound delivery — the 202 response returns immediately;
 	// the SMTP send happens in the background via executionCtx.waitUntil.
 	c.executionCtx.waitUntil(
