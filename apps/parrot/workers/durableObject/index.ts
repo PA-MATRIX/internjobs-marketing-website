@@ -67,6 +67,7 @@ const SORT_COLUMN_MAP = {
 interface GetEmailsOptions {
 	folder?: string;
 	thread_id?: string;
+	starred?: boolean;
 	page?: number;
 	limit?: number;
 	sortColumn?: SortColumn;
@@ -274,6 +275,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		const {
 			folder,
 			thread_id,
+			starred,
 			page = 1,
 			limit: rawLimit = 25,
 			sortColumn: rawSortColumn = "date",
@@ -298,6 +300,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		}
 		if (thread_id) {
 			conditions.push(eq(schema.emails.thread_id, thread_id));
+		}
+		// PARROT-FOLDER-ACTIONS-01: Starred is a cross-folder virtual view.
+		// Applied independently of `folder`; the caller passes only one.
+		if (starred) {
+			conditions.push(eq(schema.emails.starred, 1));
 		}
 
 		const orderCol = SORT_COLUMN_MAP[sortColumn];
@@ -334,8 +341,10 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		}));
 	}
 
-	async countEmails(options: { folder?: string; thread_id?: string } = {}) {
-		const { folder, thread_id } = options;
+	async countEmails(
+		options: { folder?: string; thread_id?: string; starred?: boolean } = {},
+	) {
+		const { folder, thread_id, starred } = options;
 		const conditions: string[] = [];
 		const params: (string | number)[] = [];
 
@@ -349,6 +358,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		if (thread_id) {
 			conditions.push(`thread_id = ?${params.length + 1}`);
 			params.push(thread_id);
+		}
+
+		// PARROT-FOLDER-ACTIONS-01: parameterless literal — safe with ?N indexing.
+		if (starred) {
+			conditions.push("starred = 1");
 		}
 
 		const where =

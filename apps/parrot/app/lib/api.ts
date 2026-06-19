@@ -131,6 +131,16 @@ export interface InboxListResponse {
 	folder: string;
 }
 
+// PARROT-FOLDER-COUNTS-01: total message count per folder (sidebar badges).
+export interface FolderCounts {
+	inbox: number;
+	sent: number;
+	draft: number;
+	archive: number;
+	trash: number;
+	starred: number;
+}
+
 // — Phase 13 Wave 1: notifications + push.
 export interface NotificationItem {
 	id: string;
@@ -154,6 +164,9 @@ export const api = {
 		request<InboxListResponse>(
 			`/api/inbox/messages?folder=${encodeURIComponent(folder)}`,
 		),
+	// PARROT-FOLDER-COUNTS-01: total message count per folder for the
+	// sidebar badges.
+	getFolderCounts: () => request<FolderCounts>("/api/inbox/folder-counts"),
 	getMessage: (id: string) =>
 		request<InboxMessage & { body?: string; attachments?: Attachment[] }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
@@ -164,6 +177,23 @@ export const api = {
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
 			{ method: "PATCH", body: JSON.stringify(patch) },
 		),
+	// PARROT-FOLDER-ACTIONS-01: move message to target folder.
+	moveMessage: (id: string, folder: string) =>
+		request<{ ok: boolean; id: string; folder: string }>(
+			`/api/inbox/messages/${encodeURIComponent(id)}/move`,
+			{ method: "POST", body: JSON.stringify({ folder }) },
+		),
+	// PARROT-FOLDER-ACTIONS-01: two-stage delete.
+	// Server returns { movedToTrash: true } or { hardDeleted: true }.
+	deleteMessage: (id: string) =>
+		request<{
+			ok: boolean;
+			id: string;
+			movedToTrash?: boolean;
+			hardDeleted?: boolean;
+		}>(`/api/inbox/messages/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		}),
 	// v1.3.1 BACKFILL: sendEmail / replyEmail / forwardEmail.
 	//
 	// All three hit the real reply-forward.ts route handlers (no longer

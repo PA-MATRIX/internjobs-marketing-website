@@ -15,7 +15,7 @@
 // invalidated so the new message lands in Sent on next pane switch.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, PenSquare, Sparkles } from "lucide-react";
+import { ArrowLeft, PenSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type InboxMessage } from "~/lib/api";
 import { AgentPanel, type AgentInitialAction } from "./AgentPanel";
@@ -34,6 +34,12 @@ interface InboxPaneProps {
 	initialMessageId?: string | null;
 }
 
+// PARROT-FOLDER-ACTIONS-01: inline archive/delete toast.
+interface ToastState {
+	message: string;
+	undoFn?: () => void;
+}
+
 function folderTitle(folder: string): string {
 	switch (folder) {
 		case "sent":
@@ -44,6 +50,8 @@ function folderTitle(folder: string): string {
 			return "Archive";
 		case "trash":
 			return "Trash";
+		case "starred":
+			return "Starred";
 		default:
 			return "Inbox";
 	}
@@ -89,6 +97,14 @@ export function InboxPane({
 	// modal is open. `composeOriginal` is only set for reply/forward.
 	const [composeMode, setComposeMode] = useState<ComposeMode | null>(null);
 
+	// PARROT-DRAFT-EDIT-01: the saved draft currently being edited. Set when
+	// the user clicks a row in the Drafts folder; ComposePane opens in
+	// 'draft' mode pre-filled with this message and, on send, the draft is
+	// removed from Drafts.
+	const [draftMessage, setDraftMessage] = useState<
+		(InboxMessage & { body?: string }) | null
+	>(null);
+
 	// v1.3.1 Agent Lift: agent panel state. `agentOpen` controls the
 	// right-side AgentPanel visibility; `agentInitialAction` triggers a
 	// quick-action on open (summarize / draft / extract / translate).
@@ -96,17 +112,91 @@ export function InboxPane({
 	const [agentInitialAction, setAgentInitialAction] =
 		useState<AgentInitialAction | null>(null);
 
+	// PARROT-FOLDER-ACTIONS-01: inline toast for archive/delete feedback.
+	// undoFn is undefined for hard-deletes (no undo possible).
+	const [toast, setToast] = useState<ToastState | null>(null);
+
+	function showToast(message: string, undoFn?: () => void) {
+		setToast({ message, undoFn });
+		setTimeout(() => setToast(null), 4000);
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: EmailPanel calls this after a successful
+	// archive/delete. We clear the selection (EmailPanel unmounts), invalidate
+	// the inbox queries (prefix match cascades to folder lists + message
+	// caches), and show the matching toast. Archive / move-to-trash get an
+	// Undo that re-moves the message back to the folder we were viewing.
+	async function handleActioned(
+		action: "archived" | "unarchived" | "deleted" | "moved-to-trash",
+	) {
+		const previousFolder = folder;
+		const previousId = selectedId;
+
+		setSelectedId(null);
+		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+
+		if (
+			action === "archived" ||
+			action === "unarchived" ||
+			action === "moved-to-trash"
+		) {
+			const label =
+				action === "archived"
+					? "Archived — Undo"
+					: action === "unarchived"
+						? "Moved to Inbox — Undo"
+						: "Moved to Trash — Undo";
+			showToast(label, async () => {
+				if (previousId) {
+					await api.moveMessage(previousId, previousFolder);
+					queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+				}
+				setToast(null);
+			});
+		} else {
+			// hard-deleted: no undo possible
+			showToast("Deleted permanently");
+		}
+	}
+
 	function openCompose(mode: ComposeMode) {
 		setComposeMode(mode);
 	}
 
 	function closeCompose() {
 		setComposeMode(null);
+		setDraftMessage(null);
 	}
 
 	function handleSent() {
 		// Invalidate so the Sent folder (and inbox unread counts) refresh on
 		// next pane switch. Compose pane already closes itself.
+		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+	}
+
+	// PARROT-DRAFT-EDIT-01: clicking a Drafts row opens the draft in the
+	// ComposePane editor (not the read-only EmailPanel). We fetch the full
+	// record first so the editor can pre-fill to/subject/body (+ cc/bcc and
+	// the in_reply_to threading pointer).
+	async function openDraft(id: string) {
+		const full = await api.getMessage(id);
+		setDraftMessage(full);
+		setComposeMode("draft");
+	}
+
+	// PARROT-DRAFT-EDIT-01: after a draft is sent, remove it from the Drafts
+	// folder (the sent copy now lives in Sent) and refresh the lists.
+	async function handleDraftSent() {
+		const draftId = draftMessage?.id;
+		if (draftId) {
+			try {
+				await api.deleteMessage(draftId);
+			} catch {
+				// Non-fatal: the email already sent; a lingering draft is
+				// recoverable by the user. Don't surface an error for it.
+			}
+		}
+		setDraftMessage(null);
 		queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
 	}
 
@@ -162,11 +252,14 @@ export function InboxPane({
 	return (
 		<div className="relative flex h-full min-h-0">
 			<div
-				className={`w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:block md:w-80 lg:w-96 ${
+				className={`relative w-full shrink-0 overflow-y-auto border-r border-slate-200 bg-white md:block md:w-80 lg:w-96 ${
 					selectedId ? "hidden" : "block"
 				}`}
 			>
-				{/* v1.3.1 BACKFILL: Compose button + Agent toggle. */}
+				{/* v1.3.1 BACKFILL: Compose button. The Parrot Agent is now
+				    opened from the Agent button inside an open email
+				    (EmailPanel), since the agent always operates on the
+				    currently-viewed message. */}
 				<div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10 flex items-center justify-between gap-2">
 					<div className="min-w-0">
 						<p className="truncate text-sm font-semibold text-slate-900">
@@ -182,19 +275,6 @@ export function InboxPane({
 						>
 							<PenSquare size={13} />
 							Compose
-						</button>
-						<button
-							type="button"
-							onClick={() => setAgentOpen((v) => !v)}
-							className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
-								agentOpen
-									? "border-indigo-300 bg-indigo-50 text-indigo-700"
-									: "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-							}`}
-							title="Toggle Parrot Agent"
-						>
-							<Sparkles size={12} />
-							Agent
 						</button>
 					</div>
 				</div>
@@ -212,7 +292,11 @@ export function InboxPane({
 							<li key={msg.id}>
 								<button
 									type="button"
-									onClick={() => setSelectedId(msg.id)}
+									onClick={() =>
+										folder === "draft"
+											? openDraft(msg.id)
+											: setSelectedId(msg.id)
+									}
 									className={`w-full text-left px-4 py-3 hover:bg-slate-50 ${
 										selectedId === msg.id ? "bg-slate-100" : ""
 									}`}
@@ -246,6 +330,21 @@ export function InboxPane({
 						))}
 					</ul>
 				)}
+				{/* PARROT-FOLDER-ACTIONS-01: archive/delete toast with Undo. */}
+				{toast && (
+					<div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-slate-800 px-4 py-2.5 text-xs text-white shadow-lg">
+						<span>{toast.message}</span>
+						{toast.undoFn && (
+							<button
+								type="button"
+								onClick={toast.undoFn}
+								className="font-semibold underline hover:no-underline"
+							>
+								Undo
+							</button>
+						)}
+					</div>
+				)}
 			</div>
 
 			{/* Email viewer pane — uses EmailPanel which itself uses
@@ -274,9 +373,11 @@ export function InboxPane({
 					<div className="min-h-0 flex-1">
 						<EmailPanel
 							emailId={selectedId}
+							folder={folder}
 							onReply={() => openCompose("reply")}
 							onForward={() => openCompose("forward")}
-							onAgentAction={(action) => openAgent(action)}
+							onOpenAgent={() => openAgent()}
+							onActioned={handleActioned}
 						/>
 					</div>
 				) : (
@@ -323,9 +424,15 @@ export function InboxPane({
 			{composeMode && (
 				<ComposePane
 					mode={composeMode}
-					original={composeMode === "compose" ? null : selected ?? null}
+					original={
+						composeMode === "compose"
+							? null
+							: composeMode === "draft"
+								? draftMessage
+								: selected ?? null
+					}
 					onClose={closeCompose}
-					onSent={handleSent}
+					onSent={composeMode === "draft" ? handleDraftSent : handleSent}
 				/>
 			)}
 		</div>

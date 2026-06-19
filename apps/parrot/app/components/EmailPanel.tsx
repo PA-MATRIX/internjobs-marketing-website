@@ -27,14 +27,17 @@
 //     (when wired in Commit C; for v1.3.1 they call the onAgentAction
 //     callback that InboxPane plumbs).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	Archive,
+	ArchiveRestore,
 	Forward,
 	PaperclipIcon,
 	Reply,
 	Sparkles,
 	Star,
+	Trash2,
 } from "lucide-react";
 import EmailIframe from "./EmailIframe";
 import { EmailAttachmentList } from "./EmailAttachmentList";
@@ -44,11 +47,23 @@ import { api, type Attachment, type InboxMessage } from "~/lib/api";
 
 interface EmailPanelProps {
 	emailId: string;
+	/**
+	 * The folder currently being viewed. When "archive", the Archive action
+	 * becomes "Unarchive" (moves the message back to the Inbox).
+	 */
+	folder?: string;
 	onReply: () => void;
 	onForward: () => void;
-	/** When non-null, an agent-panel sidebar opens with the chosen action pre-selected. */
-	onAgentAction?: (
-		action: "summarize" | "draft" | "translate" | "extract" | "chat",
+	/** Opens the right-side Parrot Agent panel for the current email. */
+	onOpenAgent?: () => void;
+	/**
+	 * PARROT-FOLDER-ACTIONS-01: fired after a successful archive/unarchive/
+	 * delete so InboxPane can clear the selection, invalidate the inbox
+	 * queries, and show a toast (with Undo for archive / unarchive /
+	 * move-to-trash).
+	 */
+	onActioned?: (
+		action: "archived" | "unarchived" | "deleted" | "moved-to-trash",
 	) => void;
 }
 
@@ -61,9 +76,11 @@ function formatDate(iso: string | null | undefined) {
 
 export function EmailPanel({
 	emailId,
+	folder = "inbox",
 	onReply,
 	onForward,
-	onAgentAction,
+	onOpenAgent,
+	onActioned,
 }: EmailPanelProps) {
 	const queryClient = useQueryClient();
 	const { data, isLoading, error } = useQuery({
@@ -82,6 +99,23 @@ export function EmailPanel({
 		setStarred(data.starred ?? false);
 	}
 
+	// READ-ON-OPEN-01: mark an unread message read as soon as it is opened, so
+	// the bold/unread styling in the list clears. The guard on `data.read`
+	// means the PATCH fires once; the subsequent inbox invalidation refetches
+	// the message with read=true, which keeps the effect from re-firing.
+	useEffect(() => {
+		if (data && !data.read) {
+			api
+				.patchMessage(emailId, { read: true })
+				.then(() => {
+					queryClient.invalidateQueries({ queryKey: ["parrot", "inbox"] });
+				})
+				.catch(() => {
+					// Non-fatal: failing to mark read just leaves the row bold.
+				});
+		}
+	}, [data, emailId, queryClient]);
+
 	async function handleStar() {
 		const next = !starred;
 		setStarred(next); // optimistic
@@ -92,6 +126,29 @@ export function EmailPanel({
 		} catch {
 			setStarred(!next); // revert on error
 		}
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: archive moves the message to the Archive
+	// folder; InboxPane handles list refresh + Undo via onActioned. When the
+	// message is already in the Archive folder, the same button unarchives it
+	// (moves it back to the Inbox).
+	const isArchiveFolder = folder === "archive";
+	async function handleArchive() {
+		if (isArchiveFolder) {
+			await api.moveMessage(emailId, "inbox");
+			onActioned?.("unarchived");
+		} else {
+			await api.moveMessage(emailId, "archive");
+			onActioned?.("archived");
+		}
+	}
+
+	// PARROT-FOLDER-ACTIONS-01: two-stage delete. The server moves a
+	// non-Trash message to Trash (movedToTrash) or hard-deletes a message
+	// already in Trash (hardDeleted). InboxPane shows the matching toast.
+	async function handleDelete() {
+		const result = await api.deleteMessage(emailId);
+		onActioned?.(result.movedToTrash ? "moved-to-trash" : "deleted");
 	}
 
 	if (isLoading) {
@@ -172,54 +229,68 @@ export function EmailPanel({
 					</button>
 				</div>
 
-				{/* Action toolbar */}
-				<div className="mt-3 flex flex-wrap gap-2">
+				{/* Action toolbar.
+				 *
+				 * The primary mail actions (Reply / Forward / Archive / Delete)
+				 * are icon-only to keep the bar compact; each carries a title +
+				 * aria-label so hovering reveals what it does. */}
+				<div className="mt-3 flex flex-wrap items-center gap-2">
 					<button
 						type="button"
 						onClick={onReply}
-						className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+						title="Reply"
+						aria-label="Reply"
+						className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
 					>
-						<Reply size={12} />
-						Reply
+						<Reply size={15} />
 					</button>
 					<button
 						type="button"
 						onClick={onForward}
-						className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+						title="Forward"
+						aria-label="Forward"
+						className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
 					>
-						<Forward size={12} />
-						Forward
+						<Forward size={15} />
+					</button>
+					<button
+						type="button"
+						onClick={handleArchive}
+						title={isArchiveFolder ? "Unarchive" : "Archive"}
+						aria-label={isArchiveFolder ? "Unarchive" : "Archive"}
+						className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-700 hover:bg-slate-50"
+					>
+						{isArchiveFolder ? (
+							<ArchiveRestore size={15} />
+						) : (
+							<Archive size={15} />
+						)}
+					</button>
+					<button
+						type="button"
+						onClick={handleDelete}
+						title="Delete"
+						aria-label="Delete"
+						className="inline-flex items-center justify-center rounded-md border border-red-100 bg-white p-2 text-red-600 hover:bg-red-50"
+					>
+						<Trash2 size={15} />
 					</button>
 					<EmailToChat emailId={emailId} />
 					<StartMeeting />
-					{/* v1.3.1 Agent Lift: agent quick-actions. The handler
-					    opens the side AgentPanel (wired in InboxPane). */}
-					{onAgentAction && (
+					{/* v1.3.1 Agent Lift: a single Agent button opens the side
+					    AgentPanel, which hosts the Summarize / Draft reply /
+					    Action items quick-actions. */}
+					{onOpenAgent && (
 						<>
 							<span className="mx-1 self-center text-slate-300">|</span>
 							<button
 								type="button"
-								onClick={() => onAgentAction("summarize")}
+								onClick={onOpenAgent}
+								title="Open Parrot Agent"
 								className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
 							>
 								<Sparkles size={12} />
-								Summarize
-							</button>
-							<button
-								type="button"
-								onClick={() => onAgentAction("draft")}
-								className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-							>
-								<Sparkles size={12} />
-								Draft reply
-							</button>
-							<button
-								type="button"
-								onClick={() => onAgentAction("extract")}
-								className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-							>
-								<Sparkles size={12} />
-								Action items
+								Agent
 							</button>
 						</>
 					)}

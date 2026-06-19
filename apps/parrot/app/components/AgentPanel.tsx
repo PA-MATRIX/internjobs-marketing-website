@@ -69,6 +69,19 @@ interface AgentMessage {
 	blocked?: boolean;
 }
 
+interface FeedEntry {
+	id: string;
+	/** emailId captured at entry-creation time (NOT the current emailId prop).
+	 *  The per-entry "Draft reply" button uses this field so navigating to
+	 *  another email cannot accidentally generate a draft for the wrong message. */
+	emailId: string;
+	type: "summary" | "draft" | "extract" | "translate" | "chat";
+	label: string;
+	/** When true, show a "Draft reply" one-click button. */
+	canDraft?: boolean;
+	timestamp: string; // ISO string
+}
+
 function uid() {
 	if (
 		typeof crypto !== "undefined" &&
@@ -87,6 +100,82 @@ const SAMPLE_TARGET_LANGUAGES = [
 	"Mandarin",
 ];
 
+function ActivityFeed({
+	entries,
+	onDraftSavedToCompose,
+}: {
+	entries: FeedEntry[];
+	onDraftSavedToCompose?: (bodyText: string) => void;
+}) {
+	const [expanded, setExpanded] = useState(true);
+
+	if (entries.length === 0) return null;
+
+	return (
+		<div className="border-b border-slate-100 bg-slate-50">
+			<button
+				type="button"
+				onClick={() => setExpanded((v) => !v)}
+				className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-100"
+			>
+				<span>Activity ({entries.length})</span>
+				<span>{expanded ? "▲" : "▼"}</span>
+			</button>
+			{expanded && (
+				<ul className="max-h-32 overflow-y-auto divide-y divide-slate-100">
+					{entries.map((entry) => (
+						<ActivityFeedRow
+							key={entry.id}
+							entry={entry}
+							onDraftSavedToCompose={onDraftSavedToCompose}
+						/>
+					))}
+				</ul>
+			)}
+		</div>
+	);
+}
+
+function ActivityFeedRow({
+	entry,
+	onDraftSavedToCompose,
+}: {
+	entry: FeedEntry;
+	onDraftSavedToCompose?: (bodyText: string) => void;
+}) {
+	// Each row owns its own mutation keyed to entry.emailId — the emailId
+	// captured when the entry was created.  This is intentionally NOT the
+	// current AgentPanel emailId prop, so navigating away cannot generate
+	// a draft for the wrong message.
+	const draftMut = useMutation({
+		mutationFn: () => api.agentDraftReply(entry.emailId, undefined, true),
+		onSuccess: (data) => {
+			if (data.draft_text) {
+				onDraftSavedToCompose?.(data.draft_text);
+			}
+		},
+	});
+
+	return (
+		<li className="flex items-center justify-between px-3 py-1.5 gap-2">
+			<span className="text-[11px] text-slate-600 truncate">
+				{entry.label}
+			</span>
+			{entry.canDraft && (
+				<button
+					type="button"
+					disabled={draftMut.isPending}
+					onClick={() => draftMut.mutate()}
+					className="shrink-0 inline-flex items-center gap-1 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+				>
+					<PenLine size={9} />
+					Draft reply
+				</button>
+			)}
+		</li>
+	);
+}
+
 export function AgentPanel({
 	emailId,
 	initialAction,
@@ -99,6 +188,7 @@ export function AgentPanel({
 	const [draftInstructions, setDraftInstructions] = useState("");
 	const [translateLang, setTranslateLang] = useState("Spanish");
 	const [showTranslateMenu, setShowTranslateMenu] = useState(false);
+	const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -112,6 +202,16 @@ export function AgentPanel({
 			return count < 1;
 		},
 	});
+
+	// Append an activity-feed entry. emailId is captured at push time (the
+	// component prop value at the moment the mutation succeeded), NOT at
+	// click time — see FeedEntry.emailId doc comment.
+	function pushFeedEntry(entry: Omit<FeedEntry, "id" | "timestamp">) {
+		setFeedEntries((prev) => [
+			{ ...entry, id: uid(), timestamp: new Date().toISOString() },
+			...prev, // prepend — newest first
+		]);
+	}
 
 	// ── Mutations ──────────────────────────────────────────────────
 
@@ -128,6 +228,7 @@ export function AgentPanel({
 					blocked: data.blocked,
 				},
 			]);
+			pushFeedEntry({ type: "summary", label: "Summary generated", emailId });
 		},
 	});
 
@@ -150,12 +251,17 @@ export function AgentPanel({
 					blocked: data.blocked,
 				},
 			]);
+			pushFeedEntry({
+				type: "extract",
+				label: `Action items extracted (${data.actions?.length ?? 0})`,
+				emailId,
+			});
 		},
 	});
 
 	const translateMut = useMutation({
 		mutationFn: (lang: string) => api.agentTranslate(emailId, lang),
-		onSuccess: (data) => {
+		onSuccess: (data, lang) => {
 			setMessages((prev) => [
 				...prev,
 				{
@@ -165,6 +271,11 @@ export function AgentPanel({
 					error: data.error,
 				},
 			]);
+			pushFeedEntry({
+				type: "translate",
+				label: `Translated to ${lang}`,
+				emailId,
+			});
 		},
 	});
 
@@ -184,6 +295,12 @@ export function AgentPanel({
 					blocked: data.blocked,
 				},
 			]);
+			pushFeedEntry({
+				type: "draft",
+				label: "Draft reply generated",
+				canDraft: true,
+				emailId,
+			});
 		},
 	});
 
@@ -201,6 +318,7 @@ export function AgentPanel({
 					error: data.error,
 				},
 			]);
+			pushFeedEntry({ type: "chat", label: "Chat message sent", emailId });
 		},
 	});
 
@@ -286,18 +404,33 @@ export function AgentPanel({
 					</span>
 				</div>
 				<div className="flex items-center gap-1">
+					{/* Segmented tab: Agent */}
 					<button
 						type="button"
-						onClick={() => setTab(tab === "tools" ? "chat" : "tools")}
-						className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+						onClick={() => setTab("chat")}
+						className={`inline-flex items-center gap-0.5 rounded-l border px-2 py-0.5 text-[10px] font-medium ${
+							tab === "chat"
+								? "border-indigo-300 bg-indigo-50 text-indigo-700"
+								: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+						}`}
+						title="Agent chat and quick actions"
+					>
+						<Sparkles size={10} />
+						Agent
+					</button>
+					{/* Segmented tab: MCP */}
+					<button
+						type="button"
+						onClick={() => setTab("tools")}
+						className={`inline-flex items-center gap-0.5 rounded-r border-t border-r border-b px-2 py-0.5 text-[10px] font-medium ${
 							tab === "tools"
 								? "border-indigo-300 bg-indigo-50 text-indigo-700"
 								: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
 						}`}
-						title="Show tool catalog"
+						title="MCP tool catalog"
 					>
 						<Wrench size={10} />
-						Tools
+						MCP
 					</button>
 					<button
 						type="button"
@@ -317,6 +450,12 @@ export function AgentPanel({
 				</div>
 			) : (
 			<>
+
+			{/* On-demand agent activity feed (session-scoped, no inbound pipeline). */}
+			<ActivityFeed
+				entries={feedEntries}
+				onDraftSavedToCompose={onDraftSavedToCompose}
+			/>
 
 			{/* Quick-action bar */}
 			<div className="border-b border-slate-100 bg-slate-50 px-3 py-2 flex flex-wrap gap-1.5">

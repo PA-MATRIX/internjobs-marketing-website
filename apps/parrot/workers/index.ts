@@ -338,10 +338,38 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 app.get("/api/inbox/messages", requireEmployeeMailbox, async (c: AppContext) => {
 	const folder = c.req.query("folder") || Folders.INBOX;
 	const stub = c.var.mailboxStub;
+	// PARROT-FOLDER-ACTIONS-01: "starred" is a cross-folder virtual view, not a
+	// folder row — route it through the starred filter instead of a folder lookup.
+	if (folder === "starred") {
+		const emails = await stub.getEmails({ starred: true });
+		const totalCount = await stub.countEmails({ starred: true });
+		return c.json({ emails, totalCount, folder: "starred" });
+	}
 	const emails = await stub.getEmails({ folder });
 	const totalCount = await stub.countEmails({ folder });
 	return c.json({ emails, totalCount, folder });
 });
+
+// PARROT-FOLDER-COUNTS-01: total message count per folder, for the sidebar
+// badges. "starred" is the cross-folder virtual view (same as the list
+// route). One COUNT(*) per folder — cheap, and the result is cached/
+// invalidated alongside the inbox queries on the client.
+app.get(
+	"/api/inbox/folder-counts",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const stub = c.var.mailboxStub;
+		const [inbox, sent, draft, archive, trash, starred] = await Promise.all([
+			stub.countEmails({ folder: "inbox" }),
+			stub.countEmails({ folder: "sent" }),
+			stub.countEmails({ folder: "draft" }),
+			stub.countEmails({ folder: "archive" }),
+			stub.countEmails({ folder: "trash" }),
+			stub.countEmails({ starred: true }),
+		]);
+		return c.json({ inbox, sent, draft, archive, trash, starred });
+	},
+);
 
 app.get(
 	"/api/inbox/messages/:id",
@@ -381,6 +409,47 @@ app.patch(
 			starred: !!updated.starred,
 			read: !!updated.read,
 		});
+	},
+);
+
+// PARROT-FOLDER-ACTIONS-01: move a message to a target folder.
+// Body: { folder: string }  (e.g. "archive", "trash")
+app.post(
+	"/api/inbox/messages/:id/move",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const id = c.req.param("id");
+		if (!id) return c.json({ error: "Missing message id" }, 400);
+		const body = (await c.req.json().catch(() => null)) as {
+			folder?: string;
+		} | null;
+		if (!body?.folder) return c.json({ error: "Body must include folder" }, 400);
+		const moved = await c.var.mailboxStub.moveEmail(id, body.folder);
+		if (!moved) return c.json({ error: "Email not found or invalid folder" }, 404);
+		return c.json({ ok: true, id, folder: body.folder });
+	},
+);
+
+// PARROT-FOLDER-ACTIONS-01: two-stage delete.
+// getEmail returns folder_id (the lowercase folder name, e.g. "trash").
+// Folders.TRASH === "trash" (confirmed in migrations.ts seed + shared/folders.ts).
+// One getEmail call; no getEmails round-trip needed.
+app.delete(
+	"/api/inbox/messages/:id",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const id = c.req.param("id");
+		if (!id) return c.json({ error: "Missing message id" }, 400);
+		const stub = c.var.mailboxStub;
+		const email = await stub.getEmail(id);
+		if (!email) return c.json({ error: "Email not found" }, 404);
+		if (email.folder_id === Folders.TRASH) {
+			await stub.deleteEmail(id);
+			return c.json({ ok: true, id, hardDeleted: true });
+		}
+		const moved = await stub.moveEmail(id, Folders.TRASH);
+		if (!moved) return c.json({ error: "Move to trash failed" }, 500);
+		return c.json({ ok: true, id, movedToTrash: true });
 	},
 );
 
