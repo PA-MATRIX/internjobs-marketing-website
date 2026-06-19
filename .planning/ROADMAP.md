@@ -27,6 +27,7 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - [x] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01 per explicit user decision). New `apps/startup/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
 - [x] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms* — CODE-COMPLETE 2026-05-25 (5/5 plans; ops-config deferred to PHASE-28.5-DEFERRED-OPS.md — 12 user-action steps including DNS, Email Routing domain verification, wrangler secret put for STARTUPS_CLERK_*, Clerk webhook registration). Inserted between Phase 28 and Phase 29 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
 - [x] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms* — CODE-COMPLETE 2026-05-25 (3/3 plans; ops-config deferred to PHASE-29-DEFERRED-OPS.md — 22 user-action steps spanning DEFER-29-01-A..K + 29-02-A..F + 29-03-A..E, including Telnyx account signup + BRN submission + number purchase + API key + Voice AI portal config + R2 bucket + KV namespace + cron deploy + first pilot E2E). Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
+- [ ] **Phase 30: Parrot Email-Pane Parity** — *team-workspace*. Enable the Star toggle + a cross-folder Starred view, add Archive & Delete actions (DO `updateEmail`/`moveEmail`/`deleteEmail` already exist → routes + client + buttons), promote AgentPanel's chat/Tools toggle into proper Agent | MCP tabs, and add an inbound auto-draft + agent activity feed (scope locked in discuss-phase). Keeps the InternJobs multi-channel shell (no Kumo skin).
 
 ## Phase Details
 
@@ -370,12 +371,42 @@ Plans:
 
 ---
 
+### Phase 30: Parrot Email-Pane Parity
+
+**Goal**: Close the remaining gaps between the Parrot Workspace email pane and the upstream agentic-inbox reference, WITHOUT regressing Parrot's multi-channel shell. Four tracks: (1) **email actions** — starred filter in DO + move/delete HTTP routes + Archive & Delete toolbar buttons + toast+Undo + cross-folder Starred view; (2) **Agent | MCP tabs** — promote the existing chat/Tools toggle into proper segmented Agent | MCP tabs; (3) **on-demand agent activity feed** — session-scoped feed logging agent actions + one-click Draft reply; (4) keep the InternJobs multi-channel shell intact (no Kumo skin, no email-only layout). NOTE: auto-draft on inbound is EXPLICITLY OUT OF SCOPE — feed is on-demand only (see 30-CONTEXT.md Decision 1).
+
+**Team owner**: `team-workspace`
+**Branch**: `rrr/v1.4/team-workspace-30` (off `main`)
+**Depends on**: Phase 27 (sequential on team-workspace; STAR-API-01 PATCH route and EmailPanel star wiring already shipped in prior work). Soft dependency on PR #12 (`resolveTodosForEmail`) not applicable (Track 3 is on-demand only, no reply path touched).
+
+**Requirements**: PARROT-FOLDER-ACTIONS-01 (archive/delete/move), PARROT-STARRED-VIEW-01, PARROT-AGENT-MCP-TABS-01, PARROT-AGENT-FEED-01 (on-demand activity feed)
+
+**Success Criteria** (what must be TRUE):
+1. Star button in EmailPanel is already live (STAR-API-01 shipped); star persists via `PATCH /api/inbox/messages/:id` and survives refresh
+2. Archive moves a message to Archive; Delete moves to Trash (or hard-deletes from Trash); both update the list without a full reload + show toast with Undo
+3. A "Starred" entry in the email sidebar lists starred messages across all folders
+4. AgentPanel header shows two real segmented tabs — Agent and MCP — and the MCP tab surfaces the existing tool catalog
+5. Agent tab shows a session-scoped activity feed accumulating entries when the user triggers agent actions; each draft entry has a one-click "Draft reply" button (save=true); NO inbound auto-draft pipeline
+
+**Plans**: 5 plans in 3 waves
+
+Plans:
+- [ ] 30-01-PLAN.md — DO starred filter + move/delete HTTP routes (Wave 1, backend)
+- [ ] 30-02-PLAN.md — AgentPanel Agent | MCP segmented tabs (Wave 1, independent)
+- [ ] 30-03-PLAN.md — Client helpers + EmailPanel Archive/Delete + toast+Undo + Starred nav (Wave 2, depends on 30-01)
+- [ ] 30-04-PLAN.md — On-demand agent activity feed in AgentPanel (Wave 2, depends on 30-02)
+- [ ] 30-05-PLAN.md — Vitest smoke tests for new routes + typecheck (Wave 3, depends on 30-01)
+
+**Research flags**: None — all four tracks are wiring on existing code; on-demand feed uses existing agent endpoints; no new external dependencies.
+
+---
+
 ## Progress
 
 **Execution Order (team-aware):**
 
 - `team-cms`: Phase 22 → Phase 24 → Phase 28 → Phase 28.5 → Phase 29 (sequential on `rrr/v1.4/team-cms`)
-- `team-workspace`: Phase 23 → Phase 25 → Phase 26 → Phase 27 (sequential on `rrr/v1.4/team-workspace`)
+- `team-workspace`: Phase 23 → Phase 25 → Phase 26 → Phase 27 → Phase 30 (sequential on `rrr/v1.4/team-workspace`)
 
 **Cross-team dependencies:**
 - Phase 23 (team-workspace) cannot start until Phase 22 (team-cms) is verified — SAFETY-VERIFY-LIVE-04 depends on LAKERA-V2-02 parser truth
@@ -393,6 +424,7 @@ Plans:
 | 28. Startup MCP Server + Channel-Adapter Core | v1.4 | team-cms | 5/5 | ✓ Shipped (live pilot test deferred to v1.5) | 2026-05-25 |
 | 28.5. Startups Web App + Clerk #3 + Per-Startup Agent Email | v1.4 | team-cms | 5/5 | ✓ Code-complete (ops deferred) | 2026-05-25 |
 | 29. Startup Telnyx SMS + Voice AI + Voice Onboarding | v1.4 | team-cms | 3/3 | ✓ Code-complete (ops deferred) | 2026-05-25 |
+| 30. Parrot Email-Pane Parity | v1.4 | team-workspace | 0/TBD | Not started | — |
 
 <details>
 <summary>✅ v1.3 Pilot Hardening (Phases 18-21) — SHIPPED partial 2026-05-19</summary>
