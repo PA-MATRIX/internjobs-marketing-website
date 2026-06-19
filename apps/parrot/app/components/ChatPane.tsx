@@ -36,8 +36,10 @@ import {
 	Plus,
 	RefreshCw,
 	Reply,
+	Search,
 	Send,
 	Trash2,
+	Users,
 	X,
 } from "lucide-react";
 import { ChatToEmail } from "./crosspane/ChatToEmail";
@@ -69,6 +71,9 @@ interface MmChannel {
 	total_msg_count?: number;
 	// Wave 4 will populate real unread counts; until then the dot stays hidden.
 	has_unreads?: boolean;
+	// Wave 2 (31-03): GET /api/chat/dms enriches DM channels with the resolved
+	// display names of the conversation partner(s) (excludes the employee).
+	dm_partner_names?: string[];
 }
 
 interface MmPost {
@@ -180,6 +185,33 @@ function sortChannels(channels: MmChannel[]): MmChannel[] {
 	});
 }
 
+// Wave 2 (31-03): a DM channel's user-facing label is its resolved partner
+// name(s). Direct ("D") → the single partner; group ("G") → "Group: a, b…"
+// truncated. Falls back to the raw display_name if partner names are absent.
+function dmLabel(channel: MmChannel): string {
+	const names = channel.dm_partner_names ?? [];
+	if (channel.type === "D") {
+		return names[0] || channel.display_name || "Direct message";
+	}
+	if (names.length) {
+		const joined = `Group: ${names.join(", ")}`;
+		return joined.length > 28 ? `${joined.slice(0, 27)}…` : joined;
+	}
+	return channel.display_name || "Group message";
+}
+
+function initials(label: string): string {
+	const parts = label.replace(/^Group:\s*/, "").trim().split(/\s+/);
+	const first = parts[0]?.[0] ?? "?";
+	const second = parts.length > 1 ? (parts[1][0] ?? "") : "";
+	return (first + second).toUpperCase();
+}
+
+function mmUserDisplayName(user: MmUser): string {
+	const full = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
+	return user.nickname || full || user.username || user.email || "Teammate";
+}
+
 function orderedPosts(data?: MmPostList): MmPost[] {
 	if (!data?.posts) return [];
 	const values = Object.values(data.posts);
@@ -223,6 +255,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 	const [threadPanelPostId, setThreadPanelPostId] = useState<string | null>(null);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
+	const [dmDialogOpen, setDmDialogOpen] = useState(false);
 	const [editingPostId, setEditingPostId] = useState<string | null>(null);
 	const [editDraft, setEditDraft] = useState("");
 	const [pinToast, setPinToast] = useState<string | null>(null);
@@ -255,9 +288,26 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 
 	const channels =
 		channelsQuery.data ?? bootstrap.data?.channels ?? [];
+
+	// Wave 2 (31-03): DM channels (type D + G) live in a separate query/section
+	// below the channel list. Polls every 30s like the channel list.
+	const dmsQuery = useQuery({
+		queryKey: ["native-chat", "dms"],
+		enabled: Boolean(bootstrap.data),
+		refetchInterval: 30_000,
+		retry: false,
+		queryFn: () => chatFetch<MmChannel[]>("/api/chat/dms"),
+	});
+	const dms = dmsQuery.data ?? [];
+
+	// Active channel may be a regular channel OR a DM channel — search both.
 	const activeChannel =
-		channels.find((channel) => channel.id === activeChannelId) ?? channels[0];
+		channels.find((channel) => channel.id === activeChannelId) ??
+		dms.find((channel) => channel.id === activeChannelId) ??
+		channels[0];
 	const activeId = activeChannel?.id ?? null;
+	const activeIsDm =
+		activeChannel?.type === "D" || activeChannel?.type === "G";
 
 	useEffect(() => {
 		if (!activeChannelId && channels[0]) {
@@ -363,6 +413,32 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		},
 	});
 
+	// Wave 2 (31-03): open/create a DM (idempotent on the server). On success
+	// refresh the DM list and switch the active channel to the new/existing DM.
+	const openDm = useMutation({
+		mutationFn: (input: { kind: "direct" | "group"; userIds: string[] }) => {
+			if (input.kind === "direct") {
+				return chatFetch<MmChannel>("/api/chat/dms/direct", {
+					method: "POST",
+					body: JSON.stringify({ mm_user_id: input.userIds[0] }),
+				});
+			}
+			return chatFetch<MmChannel>("/api/chat/dms/group", {
+				method: "POST",
+				body: JSON.stringify({ mm_user_ids: input.userIds }),
+			});
+		},
+		onSuccess: async (channel) => {
+			setDmDialogOpen(false);
+			await queryClient.invalidateQueries({
+				queryKey: ["native-chat", "dms"],
+			});
+			setActiveChannelId(channel.id);
+			setSelectedPostId(null);
+			setThreadPanelPostId(null);
+		},
+	});
+
 	const editPost = useMutation({
 		mutationFn: (input: { postId: string; message: string }) =>
 			chatFetch<MmPost>(`/api/chat/posts/${input.postId}`, {
@@ -440,10 +516,22 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 			: post.user_id === me?.id;
 	}
 
-	// ── Secondary nav: the channel browser rail ──────────────────────
+	function selectChannel(channelId: string) {
+		setActiveChannelId(channelId);
+		setSelectedPostId(null);
+		setThreadPanelPostId(null);
+	}
+
+	// ── Secondary nav: the channel browser rail + DM section ──────────
 	const secondaryNav: ReactNode = (
 		<div className="flex h-full flex-col">
 			<div className="flex-1 overflow-auto py-1">
+				{/* Channels */}
+				<div className="flex items-center justify-between px-4 pb-1 pt-2">
+					<span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+						Channels
+					</span>
+				</div>
 				{channelsQuery.isLoading && !channels.length ? (
 					<div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
 						<Loader2 className="animate-spin" size={14} />
@@ -459,11 +547,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							<button
 								key={channel.id}
 								type="button"
-								onClick={() => {
-									setActiveChannelId(channel.id);
-									setSelectedPostId(null);
-									setThreadPanelPostId(null);
-								}}
+								onClick={() => selectChannel(channel.id)}
 								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
 									active
 										? "bg-slate-100 font-semibold text-slate-900"
@@ -475,6 +559,66 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									<span className="truncate">{channelLabel(channel)}</span>
 								</span>
 								{channel.has_unreads && (
+									<span
+										aria-hidden="true"
+										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
+									/>
+								)}
+							</button>
+						);
+					})
+				)}
+
+				{/* Direct Messages */}
+				<div className="mt-4 flex items-center justify-between px-4 pb-1 pt-2">
+					<span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+						Direct Messages
+					</span>
+					<button
+						type="button"
+						onClick={() => setDmDialogOpen(true)}
+						title="New direct message"
+						aria-label="New direct message"
+						className="inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+					>
+						<Plus size={14} />
+					</button>
+				</div>
+				{dmsQuery.isLoading && !dms.length ? (
+					<div className="flex items-center gap-2 px-4 py-2 text-sm text-slate-500">
+						<Loader2 className="animate-spin" size={14} />
+						Loading DMs
+					</div>
+				) : dms.length === 0 ? (
+					<p className="px-4 py-2 text-xs text-slate-400">
+						No direct messages yet.
+					</p>
+				) : (
+					dms.map((dm) => {
+						const active = dm.id === activeId;
+						const label = dmLabel(dm);
+						return (
+							<button
+								key={dm.id}
+								type="button"
+								onClick={() => selectChannel(dm.id)}
+								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
+									active
+										? "bg-slate-100 font-semibold text-slate-900"
+										: "text-slate-600 hover:bg-slate-50"
+								}`}
+							>
+								<span className="flex min-w-0 items-center gap-2">
+									<span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
+										{dm.type === "G" ? (
+											<Users size={11} />
+										) : (
+											initials(label)
+										)}
+									</span>
+									<span className="truncate">{label}</span>
+								</span>
+								{dm.has_unreads && (
 									<span
 										aria-hidden="true"
 										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
@@ -540,7 +684,11 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 				<div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
 					<div className="min-w-0">
 						<p className="truncate text-sm font-semibold text-slate-900">
-							#{activeChannel ? channelLabel(activeChannel) : "channel"}
+							{activeChannel
+								? activeIsDm
+									? dmLabel(activeChannel)
+									: `#${channelLabel(activeChannel)}`
+								: "channel"}
 						</p>
 						<p className="truncate text-xs text-slate-500">
 							{team?.display_name || "InternJobs"} · Signed in as{" "}
@@ -752,7 +900,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									rows={2}
 									placeholder={
 										activeChannel
-											? `Message #${channelLabel(activeChannel)}`
+											? activeIsDm
+												? `Message ${dmLabel(activeChannel)}`
+												: `Message #${channelLabel(activeChannel)}`
 											: "Choose a channel"
 									}
 									className="min-h-[44px] flex-1 resize-none rounded-md border border-slate-200 px-3 py-2 text-sm leading-5 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 disabled:bg-slate-50"
@@ -807,6 +957,15 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 						error={(createChannel.error as Error | null)?.message ?? null}
 						onClose={() => setCreateDialogOpen(false)}
 						onSubmit={(input) => createChannel.mutate(input)}
+					/>
+				)}
+
+				{dmDialogOpen && (
+					<NewDmDialog
+						pending={openDm.isPending}
+						error={(openDm.error as Error | null)?.message ?? null}
+						onClose={() => setDmDialogOpen(false)}
+						onSubmit={(kind, userIds) => openDm.mutate({ kind, userIds })}
 					/>
 				)}
 			</div>
@@ -967,6 +1126,187 @@ function ThreadPanel({
 				)}
 			</form>
 		</aside>
+	);
+}
+
+// ─── New-DM user picker dialog (Wave 2, plan 31-03) ──────────────────
+
+function NewDmDialog({
+	pending,
+	error,
+	onClose,
+	onSubmit,
+}: {
+	pending: boolean;
+	error: string | null;
+	onClose: () => void;
+	onSubmit: (kind: "direct" | "group", userIds: string[]) => void;
+}) {
+	const [search, setSearch] = useState("");
+	const [selected, setSelected] = useState<string[]>([]);
+
+	const membersQuery = useQuery({
+		queryKey: ["native-chat", "team-members"],
+		staleTime: 60_000,
+		retry: false,
+		queryFn: () => chatFetch<MmUser[]>("/api/chat/team-members"),
+	});
+
+	const members = useMemo(() => {
+		const list = membersQuery.data ?? [];
+		const q = search.trim().toLowerCase();
+		const filtered = q
+			? list.filter((u) =>
+					mmUserDisplayName(u).toLowerCase().includes(q) ||
+					(u.username ?? "").toLowerCase().includes(q),
+				)
+			: list;
+		return [...filtered].sort((a, b) =>
+			mmUserDisplayName(a).localeCompare(mmUserDisplayName(b)),
+		);
+	}, [membersQuery.data, search]);
+
+	function toggle(id: string) {
+		setSelected((prev) =>
+			prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+		);
+	}
+
+	const canDirect = selected.length === 1;
+	const canGroup = selected.length >= 2;
+
+	return (
+		<>
+			<button
+				type="button"
+				aria-label="Close dialog"
+				onClick={onClose}
+				className="fixed inset-0 z-40 bg-black/30"
+			/>
+			<div
+				role="dialog"
+				aria-label="New direct message"
+				className="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+			>
+				<div className="flex items-center justify-between">
+					<h3 className="text-base font-semibold text-slate-900">
+						New message
+					</h3>
+					<button
+						type="button"
+						aria-label="Close"
+						onClick={onClose}
+						className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100"
+					>
+						<X size={16} />
+					</button>
+				</div>
+
+				<div className="relative mt-4">
+					<Search
+						size={15}
+						className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+					/>
+					<input
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						placeholder="Search people…"
+						autoFocus
+						className="w-full rounded-md border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+					/>
+				</div>
+
+				<div className="mt-3 min-h-0 flex-1 overflow-auto rounded-md border border-slate-100">
+					{membersQuery.isLoading ? (
+						<div className="flex items-center gap-2 px-3 py-4 text-sm text-slate-500">
+							<Loader2 className="animate-spin" size={15} />
+							Loading people
+						</div>
+					) : membersQuery.error ? (
+						<p className="px-3 py-4 text-sm text-rose-600">
+							{(membersQuery.error as Error).message}
+						</p>
+					) : members.length === 0 ? (
+						<p className="px-3 py-4 text-sm text-slate-400">
+							No teammates found.
+						</p>
+					) : (
+						members.map((user) => {
+							const name = mmUserDisplayName(user);
+							const checked = selected.includes(user.id);
+							return (
+								<label
+									key={user.id}
+									className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50"
+								>
+									<input
+										type="checkbox"
+										checked={checked}
+										onChange={() => toggle(user.id)}
+										className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+									/>
+									<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+										{initials(name)}
+									</span>
+									<span className="min-w-0">
+										<span className="block truncate font-medium text-slate-800">
+											{name}
+										</span>
+										{user.username && (
+											<span className="block truncate text-xs text-slate-400">
+												@{user.username}
+											</span>
+										)}
+									</span>
+								</label>
+							);
+						})
+					)}
+				</div>
+
+				{error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
+
+				<div className="mt-4 flex items-center justify-between">
+					<span className="text-xs text-slate-400">
+						{selected.length} selected
+					</span>
+					<div className="flex gap-2">
+						<button
+							type="button"
+							onClick={() => canDirect && onSubmit("direct", selected)}
+							disabled={!canDirect || pending}
+							title={
+								canDirect
+									? "Open a direct message"
+									: "Select exactly one person for a direct message"
+							}
+							className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{pending && canDirect && (
+								<Loader2 className="animate-spin" size={14} />
+							)}
+							Direct Message
+						</button>
+						<button
+							type="button"
+							onClick={() => canGroup && onSubmit("group", selected)}
+							disabled={!canGroup || pending}
+							title={
+								canGroup
+									? "Open a group DM"
+									: "Select 2 or more people for a group DM"
+							}
+							className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{pending && canGroup && (
+								<Loader2 className="animate-spin" size={14} />
+							)}
+							Group DM
+						</button>
+					</div>
+				</div>
+			</div>
+		</>
 	);
 }
 
