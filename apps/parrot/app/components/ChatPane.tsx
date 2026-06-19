@@ -616,6 +616,8 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	// Same idea for the local user id, so the `posted` handler can skip our own
 	// echoed posts when counting unreads (#17) without re-binding the socket.
 	const meIdRef = useRef<string | undefined>(undefined);
+	// #3: channels we've already tried auto-joining (avoid retry loops).
+	const autoJoinAttemptedRef = useRef<Set<string>>(new Set());
 
 	const bootstrap = useQuery({
 		queryKey: ["native-chat", "bootstrap"],
@@ -1079,9 +1081,33 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 			await queryClient.invalidateQueries({
 				queryKey: ["native-chat", "channels"],
 			});
+			// #3: once joined, (re)load the channel's posts so the feed appears
+			// seamlessly instead of the old "channel not available" error.
+			await queryClient.invalidateQueries({
+				queryKey: ["native-chat", "posts", channelId],
+			});
 			setActiveChannelId(channelId);
 		},
 	});
+
+	// #3: seamless join-on-open. When the posts fetch for a PUBLIC channel fails
+	// with 403 (the employee isn't a member yet), auto-join once and the join's
+	// onSuccess refetches the posts. We guard with autoJoinAttemptedRef so a
+	// persistently failing channel doesn't loop. If the join itself fails the
+	// pane shows a friendly inline message (see body render) rather than the raw
+	// "channel not available".
+	useEffect(() => {
+		if (!activeId) return;
+		const err = postsQuery.error as ChatApiError | null;
+		if (!err || err.status !== 403) return;
+		if (autoJoinAttemptedRef.current.has(activeId)) return;
+		// Only auto-join PUBLIC ("O") channels — never DMs or private channels.
+		const channel = channels.find((ch) => ch.id === activeId);
+		if (channel && channel.type !== "O") return;
+		autoJoinAttemptedRef.current.add(activeId);
+		joinChannel.mutate(activeId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeId, postsQuery.error, channels]);
 
 	// Wave 2 (31-03): open/create a DM (idempotent on the server). On success
 	// refresh the DM list and switch the active channel to the new/existing DM.
@@ -1662,14 +1688,21 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							ref={messagesRef}
 							className="min-h-0 flex-1 space-y-1 overflow-auto px-3 py-4 sm:px-6"
 						>
-							{postsQuery.isLoading ? (
+							{postsQuery.isLoading ||
+							// #3: while a 403 is being auto-resolved by joining, show a
+							// "Joining…" state instead of the scary error flash.
+							(joinChannel.isPending &&
+								(postsQuery.error as ChatApiError | null)?.status === 403) ? (
 								<div className="flex items-center gap-2 text-sm text-slate-500">
 									<Loader2 className="animate-spin" size={16} />
-									Loading messages
+									{joinChannel.isPending ? "Joining channel" : "Loading messages"}
 								</div>
 							) : postsQuery.error ? (
 								<div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-									{(postsQuery.error as Error).message}
+									{/* #3: friendlier copy when the auto-join couldn't add us. */}
+									{(postsQuery.error as ChatApiError).status === 403
+										? "You don't have access to this channel yet. If it's a public channel, try refreshing — otherwise ask an admin to add you."
+										: (postsQuery.error as Error).message}
 								</div>
 							) : posts.length === 0 ? (
 								<div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
