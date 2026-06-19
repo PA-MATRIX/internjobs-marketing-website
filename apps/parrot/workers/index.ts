@@ -40,19 +40,28 @@ import {
 import { pingParrotGraph } from "./lib/graph";
 import { isOperator as hasOperatorAccess } from "./lib/operator";
 import {
+	createMmDirectChannel,
+	createMmGroupChannel,
 	createMmParrotPost,
 	ensureMmWorkspaceMembership,
 	getMmChannelPosts,
+	getMmMyDirectChannels,
 	getMmTeamChannels,
 	getMmTeamChannelsForUser,
 	getMmTeamsForUser,
 	getMmUserByEmail,
 	getMmUsersByIds,
 	mintMmUserToken,
+	mmFetch,
 	mmFetchAsUser,
 } from "./lib/mattermost";
 import { getWorkspaceStub } from "./durableObject/workspace";
-import type { MattermostChannel, MattermostPost, MattermostPostList } from "./lib/mattermost";
+import type {
+	MattermostChannel,
+	MattermostPost,
+	MattermostPostList,
+	MattermostUser,
+} from "./lib/mattermost";
 import type { Env } from "./types";
 
 // — Phase 14 Wave 3: graphReady cache (30s) ────────────────────────
@@ -993,8 +1002,21 @@ app.get(
 				chat.status as 404 | 502 | 503,
 			);
 		}
+		// Wave 2 (31-03): DM/group channels aren't in the team-channel bootstrap
+		// list. If the channel isn't a known team channel, verify the employee is
+		// a member via their OWN PAT before reading (so they can only read DMs
+		// they belong to) — then read the posts with the bot token as before.
 		if (!chat.channels.some((channel) => channel.id === channelId)) {
-			return c.json({ error: "Channel not available" }, 403);
+			const proxy = chatUserProxy(c);
+			const membership = proxy.ok
+				? await proxy.call<{ channel_id: string }>(
+						`/api/v4/channels/${channelId}/members/me`,
+						{ method: "GET" },
+					)
+				: null;
+			if (!membership || !membership.ok) {
+				return c.json({ error: "Channel not available" }, 403);
+			}
 		}
 
 		const page = Number.parseInt(c.req.query("page") ?? "0", 10);
@@ -1060,9 +1082,12 @@ app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 			chat.status as 404 | 502 | 503,
 		);
 	}
-	if (!chat.channels.some((channel) => channel.id === channelId)) {
-		return c.json({ error: "Channel not available" }, 403);
-	}
+	// Wave 2 (31-03): DM/group channels are NOT in the team-channel bootstrap
+	// list, so the old "channel must be in chat.channels" gate would reject DM
+	// posts. We drop the redundant gate: because the post is sent via the
+	// employee's own PAT (mmFetchAsUser), Mattermost itself enforces that the
+	// employee may only post to channels they are a member of — a non-member
+	// PAT post returns 403 from MM and is surfaced as a 502 below.
 
 	// Phase 31 Wave 0: post AS the employee using their own PAT — no
 	// parrot_author_* props for human posts (the post's user_id IS the
@@ -1375,6 +1400,195 @@ app.post(
 			return c.json({ error: "Pin failed" }, 502);
 		}
 		return c.json({ ok: true, pinned: postId });
+	},
+);
+
+// ── Phase 31 Wave 2 (plan 31-03): DMs + group DMs ───────────────────
+//
+// MM DMs are channels of type "D" (direct, 2 users) and "G" (group, 3-8).
+// Create/open is idempotent — MM returns the existing channel if it exists.
+// All DM routes proxy AS the employee via their PAT (chatUserProxy), so the
+// DM belongs to the real MM user and messages (posted via the existing
+// /api/chat/posts route with channel_id = the DM channel id) arrive under
+// the employee identity, never the parrot bot.
+//
+// A "D" channel name is `userIdA__userIdB` (the two member IDs sorted), which
+// we parse to derive the partner id without an extra members lookup. "G"
+// channels have an opaque hash name, so we resolve their members via the
+// channel-members endpoint to build partner names.
+
+// GET /api/chat/dms — list the employee's DM channels (type D + G), enriched
+// with resolved partner display names.
+app.get("/api/chat/dms", requireEmployeeMailbox, async (c: AppContext) => {
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+
+	const result = await proxy.call<MattermostChannel[]>(
+		"/api/v4/users/me/channels?include_deleted=false",
+		{ method: "GET" },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "DMs unavailable" }, 502);
+	}
+	const dms = result.data.filter(
+		(channel) => channel.type === "D" || channel.type === "G",
+	);
+
+	// Collect every partner user id. Direct ("D") channel names encode the two
+	// member ids as `idA__idB`; group ("G") names are opaque so we fetch their
+	// members. We resolve all partner ids in one batched user lookup (bot token
+	// is fine — read access only).
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	const groupMembers = new Map<string, string[]>();
+	const partnerIds = new Set<string>();
+	for (const dm of dms) {
+		if (dm.type === "D") {
+			for (const id of (dm.name ?? "").split("__")) {
+				if (id && id !== tokenRow.mmUserId) partnerIds.add(id);
+			}
+		} else {
+			// Group DM: fetch members (as the employee — they're a member).
+			const members = await proxy.call<Array<{ user_id: string }>>(
+				`/api/v4/channels/${dm.id}/members`,
+				{ method: "GET" },
+			);
+			const ids = members.ok
+				? members.data
+						.map((m) => m.user_id)
+						.filter((id) => id && id !== tokenRow.mmUserId)
+				: [];
+			groupMembers.set(dm.id, ids);
+			for (const id of ids) partnerIds.add(id);
+		}
+	}
+
+	const users = botToken
+		? await getMmUsersByIds(c.env.MATTERMOST_URL, botToken, [...partnerIds])
+		: [];
+	const nameById = new Map<string, string>();
+	for (const u of users) {
+		const full = `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim();
+		nameById.set(u.id, u.nickname || full || u.username || "Teammate");
+	}
+
+	const enriched = dms.map((dm) => {
+		let ids: string[];
+		if (dm.type === "D") {
+			ids = (dm.name ?? "")
+				.split("__")
+				.filter((id) => id && id !== tokenRow.mmUserId);
+		} else {
+			ids = groupMembers.get(dm.id) ?? [];
+		}
+		return {
+			...dm,
+			dm_partner_names: ids.map((id) => nameById.get(id) ?? "Teammate"),
+		};
+	});
+
+	return c.json(enriched);
+});
+
+// POST /api/chat/dms/direct — open/create a DM with one user.
+// Body: { mm_user_id: string }.
+app.post(
+	"/api/chat/dms/direct",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { mm_user_id?: string }
+			| null;
+		const partnerId = body?.mm_user_id?.trim();
+		if (!partnerId) return c.json({ error: "Missing mm_user_id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		if (partnerId === tokenRow.mmUserId) {
+			return c.json({ error: "Cannot DM yourself" }, 400);
+		}
+		const result = await proxy.call<MattermostChannel>(
+			"/api/v4/channels/direct",
+			{ method: "POST", body: JSON.stringify([tokenRow.mmUserId, partnerId]) },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "DM create failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// POST /api/chat/dms/group — open/create a group DM.
+// Body: { mm_user_ids: string[] } (2+ other users; the employee is added
+// server-side). MM requires the final list be 3-8 users total.
+app.post(
+	"/api/chat/dms/group",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { mm_user_ids?: string[] }
+			| null;
+		const others = Array.isArray(body?.mm_user_ids)
+			? [...new Set(body.mm_user_ids.filter((id) => typeof id === "string" && id.trim()))]
+			: [];
+		if (others.length < 2) {
+			return c.json({ error: "Group DM needs at least 2 other users" }, 400);
+		}
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const userIds = [
+			...new Set([tokenRow.mmUserId, ...others.filter((id) => id !== tokenRow.mmUserId)]),
+		];
+		if (userIds.length < 3 || userIds.length > 8) {
+			return c.json({ error: "Group DM must have 3-8 members" }, 400);
+		}
+		const result = await proxy.call<MattermostChannel>(
+			"/api/v4/channels/group",
+			{ method: "POST", body: JSON.stringify(userIds) },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Group DM create failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// GET /api/chat/team-members — list every member of the employee's team
+// (minus the requesting employee), for the new-DM user picker. Uses the bot
+// token (system-admin read access) + a batched user lookup. Cached 60s at the
+// edge since team membership changes rarely.
+app.get(
+	"/api/chat/team-members",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const botToken = c.env.MATTERMOST_BOT_TOKEN;
+		if (!botToken) return c.json({ error: "chat_not_provisioned" }, 503);
+		const chat = await loadChatContext(c);
+		if (!chat.ok) {
+			return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+		}
+		const members = await mmFetch<Array<{ user_id: string }>>(
+			c.env.MATTERMOST_URL,
+			botToken,
+			`/api/v4/teams/${chat.team.id}/members?page=0&per_page=200`,
+		);
+		if (!members.ok) return c.json({ error: "Team members unavailable" }, 502);
+		const ids = members.data
+			.map((m) => m.user_id)
+			.filter((id) => id && id !== chat.user.id);
+		const users: MattermostUser[] = await getMmUsersByIds(
+			c.env.MATTERMOST_URL,
+			botToken,
+			ids,
+		);
+		return c.json(users, 200, { "Cache-Control": "private, max-age=60" });
 	},
 );
 

@@ -713,3 +713,72 @@ export async function getMmTeamPublicChannels(
 	);
 	return resp.ok ? resp.data : [];
 }
+
+// ── Phase 31 Wave 2 (plan 31-03): DMs + group DMs ───────────────────
+//
+// Mattermost DMs are channels of type "D" (direct, exactly 2 users) and "G"
+// (group, 3–8 users). Creating/opening one is idempotent — MM returns the
+// existing channel if it already exists (Pattern 4 from 31-RESEARCH). All of
+// these take a bearer token directly; the Worker routes pass the employee's
+// own PAT (via mmFetchAsUser) so the DM belongs to the real MM user.
+
+/**
+ * Open (or create) a direct message channel between exactly two users.
+ * MM POST /api/v4/channels/direct with body [userId1, userId2]. One of the
+ * two IDs must be the requesting user's own MM user_id. Idempotent — returns
+ * the existing "D" channel if it already exists. Returns null on failure.
+ */
+export async function createMmDirectChannel(
+	mattermostUrl: string,
+	token: string,
+	userIds: [string, string],
+): Promise<MattermostChannel | null> {
+	const resp = await mmFetch<MattermostChannel>(
+		mattermostUrl,
+		token,
+		"/api/v4/channels/direct",
+		{ method: "POST", body: JSON.stringify(userIds) },
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * Open (or create) a group DM channel for the given users. MM POST
+ * /api/v4/channels/group with body [...userIds]. MM requires at least 3 user
+ * IDs (the creator + 2 others) and at most 8. Idempotent — returns the
+ * existing "G" channel if the same set already exists. Returns null on failure.
+ */
+export async function createMmGroupChannel(
+	mattermostUrl: string,
+	token: string,
+	userIds: string[],
+): Promise<MattermostChannel | null> {
+	const resp = await mmFetch<MattermostChannel>(
+		mattermostUrl,
+		token,
+		"/api/v4/channels/group",
+		{ method: "POST", body: JSON.stringify(userIds) },
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * List the requesting user's DM channels (type "D" and "G"). MM GET
+ * /api/v4/users/me/channels returns ALL channels the token user is a member
+ * of across teams; we filter client-side to the DM types. Returns [] on
+ * failure.
+ */
+export async function getMmMyDirectChannels(
+	mattermostUrl: string,
+	token: string,
+): Promise<MattermostChannel[]> {
+	const resp = await mmFetch<MattermostChannel[]>(
+		mattermostUrl,
+		token,
+		"/api/v4/users/me/channels?include_deleted=false",
+	);
+	if (!resp.ok) return [];
+	return resp.data.filter(
+		(channel) => channel.type === "D" || channel.type === "G",
+	);
+}
