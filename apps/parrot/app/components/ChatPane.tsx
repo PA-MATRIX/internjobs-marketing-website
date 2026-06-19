@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
 	Check,
+	Download,
 	FileText,
 	Hash,
 	Loader2,
@@ -360,6 +361,38 @@ function postFiles(post: MmPost): MmFileInfo[] {
 // update_at vs create_at wrongly flagged those posts as edited.
 function isEdited(post: MmPost): boolean {
 	return typeof post.edit_at === "number" && post.edit_at > 0;
+}
+
+// #9 + #10: download a file DIRECTLY (no new browser tab). We fetch the file
+// proxy as a blob (same-origin, Clerk-session cookie auth) and click a
+// temporary anchor with the download attribute. Falling back to a direct
+// download link keeps the existing inline image/file rendering intact.
+async function downloadFile(file: MmFileInfo): Promise<void> {
+	try {
+		const res = await apiFetch(`/api/chat/files/${file.id}`, {
+			headers: { Accept: "*/*" },
+		});
+		if (!res.ok) throw new Error("download failed");
+		const blob = await res.blob();
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = file.name || "download";
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		// Revoke after a tick so the click has consumed the URL.
+		setTimeout(() => URL.revokeObjectURL(url), 1000);
+	} catch {
+		// Last-resort fallback: same-origin anchor with download attr. The proxy
+		// sends Content-Disposition: inline, but the download attr forces a save.
+		const a = document.createElement("a");
+		a.href = `/api/chat/files/${file.id}`;
+		a.download = file.name || "download";
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+	}
 }
 
 function isImageFile(file: MmFileInfo): boolean {
@@ -1884,40 +1917,61 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 														</p>
 													)}
 													{/* Wave 3 (31-04): inline attachments. Images render
-													    via the GET proxy (Content-Type forwarded); other
-													    files render as a download link. */}
+													    inline via the GET proxy; #9/#10 add a hover
+													    download affordance that downloads DIRECTLY (no
+													    new browser tab). */}
 													{postFiles(post).length > 0 && (
 														<div className="mt-1.5 flex flex-wrap gap-2">
 															{postFiles(post).map((file) =>
 																isImageFile(file) ? (
-																	<a
+																	// #10: keep the inline image; add a download
+																	// icon at the BOTTOM-RIGHT corner on hover.
+																	<div
 																		key={file.id}
-																		href={`/api/chat/files/${file.id}`}
-																		target="_blank"
-																		rel="noreferrer"
-																		onClick={(e) => e.stopPropagation()}
-																		className="block"
+																		className="group/img relative inline-block"
 																	>
 																		<img
 																			src={`/api/chat/files/${file.id}`}
 																			alt={file.name}
 																			className="max-h-60 max-w-xs rounded-md border border-slate-200 object-cover"
 																		/>
-																	</a>
+																		<button
+																			type="button"
+																			title={`Download ${file.name}`}
+																			aria-label={`Download ${file.name}`}
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				void downloadFile(file);
+																			}}
+																			className="absolute bottom-1.5 right-1.5 hidden h-7 w-7 items-center justify-center rounded-md bg-slate-900/70 text-white backdrop-blur-sm hover:bg-slate-900 group-hover/img:flex"
+																		>
+																			<Download size={14} />
+																		</button>
+																	</div>
 																) : (
-																	<a
+																	// #9: file chip with a hover download icon at
+																	// the right corner; click downloads directly.
+																	<div
 																		key={file.id}
-																		href={`/api/chat/files/${file.id}`}
-																		target="_blank"
-																		rel="noreferrer"
-																		onClick={(e) => e.stopPropagation()}
-																		className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+																		className="group/file relative inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white py-2 pl-3 pr-9 text-xs font-medium text-slate-700"
 																	>
 																		<FileText size={14} className="text-slate-400" />
 																		<span className="max-w-[12rem] truncate">
 																			{file.name}
 																		</span>
-																	</a>
+																		<button
+																			type="button"
+																			title={`Download ${file.name}`}
+																			aria-label={`Download ${file.name}`}
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				void downloadFile(file);
+																			}}
+																			className="absolute right-1 top-1/2 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-900 group-hover/file:flex"
+																		>
+																			<Download size={13} />
+																		</button>
+																	</div>
 																),
 															)}
 														</div>
