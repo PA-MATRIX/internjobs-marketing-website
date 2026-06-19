@@ -27,10 +27,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
 	Check,
+	FileText,
 	Hash,
 	Loader2,
 	Lock,
 	MessageSquare,
+	Paperclip,
 	Pencil,
 	Pin,
 	Plus,
@@ -38,6 +40,7 @@ import {
 	Reply,
 	Search,
 	Send,
+	Smile,
 	Trash2,
 	Users,
 	X,
@@ -76,6 +79,21 @@ interface MmChannel {
 	dm_partner_names?: string[];
 }
 
+interface MmFileInfo {
+	id: string;
+	name: string;
+	mime_type?: string;
+	extension?: string;
+	width?: number;
+	height?: number;
+}
+
+interface MmReaction {
+	user_id: string;
+	emoji_name: string;
+	post_id?: string;
+}
+
 interface MmPost {
 	id: string;
 	channel_id: string;
@@ -86,6 +104,12 @@ interface MmPost {
 	root_id?: string;
 	reply_count?: number;
 	props?: Record<string, unknown>;
+	// Wave 3 (31-04): attachments + reactions. file_ids is the raw id list MM
+	// stores on the post; metadata.files carries the resolved FileInfo MM
+	// embeds in the post object when present.
+	file_ids?: string[];
+	metadata?: { files?: MmFileInfo[] };
+	reactions?: MmReaction[];
 }
 
 interface MmPostList {
@@ -248,6 +272,110 @@ function slugify(input: string): string {
 		.slice(0, 64);
 }
 
+// ── Wave 3 (31-04): emoji reactions + @mentions + inline files ────────
+
+// Quick-picker glyphs and their MM short names. MM stores reactions by short
+// name (e.g. "thumbsup"), so the picker maps the displayed glyph to its name
+// when calling POST /api/chat/reactions.
+const EMOJI_PICKER: Array<[string, string]> = [
+	["👍", "thumbsup"],
+	["❤️", "heart"],
+	["😂", "joy"],
+	["🎉", "tada"],
+	["🔥", "fire"],
+	["👀", "eyes"],
+	["🙏", "pray"],
+	["💯", "100"],
+	["✅", "white_check_mark"],
+	["❌", "x"],
+	["😊", "blush"],
+	["🤔", "thinking_face"],
+	["🚀", "rocket"],
+	["💡", "bulb"],
+	["⚡", "zap"],
+	["😎", "sunglasses"],
+	["🤝", "handshake"],
+	["🙌", "raised_hands"],
+	["💪", "muscle"],
+	["✨", "sparkles"],
+];
+
+// Reverse lookup: MM short name → glyph, so existing reaction chips render the
+// emoji rather than the raw name. Falls back to :name: for unknown emoji.
+const EMOJI_GLYPH = new Map(EMOJI_PICKER.map(([glyph, name]) => [name, glyph]));
+
+function emojiGlyph(name: string): string {
+	return EMOJI_GLYPH.get(name) ?? `:${name}:`;
+}
+
+// Group a post's reactions by emoji_name → { count, mine }.
+function groupReactions(
+	reactions: MmReaction[] | undefined,
+	myUserId?: string,
+): Array<{ name: string; count: number; mine: boolean }> {
+	if (!reactions?.length) return [];
+	const byName = new Map<string, { count: number; mine: boolean }>();
+	for (const r of reactions) {
+		const entry = byName.get(r.emoji_name) ?? { count: 0, mine: false };
+		entry.count += 1;
+		if (myUserId && r.user_id === myUserId) entry.mine = true;
+		byName.set(r.emoji_name, entry);
+	}
+	return [...byName.entries()].map(([name, v]) => ({ name, ...v }));
+}
+
+// Resolve a post's file attachments from either metadata.files (preferred,
+// includes mime/name) or the bare file_ids list (id-only fallback).
+function postFiles(post: MmPost): MmFileInfo[] {
+	if (post.metadata?.files?.length) return post.metadata.files;
+	if (post.file_ids?.length) {
+		return post.file_ids.map((id) => ({ id, name: "attachment" }));
+	}
+	return [];
+}
+
+function isImageFile(file: MmFileInfo): boolean {
+	if (file.mime_type) return file.mime_type.startsWith("image/");
+	const ext = (file.extension ?? file.name.split(".").pop() ?? "").toLowerCase();
+	return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
+}
+
+// Render message text with @mentions highlighted. The current employee's own
+// username gets a yellow background (directed-at-you); other mentions are sky
+// blue. Returns a ReactNode array so we keep the rest of the text as-is.
+function renderMessageText(text: string, myUsername?: string): ReactNode {
+	if (!text) return text;
+	const parts: ReactNode[] = [];
+	const regex = /(\B@\w+)/g;
+	let lastIndex = 0;
+	let match: RegExpExecArray | null;
+	let key = 0;
+	// biome-ignore lint/suspicious/noAssignInExpressions: standard regex walk
+	while ((match = regex.exec(text)) !== null) {
+		if (match.index > lastIndex) {
+			parts.push(text.slice(lastIndex, match.index));
+		}
+		const mention = match[0]; // includes the leading @
+		const handle = mention.slice(1).toLowerCase();
+		const isMe = !!myUsername && handle === myUsername.toLowerCase();
+		parts.push(
+			<span
+				key={`m${key++}`}
+				className={
+					isMe
+						? "rounded bg-yellow-100 px-0.5 font-medium text-sky-700"
+						: "font-medium text-sky-600"
+				}
+			>
+				{mention}
+			</span>,
+		);
+		lastIndex = match.index + mention.length;
+	}
+	if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+	return parts.length ? parts : text;
+}
+
 export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const queryClient = useQueryClient();
 	const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -260,6 +388,35 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const [editDraft, setEditDraft] = useState("");
 	const [pinToast, setPinToast] = useState<string | null>(null);
 	const messagesRef = useRef<HTMLDivElement | null>(null);
+
+	// Wave 3 (31-04) state.
+	// Pending file uploads: each entry tracks the MM file id (once uploaded),
+	// a local preview URL for images, and the upload status.
+	type PendingFile = {
+		key: string;
+		fileId: string | null;
+		name: string;
+		previewUrl: string | null;
+		isImage: boolean;
+		uploading: boolean;
+		error: boolean;
+	};
+	const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+	const [isDragging, setIsDragging] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
+	// Global search.
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [searchValue, setSearchValue] = useState("");
+	const [searchResults, setSearchResults] = useState<MmPost[] | null>(null);
+	const [searchLoading, setSearchLoading] = useState(false);
+	const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Reaction picker (which post id has its picker open).
+	const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(
+		null,
+	);
+	// @mention autocomplete.
+	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+	const draftRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const bootstrap = useQuery({
 		queryKey: ["native-chat", "bootstrap"],
@@ -369,14 +526,47 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		return () => clearTimeout(t);
 	}, [pinToast]);
 
+	// Wave 3 (31-04): team member list (cached) — powers @mention autocomplete.
+	const teamMembersQuery = useQuery({
+		queryKey: ["native-chat", "team-members"],
+		enabled: Boolean(bootstrap.data),
+		staleTime: 60_000,
+		retry: false,
+		queryFn: () => chatFetch<MmUser[]>("/api/chat/team-members"),
+	});
+
+	// Filtered mention candidates for the autocomplete dropdown (max 6).
+	const mentionCandidates = useMemo(() => {
+		if (mentionQuery === null) return [];
+		const q = mentionQuery.toLowerCase();
+		const list = teamMembersQuery.data ?? [];
+		return list
+			.filter(
+				(u) =>
+					(u.username ?? "").toLowerCase().includes(q) ||
+					mmUserDisplayName(u).toLowerCase().includes(q),
+			)
+			.slice(0, 6);
+	}, [mentionQuery, teamMembersQuery.data]);
+
 	const sendMessage = useMutation({
-		mutationFn: (message: string) =>
+		mutationFn: (input: { message: string; fileIds: string[] }) =>
 			chatFetch<MmPost>("/api/chat/posts", {
 				method: "POST",
-				body: JSON.stringify({ channel_id: activeId, message }),
+				body: JSON.stringify({
+					channel_id: activeId,
+					message: input.message,
+					...(input.fileIds.length ? { file_ids: input.fileIds } : {}),
+				}),
 			}),
 		onSuccess: async () => {
 			setDraft("");
+			// Revoke any preview object URLs and clear the pending list.
+			setPendingFiles((prev) => {
+				for (const f of prev) if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+				return [];
+			});
+			setMentionQuery(null);
 			await queryClient.invalidateQueries({
 				queryKey: ["native-chat", "posts", activeId],
 			});
@@ -489,10 +679,167 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		onSuccess: () => setPinToast("Pinned"),
 	});
 
+	// Wave 3 (31-04): toggle an emoji reaction. POST to add, DELETE to remove —
+	// the caller passes `mine` to pick the direction. Optimistic-free: we just
+	// refetch the channel posts (MM embeds reactions on the post object).
+	const toggleReaction = useMutation({
+		mutationFn: (input: { postId: string; emojiName: string; mine: boolean }) =>
+			chatFetch<{ ok: boolean }>("/api/chat/reactions", {
+				method: input.mine ? "DELETE" : "POST",
+				body: JSON.stringify({
+					post_id: input.postId,
+					emoji_name: input.emojiName,
+				}),
+			}),
+		onSuccess: async () => {
+			setReactionPickerPostId(null);
+			await queryClient.invalidateQueries({
+				queryKey: ["native-chat", "posts", activeId],
+			});
+		},
+	});
+
+	// Wave 3 (31-04): upload a file to the active channel. This is a multipart
+	// request, so we use the raw apiFetch (NOT chatFetch which forces JSON) and
+	// let the browser set the multipart Content-Type + boundary automatically.
+	async function uploadFiles(fileList: FileList | File[]) {
+		if (!activeId) return;
+		const files = Array.from(fileList);
+		for (const file of files) {
+			const key = `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const isImage = file.type.startsWith("image/");
+			const previewUrl = isImage ? URL.createObjectURL(file) : null;
+			setPendingFiles((prev) => [
+				...prev,
+				{
+					key,
+					fileId: null,
+					name: file.name,
+					previewUrl,
+					isImage,
+					uploading: true,
+					error: false,
+				},
+			]);
+			try {
+				const form = new FormData();
+				form.append("files", file, file.name);
+				const res = await apiFetch(
+					`/api/chat/files?channel_id=${encodeURIComponent(activeId)}`,
+					{ method: "POST", body: form },
+				);
+				const data = (await res.json().catch(() => null)) as
+					| { file_infos?: Array<{ id: string }> }
+					| null;
+				const fileId = data?.file_infos?.[0]?.id ?? null;
+				if (!res.ok || !fileId) throw new Error("upload failed");
+				setPendingFiles((prev) =>
+					prev.map((f) =>
+						f.key === key ? { ...f, fileId, uploading: false } : f,
+					),
+				);
+			} catch {
+				setPendingFiles((prev) =>
+					prev.map((f) =>
+						f.key === key ? { ...f, uploading: false, error: true } : f,
+					),
+				);
+			}
+		}
+	}
+
+	function removePendingFile(key: string) {
+		setPendingFiles((prev) => {
+			const target = prev.find((f) => f.key === key);
+			if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+			return prev.filter((f) => f.key !== key);
+		});
+	}
+
+	// Wave 3 (31-04): debounced global search. Runs whenever searchValue changes
+	// while search mode is open. Stores the ordered result posts in state.
+	useEffect(() => {
+		if (!searchOpen) return;
+		const term = searchValue.trim();
+		if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+		if (!term) {
+			setSearchResults(null);
+			setSearchLoading(false);
+			return;
+		}
+		setSearchLoading(true);
+		searchDebounceRef.current = setTimeout(async () => {
+			try {
+				const data = await chatFetch<MmPostList>("/api/chat/search", {
+					method: "POST",
+					body: JSON.stringify({ terms: term, team_id: team?.id }),
+				});
+				setSearchResults(orderedPosts(data));
+			} catch {
+				setSearchResults([]);
+			} finally {
+				setSearchLoading(false);
+			}
+		}, 400);
+		return () => {
+			if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+		};
+	}, [searchOpen, searchValue, team?.id]);
+
+	// Close search mode on Escape.
+	useEffect(() => {
+		if (!searchOpen) return;
+		function onKey(e: KeyboardEvent) {
+			if (e.key === "Escape") setSearchOpen(false);
+		}
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [searchOpen]);
+
+	function closeSearch() {
+		setSearchOpen(false);
+		setSearchValue("");
+		setSearchResults(null);
+	}
+
+	function jumpToResult(channelId: string) {
+		selectChannel(channelId);
+		closeSearch();
+	}
+
+	// Detect @mention typing: a trailing "@word" at the cursor opens the picker.
+	function onDraftChange(value: string) {
+		setDraft(value);
+		const caret = draftRef.current?.selectionStart ?? value.length;
+		const upToCaret = value.slice(0, caret);
+		const match = /\B@(\w*)$/.exec(upToCaret);
+		setMentionQuery(match ? match[1] : null);
+	}
+
+	function insertMention(username: string) {
+		const caret = draftRef.current?.selectionStart ?? draft.length;
+		const before = draft.slice(0, caret).replace(/\B@(\w*)$/, `@${username} `);
+		const after = draft.slice(caret);
+		setDraft(before + after);
+		setMentionQuery(null);
+		draftRef.current?.focus();
+	}
+
 	function submitDraft() {
 		const message = draft.trim();
-		if (!message || !activeId || sendMessage.isPending) return;
-		sendMessage.mutate(message);
+		const fileIds = pendingFiles
+			.map((f) => f.fileId)
+			.filter((id): id is string => Boolean(id));
+		const stillUploading = pendingFiles.some((f) => f.uploading);
+		if (
+			(!message && fileIds.length === 0) ||
+			!activeId ||
+			sendMessage.isPending ||
+			stillUploading
+		) {
+			return;
+		}
+		sendMessage.mutate({ message, fileIds });
 	}
 
 	function onSubmit(e: FormEvent) {
@@ -703,6 +1050,17 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 						<StartMeeting />
 						<button
 							type="button"
+							onClick={() => setSearchOpen((v) => !v)}
+							title="Search messages"
+							aria-label="Search messages"
+							className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-50 ${
+								searchOpen ? "text-sky-600 ring-1 ring-sky-300" : "text-slate-600"
+							}`}
+						>
+							<Search size={16} />
+						</button>
+						<button
+							type="button"
 							onClick={() => postsQuery.refetch()}
 							disabled={postsQuery.isFetching}
 							title="Refresh messages"
@@ -719,6 +1077,21 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 				{/* Message area + right-side thread panel */}
 				<div className="flex min-h-0 flex-1">
 					<section className="flex min-h-0 flex-1 flex-col">
+						{searchOpen ? (
+							<SearchPanel
+								value={searchValue}
+								onChange={setSearchValue}
+								loading={searchLoading}
+								results={searchResults}
+								usersById={usersById}
+								channels={channels}
+								dms={dms}
+								myUsername={me?.username}
+								onJump={jumpToResult}
+								onClose={closeSearch}
+							/>
+						) : (
+						<>
 						<div
 							ref={messagesRef}
 							className="min-h-0 flex-1 space-y-1 overflow-auto px-3 py-4 sm:px-6"
@@ -804,9 +1177,80 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 													</div>
 												</div>
 											) : (
-												<p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
-													{post.message || "(attachment)"}
-												</p>
+												<>
+													{post.message && (
+														<p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
+															{renderMessageText(post.message, me?.username)}
+														</p>
+													)}
+													{/* Wave 3 (31-04): inline attachments. Images render
+													    via the GET proxy (Content-Type forwarded); other
+													    files render as a download link. */}
+													{postFiles(post).length > 0 && (
+														<div className="mt-1.5 flex flex-wrap gap-2">
+															{postFiles(post).map((file) =>
+																isImageFile(file) ? (
+																	<a
+																		key={file.id}
+																		href={`/api/chat/files/${file.id}`}
+																		target="_blank"
+																		rel="noreferrer"
+																		onClick={(e) => e.stopPropagation()}
+																		className="block"
+																	>
+																		<img
+																			src={`/api/chat/files/${file.id}`}
+																			alt={file.name}
+																			className="max-h-60 max-w-xs rounded-md border border-slate-200 object-cover"
+																		/>
+																	</a>
+																) : (
+																	<a
+																		key={file.id}
+																		href={`/api/chat/files/${file.id}`}
+																		target="_blank"
+																		rel="noreferrer"
+																		onClick={(e) => e.stopPropagation()}
+																		className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+																	>
+																		<FileText size={14} className="text-slate-400" />
+																		<span className="max-w-[12rem] truncate">
+																			{file.name}
+																		</span>
+																	</a>
+																),
+															)}
+														</div>
+													)}
+													{/* Wave 3 (31-04): reaction chips. Click toggles. */}
+													{groupReactions(post.reactions, me?.id).length > 0 && (
+														<div className="mt-1.5 flex flex-wrap gap-1">
+															{groupReactions(post.reactions, me?.id).map((r) => (
+																<button
+																	key={r.name}
+																	type="button"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		toggleReaction.mutate({
+																			postId: post.id,
+																			emojiName: r.name,
+																			mine: r.mine,
+																		});
+																	}}
+																	title={r.name}
+																	className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
+																		r.mine
+																			? "border-sky-300 bg-sky-50 text-sky-700"
+																			: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+																	}`}
+																>
+																	<span>{emojiGlyph(r.name)}</span>
+																	<span className="tabular-nums">{r.count}</span>
+																</button>
+															))}
+														</div>
+													)}
+												</>
 											)}
 
 											{replies > 0 && !editing && (
@@ -823,9 +1267,55 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 												</button>
 											)}
 
+											{/* Reaction quick-picker popover */}
+											{reactionPickerPostId === post.id && (
+												<div
+													className="absolute right-2 top-8 z-20 w-56 rounded-md border border-slate-200 bg-white p-2 shadow-lg"
+													onClick={(e) => e.stopPropagation()}
+												>
+													<div className="grid grid-cols-8 gap-0.5">
+														{EMOJI_PICKER.map(([glyph, name]) => (
+															<button
+																key={name}
+																type="button"
+																title={name}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	const already = groupReactions(
+																		post.reactions,
+																		me?.id,
+																	).find((r) => r.name === name)?.mine;
+																	toggleReaction.mutate({
+																		postId: post.id,
+																		emojiName: name,
+																		mine: !!already,
+																	});
+																}}
+																className="flex h-7 w-7 items-center justify-center rounded text-base hover:bg-slate-100"
+															>
+																{glyph}
+															</button>
+														))}
+													</div>
+												</div>
+											)}
+
 											{/* Hover action row */}
 											{!editing && (
 												<div className="absolute right-2 top-1 hidden items-center gap-0.5 rounded-md border border-slate-200 bg-white px-0.5 py-0.5 shadow-sm group-hover:flex">
+													<button
+														type="button"
+														title="Add reaction"
+														onClick={(e) => {
+															e.stopPropagation();
+															setReactionPickerPostId((prev) =>
+																prev === post.id ? null : post.id,
+															);
+														}}
+														className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+													>
+														<Smile size={13} />
+													</button>
 													<button
 														type="button"
 														title="Reply in thread"
@@ -890,16 +1380,122 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 
 						<form
 							onSubmit={onSubmit}
-							className="border-t border-slate-200 bg-white p-3 sm:p-4"
+							className="relative border-t border-slate-200 bg-white p-3 sm:p-4"
 						>
-							<div className="flex items-end gap-2">
+							{/* @mention autocomplete dropdown */}
+							{mentionQuery !== null && mentionCandidates.length > 0 && (
+								<div className="absolute bottom-full left-3 z-20 mb-1 w-64 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+									{mentionCandidates.map((u) => (
+										<button
+											key={u.id}
+											type="button"
+											onClick={() => insertMention(u.username)}
+											className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
+										>
+											<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
+												{initials(mmUserDisplayName(u))}
+											</span>
+											<span className="min-w-0">
+												<span className="block truncate font-medium text-slate-800">
+													{mmUserDisplayName(u)}
+												</span>
+												<span className="block truncate text-xs text-slate-400">
+													@{u.username}
+												</span>
+											</span>
+										</button>
+									))}
+								</div>
+							)}
+
+							{/* Pending attachment previews */}
+							{pendingFiles.length > 0 && (
+								<div className="mb-2 flex flex-wrap gap-2">
+									{pendingFiles.map((f) => (
+										<div
+											key={f.key}
+											className="relative flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs"
+										>
+											{f.isImage && f.previewUrl ? (
+												<img
+													src={f.previewUrl}
+													alt={f.name}
+													className="h-10 w-10 rounded object-cover"
+												/>
+											) : (
+												<FileText size={16} className="text-slate-400" />
+											)}
+											<span className="max-w-[8rem] truncate text-slate-600">
+												{f.name}
+											</span>
+											{f.uploading && (
+												<Loader2 className="animate-spin text-slate-400" size={13} />
+											)}
+											{f.error && (
+												<span className="text-rose-600">failed</span>
+											)}
+											<button
+												type="button"
+												aria-label={`Remove ${f.name}`}
+												onClick={() => removePendingFile(f.key)}
+												className="inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+											>
+												<X size={11} />
+											</button>
+										</div>
+									))}
+								</div>
+							)}
+
+							<div
+								className={`flex items-end gap-2 rounded-md ${
+									isDragging ? "ring-2 ring-sky-400" : ""
+								}`}
+								onDragOver={(e) => {
+									e.preventDefault();
+									if (activeId) setIsDragging(true);
+								}}
+								onDragLeave={() => setIsDragging(false)}
+								onDrop={(e) => {
+									e.preventDefault();
+									setIsDragging(false);
+									if (e.dataTransfer.files?.length) {
+										void uploadFiles(e.dataTransfer.files);
+									}
+								}}
+							>
+								<input
+									ref={fileInputRef}
+									type="file"
+									multiple
+									className="hidden"
+									onChange={(e) => {
+										if (e.target.files?.length) {
+											void uploadFiles(e.target.files);
+											e.target.value = "";
+										}
+									}}
+								/>
+								<button
+									type="button"
+									title="Attach file"
+									aria-label="Attach file"
+									disabled={!activeId}
+									onClick={() => fileInputRef.current?.click()}
+									className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50"
+								>
+									<Paperclip size={17} />
+								</button>
 								<textarea
+									ref={draftRef}
 									value={draft}
-									onChange={(e) => setDraft(e.target.value)}
+									onChange={(e) => onDraftChange(e.target.value)}
 									disabled={!activeId || sendMessage.isPending}
 									rows={2}
 									placeholder={
-										activeChannel
+										isDragging
+											? "Drop file to attach"
+											: activeChannel
 											? activeIsDm
 												? `Message ${dmLabel(activeChannel)}`
 												: `Message #${channelLabel(activeChannel)}`
@@ -915,7 +1511,12 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								/>
 								<button
 									type="submit"
-									disabled={!draft.trim() || !activeId || sendMessage.isPending}
+									disabled={
+										(!draft.trim() && pendingFiles.length === 0) ||
+										!activeId ||
+										sendMessage.isPending ||
+										pendingFiles.some((f) => f.uploading)
+									}
 									title="Send message"
 									className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
 								>
@@ -932,6 +1533,8 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								</p>
 							)}
 						</form>
+						</>
+						)}
 					</section>
 
 					{threadPanelPostId && (
@@ -973,6 +1576,121 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	}
 
 	return <WorkspaceShell title="Chat" secondaryNav={secondaryNav}>{body}</WorkspaceShell>;
+}
+
+// ─── Global search panel (Wave 3, plan 31-04) ────────────────────────
+//
+// Replaces the message list when search mode is active. Debounced fetch is
+// driven by the parent (ChatPane) via the `value`/`results` props; this is a
+// pure presentational list. Clicking a result jumps to its channel.
+
+function SearchPanel({
+	value,
+	onChange,
+	loading,
+	results,
+	usersById,
+	channels,
+	dms,
+	myUsername,
+	onJump,
+	onClose,
+}: {
+	value: string;
+	onChange: (v: string) => void;
+	loading: boolean;
+	results: MmPost[] | null;
+	usersById: Map<string, MmUser>;
+	channels: MmChannel[];
+	dms: MmChannel[];
+	myUsername?: string;
+	onJump: (channelId: string) => void;
+	onClose: () => void;
+}) {
+	const channelById = useMemo(() => {
+		const map = new Map<string, MmChannel>();
+		for (const ch of [...channels, ...dms]) map.set(ch.id, ch);
+		return map;
+	}, [channels, dms]);
+
+	function labelFor(channelId: string): string {
+		const ch = channelById.get(channelId);
+		if (!ch) return "channel";
+		if (ch.type === "D" || ch.type === "G") return dmLabel(ch);
+		return `#${channelLabel(ch)}`;
+	}
+
+	return (
+		<div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+			<div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-3">
+				<div className="relative flex-1">
+					<Search
+						size={15}
+						className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+					/>
+					<input
+						value={value}
+						onChange={(e) => onChange(e.target.value)}
+						placeholder="Search all messages…"
+						autoFocus
+						className="w-full rounded-md border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+					/>
+				</div>
+				<button
+					type="button"
+					aria-label="Close search"
+					onClick={onClose}
+					className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+				>
+					<X size={16} />
+				</button>
+			</div>
+
+			<div className="min-h-0 flex-1 space-y-1 overflow-auto p-3 sm:p-4">
+				{loading ? (
+					<div className="flex items-center gap-2 text-sm text-slate-500">
+						<Loader2 className="animate-spin" size={15} />
+						Searching
+					</div>
+				) : results === null ? (
+					<p className="px-1 py-2 text-sm text-slate-400">
+						Type to search across all your channels and DMs.
+					</p>
+				) : results.length === 0 ? (
+					<div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+						No messages match “{value}”.
+					</div>
+				) : (
+					results.map((post) => {
+						const author = displayName(usersById.get(post.user_id));
+						return (
+							<button
+								key={post.id}
+								type="button"
+								onClick={() => onJump(post.channel_id)}
+								className="block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
+							>
+								<div className="flex flex-wrap items-baseline gap-x-2">
+									<span className="text-xs font-semibold text-sky-700">
+										{labelFor(post.channel_id)}
+									</span>
+									<span className="text-sm font-medium text-slate-800">
+										{author}
+									</span>
+									<span className="text-xs text-slate-400">
+										{formatMessageTime(post.create_at)}
+									</span>
+								</div>
+								<p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-sm text-slate-600">
+									{renderMessageText(post.message, myUsername)}
+								</p>
+							</button>
+						);
+					})
+				)}
+			</div>
+		</div>
+	);
 }
 
 // ─── Thread panel (right-side, 320px) ────────────────────────────────

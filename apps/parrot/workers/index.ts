@@ -1069,11 +1069,16 @@ async function resolveEmployeeToken(
 
 app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 	const body = (await c.req.json().catch(() => null)) as
-		| { channel_id?: string; message?: string }
+		| { channel_id?: string; message?: string; file_ids?: string[] }
 		| null;
 	const channelId = body?.channel_id?.trim();
-	const message = body?.message?.trim();
-	if (!channelId || !message) {
+	const message = body?.message?.trim() ?? "";
+	// Wave 3 (31-04): a post may carry file attachments only (empty text). Accept
+	// the post when EITHER message text OR at least one file_id is present.
+	const fileIds = Array.isArray(body?.file_ids)
+		? body.file_ids.filter((id): id is string => typeof id === "string" && !!id)
+		: [];
+	if (!channelId || (!message && fileIds.length === 0)) {
 		return c.json({ error: "Missing channel_id or message" }, 400);
 	}
 
@@ -1106,7 +1111,11 @@ app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 		"/api/v4/posts",
 		{
 			method: "POST",
-			body: JSON.stringify({ channel_id: channelId, message }),
+			body: JSON.stringify({
+				channel_id: channelId,
+				message,
+				...(fileIds.length ? { file_ids: fileIds } : {}),
+			}),
 		},
 		() => resolveEmployeeToken(c),
 		(mmUserId, token) =>
