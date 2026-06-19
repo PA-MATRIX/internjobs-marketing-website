@@ -34,6 +34,12 @@ export interface EmployeeRecord {
 	status: "invited" | "active" | "disabled";
 	created_at: string;
 	updated_at: string;
+	// Phase 31 Wave 0 (migration 3_mm_tokens): per-employee Mattermost identity.
+	// Populated lazily when the employee first sends a chat message (or via the
+	// admin backfill endpoint). Nullable for employees provisioned before the
+	// migration / before their first PAT mint.
+	mm_user_id?: string | null;
+	mm_access_token?: string | null;
 }
 
 export interface OidcCodeRecord {
@@ -96,6 +102,18 @@ const WORKSPACE_MIGRATIONS = [
 				client_id TEXT NOT NULL,
 				expires_at INTEGER NOT NULL
 			);
+		`,
+	},
+	{
+		// Phase 31 Wave 0: per-employee Mattermost personal access token (PAT)
+		// identity. mm_user_id is the MM user this employee maps to; the Worker
+		// uses mm_access_token to proxy human chat REST calls AS the employee
+		// instead of through the single parrot bot. Both nullable — backfilled
+		// lazily (first chat post) or via /api/admin/chat/backfill-tokens.
+		name: "3_mm_tokens",
+		sql: `
+			ALTER TABLE employees ADD COLUMN mm_user_id TEXT;
+			ALTER TABLE employees ADD COLUMN mm_access_token TEXT;
 		`,
 	},
 ];
@@ -218,6 +236,44 @@ export class WorkspaceDO extends DurableObject<Env> {
 			id,
 		);
 		return { deleted: result.rowsWritten > 0 };
+	}
+
+	// ── Per-employee Mattermost PAT (Phase 31 Wave 0) ───────────────
+
+	/**
+	 * Return the stored Mattermost PAT for an employee, or null if none.
+	 * Keyed by Clerk user id (the same id callers carry in c.var.employee).
+	 */
+	async getEmployeeToken(
+		clerkUserId: string,
+	): Promise<{ mmUserId: string; token: string } | null> {
+		const row = [
+			...this.ctx.storage.sql.exec(
+				`SELECT mm_user_id, mm_access_token FROM employees
+				 WHERE clerk_user_id = ? AND mm_access_token IS NOT NULL`,
+				clerkUserId,
+			),
+		][0] as
+			| { mm_user_id: string | null; mm_access_token: string | null }
+			| undefined;
+		if (!row || !row.mm_user_id || !row.mm_access_token) return null;
+		return { mmUserId: row.mm_user_id, token: row.mm_access_token };
+	}
+
+	/** Store (or replace) the Mattermost PAT + user id for an employee. */
+	async setEmployeeToken(
+		clerkUserId: string,
+		mmUserId: string,
+		token: string,
+	): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`UPDATE employees
+			 SET mm_user_id = ?, mm_access_token = ?, updated_at = datetime('now')
+			 WHERE clerk_user_id = ?`,
+			mmUserId,
+			token,
+			clerkUserId,
+		);
 	}
 
 	// ── OIDC codes ──────────────────────────────────────────────────
