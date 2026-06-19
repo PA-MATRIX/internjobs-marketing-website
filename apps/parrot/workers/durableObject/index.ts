@@ -29,8 +29,10 @@ import { applyMigrations, employeeMailboxMigrations } from "./migrations";
 import { extractTodosFromText } from "../lib/ai";
 import {
 	resolveMmUserId,
+	getMmUserByEmail,
 	getMmChannelsForUser,
 	getMmPostsSince,
+	matchesMention,
 	MM_USER_ID_NONE,
 } from "../lib/mattermost";
 import { buildVapidAuthHeader } from "../lib/vapid";
@@ -218,6 +220,14 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		// Employee is active again → reset the offline-email high-water mark so a
 		// future away-period re-notifies from scratch (see maybeSendOfflineChatEmail).
 		await this.ctx.storage.delete("offline_chat_notified_count");
+		// Phase 31 gap-fix (#18): guarantee the 2-minute Mattermost polling alarm
+		// is scheduled. initAlarm() runs from upsertProfile() on first login, but
+		// a mailbox provisioned by another path (or whose alarm somehow lapsed)
+		// could otherwise never start polling — so the offline @mention email
+		// would never fire. touchLastSeen runs on every authenticated request, so
+		// it is a reliable hook. getAlarm() guards against clobbering a pending
+		// alarm (we must NOT reset the timer on every request).
+		await this.initAlarm();
 	}
 
 	/**
@@ -1149,32 +1159,43 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		const profile = await this.getProfile();
 		if (!profile) return;
 
-		// Resolve or retrieve cached MM user_id
+		// Resolve or retrieve cached MM user_id + username.
+		//
+		// Phase 31 gap-fix (#18): we now also resolve and cache the employee's MM
+		// `username`, because mention detection below matches the @username that
+		// Mattermost autocomplete actually inserts — not the human display name.
+		// getMmUserByEmail returns both id and username in one call, so we use it
+		// in place of resolveMmUserId (which returns the id only).
 		let mmUserId = await this.ctx.storage.get<string>("mm_user_id");
-		if (!mmUserId) {
-			const resolved = await resolveMmUserId(
+		let mmUsername = await this.ctx.storage.get<string>("mm_username");
+		if (!mmUserId || (mmUserId !== MM_USER_ID_NONE && !mmUsername)) {
+			const user = await getMmUserByEmail(
 				mattermostUrl,
 				botToken,
 				profile.email,
 			);
-			if (!resolved) {
+			if (!user?.id) {
 				// Employee hasn't logged into Mattermost yet — retry next cycle
 				await this.ctx.storage.put("mm_user_id", MM_USER_ID_NONE);
 				return;
 			}
-			mmUserId = resolved;
+			mmUserId = user.id;
+			mmUsername = user.username ?? undefined;
 			await this.ctx.storage.put("mm_user_id", mmUserId);
+			if (mmUsername) await this.ctx.storage.put("mm_username", mmUsername);
 		}
 		if (mmUserId === MM_USER_ID_NONE) {
 			// Retry resolution on each alarm — employee may have logged in since
-			const resolved = await resolveMmUserId(
+			const user = await getMmUserByEmail(
 				mattermostUrl,
 				botToken,
 				profile.email,
 			);
-			if (!resolved) return;
-			mmUserId = resolved;
+			if (!user?.id) return;
+			mmUserId = user.id;
+			mmUsername = user.username ?? undefined;
 			await this.ctx.storage.put("mm_user_id", mmUserId);
+			if (mmUsername) await this.ctx.storage.put("mm_username", mmUsername);
 		}
 
 		const lastPollMs =
@@ -1200,12 +1221,26 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			);
 			if (posts.length === 0) continue;
 
-			// Phase 13 Wave 1: @mention push notifications. For every post in
-			// this batch that includes the employee's display name preceded
-			// by '@', enqueue a push (and a notification drawer row).
-			const mentionToken = `@${profile.displayName}`;
+			// Phase 13 Wave 1 / Phase 31 gap-fix (#18): @mention push + offline
+			// email. For every post in this batch that @mentions the employee,
+			// enqueue a push (which also writes the read=0 `chat_mention`
+			// notification row that maybeSendOfflineChatEmail() keys off).
+			//
+			// We match BOTH the MM @username (what autocomplete inserts, e.g.
+			// "@john.doe") AND the @displayName (manual "@John Doe"), with
+			// word-boundary safety so "@john" never matches "@johnny". The
+			// username is the primary fix for #18 — the original detector only
+			// matched displayName and missed every real autocomplete mention.
+			//
+			// DM-offline LIMITATION (#18 follow-up): this poll only covers
+			// CHANNEL posts the bot can see. The bot token cannot enumerate or
+			// read the employee's direct-message ("D"/"G") channels, so an
+			// offline DM-only mention is NOT detected here and produces no email.
+			// Closing that gap needs a per-employee PAT-based poll (the Wave 0
+			// identity) and is deliberately out of scope for this fix — see the
+			// scope note in the #18 gap report.
 			for (const post of posts) {
-				if (post.message && post.message.includes(mentionToken)) {
+				if (matchesMention(post.message, [mmUsername, profile.displayName])) {
 					void this.sendPushToSubscriptions({
 						title: "Mention in Chat",
 						body: post.message.slice(0, 100),

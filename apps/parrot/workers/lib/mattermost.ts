@@ -83,6 +83,55 @@ export async function mmFetch<T>(
 	return { ok: true, data: data as T };
 }
 
+/**
+ * Phase 31 gap-fix (#18): decide whether a chat message @mentions the employee.
+ *
+ * Mattermost's autocomplete inserts `@username` (e.g. "@john.doe"), NOT the
+ * human display name ("@John Doe"). The original Phase 13 detector only matched
+ * the display name, so real channel mentions were silently missed and the
+ * offline-email path never fired. We now match ANY of the supplied tokens
+ * (username and/or display name).
+ *
+ * Word-boundary safety: a bare `message.includes("@john")` would also fire on
+ * "@johnny" or "@johndoe". We require the matched token to be followed by a
+ * non-username character (or end-of-string). MM usernames allow [a-z0-9._-];
+ * display names can contain anything, so for those we only guard the trailing
+ * boundary. `@everyone`/`@channel`/`@here` are intentionally NOT special-cased
+ * here — keep scope to direct personal mentions.
+ *
+ * @param message  the raw post message text
+ * @param tokens   candidate handles WITHOUT the leading '@' (username, displayName)
+ */
+export function matchesMention(
+	message: string,
+	tokens: Array<string | null | undefined>,
+): boolean {
+	if (!message) return false;
+	for (const raw of tokens) {
+		const token = raw?.trim();
+		if (!token) continue;
+		const needle = `@${token}`;
+		let from = 0;
+		// Scan every occurrence; require a username-char boundary AFTER the match
+		// so "@john" doesn't match inside "@johnny".
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			const idx = message.indexOf(needle, from);
+			if (idx === -1) break;
+			const after = message[idx + needle.length];
+			// End-of-string, or any char that can't continue a MM username,
+			// counts as a boundary (so "@john." / "@john " / "@john," all match
+			// the username "john" only when "john" is the full handle — here the
+			// trailing char after the FULL token must not extend a username).
+			if (after === undefined || !/[a-zA-Z0-9._-]/.test(after)) {
+				return true;
+			}
+			from = idx + needle.length;
+		}
+	}
+	return false;
+}
+
 /** Resolve a Mattermost user_id by email address. Returns null if not found. */
 export async function resolveMmUserId(
 	mattermostUrl: string,
