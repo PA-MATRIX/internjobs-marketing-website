@@ -695,6 +695,13 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const selectedPost =
 		posts.find((post) => post.id === selectedPostId) ?? posts.at(-1) ?? null;
 
+	// #6a: pinned messages in the active channel (derived from the loaded posts'
+	// is_pinned flag — no extra worker route needed). Drives the top "Pinned" bar.
+	const pinnedPosts = useMemo(
+		() => posts.filter((p) => p.is_pinned),
+		[posts],
+	);
+
 	const userIds = useMemo(
 		() => [...new Set(posts.map((post) => post.user_id).filter(Boolean))],
 		[posts],
@@ -1176,13 +1183,45 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		},
 	});
 
+	// #6a: pin/unpin TOGGLE. The caller passes the post's current is_pinned so we
+	// know which direction to call. We optimistically flip is_pinned on the
+	// cached post so the solid-pin icon and the top "Pinned" bar update instantly.
 	const pinPost = useMutation({
-		mutationFn: (postId: string) =>
+		mutationFn: (input: { postId: string; pinned: boolean }) =>
 			chatFetch<{ ok: boolean }>(`/api/chat/channels/${activeId}/pin`, {
 				method: "POST",
-				body: JSON.stringify({ post_id: postId }),
+				body: JSON.stringify({
+					post_id: input.postId,
+					unpin: input.pinned,
+				}),
 			}),
-		onSuccess: () => setPinToast("Pinned"),
+		onMutate: async (input) => {
+			const key = ["native-chat", "posts", activeId];
+			await queryClient.cancelQueries({ queryKey: key });
+			const previous = queryClient.getQueryData<MmPostList>(key);
+			queryClient.setQueryData<MmPostList>(key, (prev) => {
+				const target = prev?.posts?.[input.postId];
+				if (!target) return prev;
+				return {
+					...prev,
+					posts: {
+						...prev!.posts,
+						[input.postId]: { ...target, is_pinned: !input.pinned },
+					},
+				};
+			});
+			return { previous };
+		},
+		onError: (_err, _input, context) => {
+			if (context?.previous) {
+				queryClient.setQueryData(
+					["native-chat", "posts", activeId],
+					context.previous,
+				);
+			}
+		},
+		onSuccess: (_data, input) =>
+			setPinToast(input.pinned ? "Unpinned" : "Pinned"),
 	});
 
 	// Wave 3 (31-04) / #12b: toggle an emoji reaction. POST to add, DELETE to
@@ -1427,6 +1466,17 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		setActiveChannelId(channelId);
 		setSelectedPostId(null);
 		setThreadPanelPostId(null);
+	}
+
+	// #6a: scroll a (pinned) message into view and briefly select/flash it.
+	function scrollToPost(postId: string) {
+		const node = messagesRef.current?.querySelector(
+			`[data-post-id="${postId}"]`,
+		);
+		if (node) {
+			node.scrollIntoView({ behavior: "smooth", block: "center" });
+			setSelectedPostId(postId);
+		}
 	}
 
 	// ── Secondary nav: the channel browser rail + DM section ──────────
@@ -1684,6 +1734,46 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							/>
 						) : (
 						<>
+						{/* #6a: WhatsApp-style pinned bar — lists the channel's pinned
+						    messages; clicking one scrolls to it in the feed. */}
+						{pinnedPosts.length > 0 && (
+							<div className="border-b border-amber-200 bg-amber-50/70 px-3 py-2 sm:px-6">
+								<div className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+									<Pin size={11} className="fill-amber-500 text-amber-500" />
+									Pinned
+									{pinnedPosts.length > 1 && (
+										<span className="font-normal text-amber-600">
+											({pinnedPosts.length})
+										</span>
+									)}
+								</div>
+								<div className="flex flex-col gap-1">
+									{pinnedPosts.map((pinned) => {
+										const pinnedAuthor =
+											parrotAuthor(pinned) ||
+											displayName(usersById.get(pinned.user_id));
+										const preview =
+											pinned.message?.replace(/\s+/g, " ").trim() ||
+											"(attachment)";
+										return (
+											<button
+												key={pinned.id}
+												type="button"
+												onClick={() => scrollToPost(pinned.id)}
+												className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-xs hover:bg-amber-100/70"
+											>
+												<span className="shrink-0 font-medium text-amber-800">
+													{isMine(pinned) ? "You" : pinnedAuthor}
+												</span>
+												<span className="truncate text-slate-600">
+													{preview}
+												</span>
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						)}
 						<div
 							ref={messagesRef}
 							className="min-h-0 flex-1 space-y-1 overflow-auto px-3 py-4 sm:px-6"
@@ -1720,6 +1810,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									return (
 										<div
 											key={post.id}
+											data-post-id={post.id}
 											className={`group relative rounded-md px-3 py-2 transition-colors ${
 												selected
 													? "bg-white ring-1 ring-slate-300"
@@ -1737,6 +1828,16 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 												{isEdited(post) && (
 													<span className="text-[10px] text-slate-400">
 														(edited)
+													</span>
+												)}
+												{/* #6a: solid pin badge on a pinned message row. */}
+												{post.is_pinned && (
+													<span
+														title="Pinned"
+														className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-600"
+													>
+														<Pin size={11} className="fill-amber-500 text-amber-500" />
+														Pinned
 													</span>
 												)}
 											</div>
@@ -1928,14 +2029,24 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 													</button>
 													<button
 														type="button"
-														title="Pin"
+														title={post.is_pinned ? "Unpin" : "Pin"}
 														onClick={(e) => {
 															e.stopPropagation();
-															pinPost.mutate(post.id);
+															pinPost.mutate({
+																postId: post.id,
+																pinned: !!post.is_pinned,
+															});
 														}}
-														className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+														className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 ${
+															post.is_pinned
+																? "text-amber-600 hover:text-amber-700"
+																: "text-slate-500 hover:text-slate-900"
+														}`}
 													>
-														<Pin size={13} />
+														<Pin
+															size={13}
+															className={post.is_pinned ? "fill-amber-500" : ""}
+														/>
 													</button>
 													{mine && (
 														<>

@@ -1462,26 +1462,30 @@ app.delete(
 	},
 );
 
-// POST /api/chat/channels/:id/pin — pin a post. Body: { post_id }.
+// POST /api/chat/channels/:id/pin — pin OR unpin a post (#6a).
+// Body: { post_id, unpin? }. When unpin is truthy we call MM's /unpin
+// endpoint; otherwise /pin. Both are idempotent on the MM side.
 app.post(
 	"/api/chat/channels/:id/pin",
 	requireEmployeeMailbox,
 	async (c: AppContext) => {
 		const body = (await c.req.json().catch(() => null)) as
-			| { post_id?: string }
+			| { post_id?: string; unpin?: boolean }
 			| null;
 		const postId = body?.post_id?.trim();
 		if (!postId) return c.json({ error: "Missing post_id" }, 400);
+		const unpin = body?.unpin === true;
 		const proxy = chatUserProxy(c);
 		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
-		const result = await proxy.call<unknown>(`/api/v4/posts/${postId}/pin`, {
-			method: "POST",
-		});
+		const result = await proxy.call<unknown>(
+			`/api/v4/posts/${postId}/${unpin ? "unpin" : "pin"}`,
+			{ method: "POST" },
+		);
 		if (!result.ok) {
 			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
-			return c.json({ error: "Pin failed" }, 502);
+			return c.json({ error: unpin ? "Unpin failed" : "Pin failed" }, 502);
 		}
-		return c.json({ ok: true, pinned: postId });
+		return c.json({ ok: true, pinned: unpin ? null : postId, unpinned: unpin ? postId : null });
 	},
 );
 
