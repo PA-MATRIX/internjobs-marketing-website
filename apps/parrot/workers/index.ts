@@ -48,7 +48,11 @@ import {
 	getMmTeamsForUser,
 	getMmUserByEmail,
 	getMmUsersByIds,
+	mintMmUserToken,
+	mmFetchAsUser,
 } from "./lib/mattermost";
+import { getWorkspaceStub } from "./durableObject/workspace";
+import type { MattermostPost } from "./lib/mattermost";
 import type { Env } from "./types";
 
 // — Phase 14 Wave 3: graphReady cache (30s) ────────────────────────
@@ -1007,6 +1011,38 @@ app.get(
 	},
 );
 
+// ── Phase 31 Wave 0: per-employee Mattermost PAT resolution ─────────
+//
+// Resolve (and lazily provision) the employee's own Mattermost personal
+// access token so human chat REST calls are authored AS the real MM user
+// rather than through the parrot bot. Returns null when MM can't be reached,
+// the user has no MM account, or PAT minting is disabled on the MM server
+// (MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=false — see plan 31-06 Task 1).
+async function resolveEmployeeToken(
+	c: AppContext,
+): Promise<{ mmUserId: string; token: string } | null> {
+	const employee = c.var.employee;
+	const stub = getWorkspaceStub(c.env);
+
+	const existing = await stub.getEmployeeToken(employee.employeeId);
+	if (existing) return existing;
+
+	// No stored PAT yet — resolve the MM user by email and mint one.
+	const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	if (!adminToken || !botToken) return null;
+	const user = await getMmUserByEmail(
+		c.env.MATTERMOST_URL,
+		botToken,
+		employee.email,
+	);
+	if (!user) return null;
+	const token = await mintMmUserToken(c.env.MATTERMOST_URL, adminToken, user.id);
+	if (!token) return null;
+	await stub.setEmployeeToken(employee.employeeId, user.id, token);
+	return { mmUserId: user.id, token };
+}
+
 app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 	const body = (await c.req.json().catch(() => null)) as
 		| { channel_id?: string; message?: string }
@@ -1028,17 +1064,94 @@ app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 		return c.json({ error: "Channel not available" }, 403);
 	}
 
+	// Phase 31 Wave 0: post AS the employee using their own PAT — no
+	// parrot_author_* props for human posts (the post's user_id IS the
+	// real MM user). createMmParrotPost stays for bot/agent/cross-pane msgs.
+	const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+	if (!adminToken) {
+		return c.json({ error: "chat_not_provisioned" }, 503);
+	}
+	const stub = getWorkspaceStub(c.env);
 	const employee = c.var.employee;
-	const post = await createMmParrotPost(c.env.MATTERMOST_URL, chat.botToken, {
-		channelId,
-		message,
-		authorUserId: chat.user.id,
-		authorName: employee.displayName || chat.user.username || employee.email,
-		authorEmail: employee.email,
-	});
-	if (!post) return c.json({ error: "Message send failed" }, 502);
-	return c.json(post);
+	const result = await mmFetchAsUser<MattermostPost>(
+		c.env.MATTERMOST_URL,
+		adminToken,
+		"/api/v4/posts",
+		{
+			method: "POST",
+			body: JSON.stringify({ channel_id: channelId, message }),
+		},
+		() => resolveEmployeeToken(c),
+		(mmUserId, token) =>
+			stub.setEmployeeToken(employee.employeeId, mmUserId, token),
+	);
+	if (!result.ok) {
+		if (result.status === 503) {
+			return c.json({ error: "chat_not_provisioned" }, 503);
+		}
+		return c.json({ error: "Message send failed" }, 502);
+	}
+	return c.json(result.data);
 });
+
+// ── Phase 31 Wave 0: operator-gated PAT backfill ────────────────────
+//
+// Iterate every employee and mint+store a Mattermost PAT for any that lack
+// one, so existing employees provisioned before migration 3_mm_tokens get a
+// per-user token without sending a message first.
+//
+// PRODUCTION GATE: Do not call this endpoint against production until
+// MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true is confirmed set on the
+// internjobs-mattermost Fly app (plan 31-06 Task 1). Without the secret,
+// mintMmUserToken returns null (501 from MM) and all employees will land in
+// the failed count.
+app.post(
+	"/api/admin/chat/backfill-tokens",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!(await hasOperatorAccess(c.env, c.var.employee))) {
+			return c.json({ error: "forbidden_operator_only" }, 403);
+		}
+		const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+		const botToken = c.env.MATTERMOST_BOT_TOKEN;
+		if (!adminToken || !botToken) {
+			return c.json({ error: "mattermost_admin_not_configured" }, 503);
+		}
+		const stub = getWorkspaceStub(c.env);
+		const employees = await stub.listEmployees();
+		let minted = 0;
+		let skipped = 0;
+		let failed = 0;
+		for (const emp of employees) {
+			const existing = await stub.getEmployeeToken(emp.clerk_user_id);
+			if (existing) {
+				skipped++;
+				continue;
+			}
+			const user = await getMmUserByEmail(
+				c.env.MATTERMOST_URL,
+				botToken,
+				emp.workspace_email,
+			);
+			if (!user) {
+				failed++;
+				continue;
+			}
+			const token = await mintMmUserToken(
+				c.env.MATTERMOST_URL,
+				adminToken,
+				user.id,
+			);
+			if (!token) {
+				failed++;
+				continue;
+			}
+			await stub.setEmployeeToken(emp.clerk_user_id, user.id, token);
+			minted++;
+		}
+		return c.json({ minted, skipped, failed });
+	},
+);
 
 // -- Wave 2b: employee admin + OIDC bridge --------------------------
 // Both subtrees are mounted on the same Hono app so they inherit the

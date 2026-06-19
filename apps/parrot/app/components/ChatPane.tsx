@@ -406,12 +406,18 @@ export function ChatPane() {
 							</div>
 						) : (
 							posts.map((post) => {
-								const mine =
-									post.user_id === bootstrap.data?.me.id ||
-									isParrotAuthoredBy(post, bootstrap.data?.me);
+								// Phase 31 Wave 0 hybrid authorship:
+								//   - Legacy bot-proxied posts carry parrot_author_* props and are
+								//     authored by the bot user_id — resolve via those props.
+								//   - New PAT-authored human posts have NO parrot_author_* props;
+								//     post.user_id IS the real MM user, so look it up directly.
+								const legacyName = parrotAuthor(post);
+								const mine = legacyName
+									? isParrotAuthoredBy(post, bootstrap.data?.me)
+									: post.user_id === bootstrap.data?.me.id;
 								const selected = post.id === selectedPost?.id;
 								const author =
-									parrotAuthor(post) || displayName(usersById.get(post.user_id));
+									legacyName || displayName(usersById.get(post.user_id));
 								return (
 									<button
 										key={post.id}
