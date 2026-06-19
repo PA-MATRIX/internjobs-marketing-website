@@ -105,6 +105,22 @@ export function WorkspaceShell({
 	});
 	const safetyUnreviewed = safetyData?.count ?? 0;
 
+	// Phase 31 Wave 4 (plan 31-05, CHAT-RT-03): unread-chat badge on the Chat
+	// nav icon. ChatPane dispatches a `chat-unread-change` CustomEvent on
+	// `window` whenever its set of unread channels changes; we mirror the count
+	// here so the icon shows a badge even when the user is on another pane.
+	const [chatUnread, setChatUnread] = useState(0);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		function onChatUnread(e: Event) {
+			const detail = (e as CustomEvent<{ count?: number }>).detail;
+			setChatUnread(Math.max(0, detail?.count ?? 0));
+		}
+		window.addEventListener("chat-unread-change", onChatUnread);
+		return () =>
+			window.removeEventListener("chat-unread-change", onChatUnread);
+	}, []);
+
 	const activePane = NAV.find((item) =>
 		location.pathname.startsWith(item.href),
 	);
@@ -127,6 +143,9 @@ export function WorkspaceShell({
 					<ul className="flex flex-col items-center gap-1 mt-1">
 						{NAV.map((item) => {
 							const active = location.pathname.startsWith(item.href);
+							// CHAT-RT-03: unread badge on the Chat icon when not viewing it.
+							const showChatBadge =
+								item.href === "/chat" && chatUnread > 0 && !active;
 							return (
 								<li key={item.href} className="relative w-full flex justify-center">
 									{/* Thin colored indicator bar on the active item */}
@@ -138,8 +157,12 @@ export function WorkspaceShell({
 									)}
 									<Link
 										to={item.href}
-										title={item.label}
-										className={`group flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all duration-150 ${
+										title={
+											showChatBadge
+												? `${item.label} (${chatUnread} unread)`
+												: item.label
+										}
+										className={`group relative flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all duration-150 ${
 											active
 												? "bg-white text-slate-900 shadow-lg shadow-black/20"
 												: "text-slate-400 hover:bg-white/10 hover:text-white"
@@ -149,6 +172,11 @@ export function WorkspaceShell({
 										<span className="text-[10px] font-semibold leading-none mt-1">
 											{item.label}
 										</span>
+										{showChatBadge && (
+											<span className="absolute top-1.5 right-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-slate-900">
+												{chatUnread > 9 ? "9+" : chatUnread}
+											</span>
+										)}
 									</Link>
 								</li>
 							);
