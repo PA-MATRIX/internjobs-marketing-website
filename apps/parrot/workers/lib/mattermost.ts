@@ -782,3 +782,109 @@ export async function getMmMyDirectChannels(
 		(channel) => channel.type === "D" || channel.type === "G",
 	);
 }
+
+// ── Phase 31 Wave 3 (plan 31-04): search + reactions ────────────────
+//
+// All of these take a bearer token directly. The Worker routes pass the
+// employee's own PAT (via mmFetchAsUser) so search results reflect the
+// employee's own channel visibility and reactions are attributed to the
+// real MM user — reusing the Wave 0 identity rather than the parrot bot.
+
+export interface MattermostReaction {
+	user_id: string;
+	post_id: string;
+	emoji_name: string;
+	create_at?: number;
+}
+
+/**
+ * Full-text search posts across the employee's visible channels in a team.
+ * MM POST /api/v4/teams/{teamId}/posts/search. `isOrSearch=false` (default)
+ * means terms are AND'd. Returns the post list (posts map + order) or null.
+ */
+export async function searchMmPosts(
+	mattermostUrl: string,
+	token: string,
+	teamId: string,
+	terms: string,
+	isOrSearch = false,
+): Promise<MattermostPostList | null> {
+	const resp = await mmFetch<MattermostPostList>(
+		mattermostUrl,
+		token,
+		`/api/v4/teams/${teamId}/posts/search`,
+		{
+			method: "POST",
+			body: JSON.stringify({ terms, is_or_search: isOrSearch }),
+		},
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * Add an emoji reaction to a post AS the given user. MM POST
+ * /api/v4/reactions. `create_at: 0` lets MM stamp the time. Returns true on
+ * 200/201 (already-reacted also returns 200). emojiName is the MM short name
+ * (e.g. "thumbsup"), NOT the unicode glyph.
+ */
+export async function addMmReaction(
+	mattermostUrl: string,
+	token: string,
+	userId: string,
+	postId: string,
+	emojiName: string,
+): Promise<boolean> {
+	const resp = await mmFetch<MattermostReaction>(
+		mattermostUrl,
+		token,
+		"/api/v4/reactions",
+		{
+			method: "POST",
+			body: JSON.stringify({
+				user_id: userId,
+				post_id: postId,
+				emoji_name: emojiName,
+				create_at: 0,
+			}),
+		},
+	);
+	return resp.ok;
+}
+
+/**
+ * Remove an emoji reaction from a post. MM DELETE
+ * /api/v4/users/{userId}/posts/{postId}/reactions/{emojiName}. Returns true
+ * on success.
+ */
+export async function removeMmReaction(
+	mattermostUrl: string,
+	token: string,
+	userId: string,
+	postId: string,
+	emojiName: string,
+): Promise<boolean> {
+	const resp = await mmFetch<unknown>(
+		mattermostUrl,
+		token,
+		`/api/v4/users/${userId}/posts/${postId}/reactions/${encodeURIComponent(emojiName)}`,
+		{ method: "DELETE" },
+	);
+	return resp.ok;
+}
+
+/**
+ * List the reactions on a post. MM GET /api/v4/posts/{postId}/reactions.
+ * Returns the reaction array (possibly empty) or null on failure.
+ */
+export async function getMmPostReactions(
+	mattermostUrl: string,
+	token: string,
+	postId: string,
+): Promise<MattermostReaction[] | null> {
+	const resp = await mmFetch<MattermostReaction[]>(
+		mattermostUrl,
+		token,
+		`/api/v4/posts/${postId}/reactions`,
+	);
+	return resp.ok ? resp.data ?? [] : null;
+}

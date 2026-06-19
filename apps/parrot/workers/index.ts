@@ -17,6 +17,8 @@ import {
 } from "./routes/reply-forward";
 // v1.4 Phase 23-03 ATTACH-DOWN-01..03: attachment download route.
 import { handleAttachmentDownload } from "./routes/attachments";
+// Phase 31 Wave 3 (31-04): file/image upload + download streaming proxy.
+import { chatFilesRoute } from "./routes/chat-files";
 import {
 	requireEmployeeMailbox,
 	type ParrotContext,
@@ -1591,6 +1593,102 @@ app.get(
 		return c.json(users, 200, { "Cache-Control": "private, max-age=60" });
 	},
 );
+
+// ── Phase 31 Wave 3 (plan 31-04): files + search + reactions ────────
+//
+// File upload/download lives in routes/chat-files.ts (streaming proxy — see
+// that file for the c.req.raw.body / Content-Type rationale). Mounted under
+// /api/chat/files. Search + reactions stay here as thin routes that proxy AS
+// the employee via their PAT (chatUserProxy), reusing the Wave 0 identity.
+
+app.route("/api/chat/files", chatFilesRoute);
+
+// POST /api/chat/search — full-text search across the employee's visible
+// channels. Body: { terms: string, team_id?: string }. team_id falls back to
+// the employee's bootstrap team when omitted.
+app.post("/api/chat/search", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { terms?: string; team_id?: string }
+		| null;
+	const terms = body?.terms?.trim();
+	if (!terms) return c.json({ error: "Missing terms" }, 400);
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	let teamId = body?.team_id?.trim();
+	if (!teamId) {
+		const chat = await loadChatContext(c);
+		if (!chat.ok) {
+			return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+		}
+		teamId = chat.team.id;
+	}
+	const result = await proxy.call<MattermostPostList>(
+		`/api/v4/teams/${teamId}/posts/search`,
+		{ method: "POST", body: JSON.stringify({ terms, is_or_search: false }) },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Search failed" }, 502);
+	}
+	return c.json(result.data);
+});
+
+// POST /api/chat/reactions — add an emoji reaction AS the employee.
+// Body: { post_id, emoji_name }.
+app.post("/api/chat/reactions", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { post_id?: string; emoji_name?: string }
+		| null;
+	const postId = body?.post_id?.trim();
+	const emojiName = body?.emoji_name?.trim();
+	if (!postId || !emojiName) {
+		return c.json({ error: "Missing post_id or emoji_name" }, 400);
+	}
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+	const result = await proxy.call<unknown>("/api/v4/reactions", {
+		method: "POST",
+		body: JSON.stringify({
+			user_id: tokenRow.mmUserId,
+			post_id: postId,
+			emoji_name: emojiName,
+			create_at: 0,
+		}),
+	});
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Reaction failed" }, 502);
+	}
+	return c.json({ ok: true, post_id: postId, emoji_name: emojiName });
+});
+
+// DELETE /api/chat/reactions — remove an emoji reaction AS the employee.
+// Body: { post_id, emoji_name }.
+app.delete("/api/chat/reactions", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { post_id?: string; emoji_name?: string }
+		| null;
+	const postId = body?.post_id?.trim();
+	const emojiName = body?.emoji_name?.trim();
+	if (!postId || !emojiName) {
+		return c.json({ error: "Missing post_id or emoji_name" }, 400);
+	}
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+	const result = await proxy.call<unknown>(
+		`/api/v4/users/${tokenRow.mmUserId}/posts/${postId}/reactions/${encodeURIComponent(emojiName)}`,
+		{ method: "DELETE" },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Reaction remove failed" }, 502);
+	}
+	return c.json({ ok: true, post_id: postId, emoji_name: emojiName });
+});
 
 // ── Phase 31 Wave 0: operator-gated PAT backfill ────────────────────
 //
