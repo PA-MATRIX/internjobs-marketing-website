@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---- RRR submission gate -------------------------------------------------
+  # A team phase reaches the integration branch ONLY through `/rrr:submit-phase`
+  # (which writes .planning/workstreams/<team>/SUBMISSION.json). Before phase-27
+  # this was a convention GitHub never enforced — a team branch could be merged
+  # with a stale/absent marker. This check blocks the merge until the owning
+  # developer has submitted the exact branch+phase being merged. It is a no-op
+  # (passes) for non-team branches, e.g. an integration -> main promotion PR.
+  submission-gate:
+    name: submission gate (rrr)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      # Default checkout = the PR merge ref (head merged onto base). This keeps
+      # the gate script present even when the head branch predates the gate, as
+      # long as the base branch carries it — so a stale team branch can't dodge
+      # the check just by not having the script.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: validate team submission marker
+        run: >-
+          node scripts/check-submission.mjs
+          --head-ref "${{ github.head_ref }}"
+          --head-sha "${{ github.event.pull_request.head.sha }}"
+          --base-sha "${{ github.event.pull_request.base.sha }}"
+
   # ---- Root npm workspaces: marketing (CMS) · app (student) · employers ----
   workspaces:
     name: workspaces (marketing · app · employers)

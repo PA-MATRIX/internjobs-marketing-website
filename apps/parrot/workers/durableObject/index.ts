@@ -69,6 +69,7 @@ const SORT_COLUMN_MAP = {
 interface GetEmailsOptions {
 	folder?: string;
 	thread_id?: string;
+	starred?: boolean;
 	page?: number;
 	limit?: number;
 	sortColumn?: SortColumn;
@@ -295,6 +296,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		const {
 			folder,
 			thread_id,
+			starred,
 			page = 1,
 			limit: rawLimit = 25,
 			sortColumn: rawSortColumn = "date",
@@ -319,6 +321,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		}
 		if (thread_id) {
 			conditions.push(eq(schema.emails.thread_id, thread_id));
+		}
+		// PARROT-FOLDER-ACTIONS-01: Starred is a cross-folder virtual view.
+		// Applied independently of `folder`; the caller passes only one.
+		if (starred) {
+			conditions.push(eq(schema.emails.starred, 1));
 		}
 
 		const orderCol = SORT_COLUMN_MAP[sortColumn];
@@ -355,8 +362,10 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		}));
 	}
 
-	async countEmails(options: { folder?: string; thread_id?: string } = {}) {
-		const { folder, thread_id } = options;
+	async countEmails(
+		options: { folder?: string; thread_id?: string; starred?: boolean } = {},
+	) {
+		const { folder, thread_id, starred } = options;
 		const conditions: string[] = [];
 		const params: (string | number)[] = [];
 
@@ -370,6 +379,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		if (thread_id) {
 			conditions.push(`thread_id = ?${params.length + 1}`);
 			params.push(thread_id);
+		}
+
+		// PARROT-FOLDER-ACTIONS-01: parameterless literal — safe with ?N indexing.
+		if (starred) {
+			conditions.push("starred = 1");
 		}
 
 		const where =
@@ -937,6 +951,26 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				 AND resolved_at IS NULL`,
 			emailId,
 		);
+	}
+
+	/**
+	 * v1.4 Phase 26 follow-up: resolve the dashboard todo(s) for an email the
+	 * user just replied to. Called from handleReplyEmail so the todo clears on
+	 * the next 10s dashboard poll instead of waiting on the auto-clear cron
+	 * (graph close + 5-min grace + the every-5-min cron = ~10-15 min, and only
+	 * if the agent decides the reply satisfied it). `emailId` is the original
+	 * email id,
+	 * which equals the todo's `source_id`. Mirrors the delete-path cleanup SQL;
+	 * resolution_source stays NULL = user-resolved.
+	 */
+	async resolveTodosForEmail(emailId: string): Promise<{ resolved: boolean }> {
+		const cursor = this.ctx.storage.sql.exec(
+			`UPDATE todos SET resolved_at = datetime('now')
+			 WHERE source_channel = 'email' AND source_id = ?
+				 AND resolved_at IS NULL`,
+			emailId,
+		);
+		return { resolved: cursor.rowsWritten > 0 };
 	}
 
 	private async extractTodosFromEmail(email: EmailData, employeeId: string) {

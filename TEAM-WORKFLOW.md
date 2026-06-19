@@ -59,14 +59,47 @@ RRR will regenerate any of these it needs.
 `.github/workflows/ci.yml` runs on PRs to `main`/`integration/**` and on pushes to
 `integration/**`:
 
+- **submission gate (rrr)** — on PRs only; enforces that a team branch carries a
+  fresh `/rrr:submit-phase` marker for the exact branch+phase being merged (see below).
 - **workspaces** — `npm ci`; build marketing, employers, and verify the student app.
-- **parrot** — `npm ci`; `npm run typecheck`; `npm run build`.
+- **parrot** — `npm ci`; `npm run typecheck`; `npm test` (vitest); `npm run build`.
 - **startup** — `npm ci`; `npm run typecheck`; `npm test` (node:test via `tsx`).
 
 A `wrangler deploy --dry-run` runs on integration pushes as an **advisory** (non-blocking)
 config-contract check. Deploys remain manual — no Cloudflare credentials live in
 GitHub Actions yet. To enable real CD later, add `CLOUDFLARE_API_TOKEN` +
 `CLOUDFLARE_ACCOUNT_ID` as Actions secrets and add a `deploy.yml` gated on `main`.
+
+## Submission gate — a phase must be *submitted* before it can be merged
+
+A team branch only enters `integration/<ver>` through `/rrr:submit-phase`, which
+writes `.planning/workstreams/<team>/SUBMISSION.json` (the developer's "this phase
+is done and verified — take it" signal). That hand-off used to be a convention
+nothing enforced: the coordinator could open a PR straight off a team branch and
+merge it as soon as CI was green, even though the owning developer had never
+submitted it. (That is exactly how phase-27 reached `main` while the developer's
+marker still said phase-23 / "human-verify pending".)
+
+`scripts/check-submission.mjs` closes that hole, and the **submission gate (rrr)**
+CI job runs it on every PR. For a `rrr/<ver>/team-<name>-<NN>` head branch it fails
+the PR unless the marker:
+
+1. exists for the team and is `ready_for_integration: true`,
+2. names *this* branch (a stale marker from an earlier phase is rejected),
+3. lists the phase `<NN>` in `phases_completed`, and
+4. was recorded against a commit in this branch's history.
+
+Non-team branches (e.g. the `integration/<ver> → main` promotion PR) are not
+subject to the gate — the job passes as "not applicable". Run it locally before
+opening a PR:
+
+```bash
+node scripts/check-submission.mjs --head-ref "$(git branch --show-current)"
+```
+
+The gate is a **required status check** on `main` and `integration/<ver>`, so a PR
+cannot be merged while it is red — the coordinator can no longer merge unsubmitted
+work, by accident or otherwise.
 
 ## Day-to-day
 
@@ -76,6 +109,10 @@ git fetch origin
 git switch -c rrr/v1.4/team-cms-30 origin/integration/v1.4
 
 # ...do the work, commit...
+
+# submit the phase — writes SUBMISSION.json, the signal the gate checks for
+/rrr:submit-phase 30 --team team-cms --ready --tests typecheck,build,uat
+git add .planning/workstreams/team-cms/SUBMISSION.json && git commit -m "submit(30): ready for integration"
 
 # open the PR against integration (NOT main)
 gh pr create --base integration/v1.4 --fill

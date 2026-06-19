@@ -5,14 +5,24 @@ import {
 	FileEdit,
 	Inbox as InboxIcon,
 	Send,
+	Star,
 	Tag,
 	Trash2,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
+import { api } from "~/lib/api";
 import { InboxPane } from "~/components/InboxPane";
 import { SecondaryNavItem, WorkspaceShell } from "~/components/WorkspaceShell";
 
-const FOLDERS = new Set(["inbox", "sent", "draft", "archive", "trash"]);
+const FOLDERS = new Set([
+	"inbox",
+	"sent",
+	"draft",
+	"archive",
+	"trash",
+	"starred",
+]);
 
 function normalizeFolder(value: string | null): string {
 	if (!value) return "inbox";
@@ -21,6 +31,14 @@ function normalizeFolder(value: string | null): string {
 }
 
 function EmailSecondaryNav({ activeFolder }: { activeFolder: string }) {
+	// PARROT-FOLDER-COUNTS-01: total message count per folder for the badges.
+	// Keyed under the ["parrot","inbox"] prefix so it is invalidated together
+	// with the message lists whenever a message moves/sends/deletes.
+	const { data: counts } = useQuery({
+		queryKey: ["parrot", "inbox", "folder-counts"],
+		queryFn: () => api.getFolderCounts(),
+	});
+
 	return (
 		<nav className="py-3">
 			<p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -31,30 +49,42 @@ function EmailSecondaryNav({ activeFolder }: { activeFolder: string }) {
 				active={activeFolder === "inbox"}
 				label="Inbox"
 				icon={<InboxIcon size={15} />}
+				count={counts?.inbox}
 			/>
 			<SecondaryNavItem
 				href="/inbox?folder=sent"
 				active={activeFolder === "sent"}
 				label="Sent"
 				icon={<Send size={15} />}
+				count={counts?.sent}
 			/>
 			<SecondaryNavItem
 				href="/inbox?folder=draft"
 				active={activeFolder === "draft"}
 				label="Drafts"
 				icon={<FileEdit size={15} />}
+				count={counts?.draft}
 			/>
 			<SecondaryNavItem
 				href="/inbox?folder=archive"
 				active={activeFolder === "archive"}
 				label="Archive"
 				icon={<Archive size={15} />}
+				count={counts?.archive}
 			/>
 			<SecondaryNavItem
 				href="/inbox?folder=trash"
 				active={activeFolder === "trash"}
 				label="Trash"
 				icon={<Trash2 size={15} />}
+				count={counts?.trash}
+			/>
+			<SecondaryNavItem
+				href="/inbox?folder=starred"
+				active={activeFolder === "starred"}
+				label="Starred"
+				icon={<Star size={15} />}
+				count={counts?.starred}
 			/>
 			<p className="px-5 py-1 mt-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
 				Labels

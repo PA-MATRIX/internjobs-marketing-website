@@ -4,6 +4,7 @@ team: team-workspace
 status: human_needed
 verified_at: 2026-05-27
 goal: Workspace cross-conversation Employee context + :BLOCKED_BY writes + GenZ polish (confetti + mascot + GIF)
+progress_2026_06_16: "SC-3 (KGRAPH-04 cross-namespace smoke) LIVE-VERIFIED (both counts 0, exit 0). Remaining deferred: items 1-3 (mascot + confetti) to POST-DEPLOY browser verify on workspace.internjobs.ai (local dev blocked — Clerk prod keys domain-locked to that host); items 5-6 (A/B harness, /gif plugin) to operator window. See memory phase-26-deferred-verification."
 human_verification:
   - test: Navigate to /dashboard on a deployed or local dev Worker and observe loading state before data arrives
     expected: ParrotMascot renders with bouncing parrot emoji and Loading your todos... text. No broken image or console errors.
@@ -93,7 +94,7 @@ human_verification:
 
 ## Success Criterion 3: Cross-namespace isolation smoke test
 
-**Status: deferred_to_operator**
+**Status: live_verified (2026-06-16)**
 
 | Check | Status | Evidence |
 |-------|--------|---------|
@@ -103,7 +104,7 @@ human_verification:
 | Student->Employee depth-bounded query | PASS | Line 75: MATCH (s:Student)-[*1..5]->(n:Employee) RETURN count(n) AS cross_count |
 | Null result treated as PASS (no data = no contamination) | PASS | Lines 96-99 |
 | Clean error on missing env vars (exit 2, no stack trace) | PASS | Dry-run confirmed: prints usage, exits 2 |
-| Live run against Fly graph-api proxy | DEFERRED | Requires GRAPH_API_URL + GRAPH_API_SECRET |
+| Live run against Fly graph-api proxy | **PASS (2026-06-16)** | Ran live with GRAPH_API_URL + GRAPH_API_SECRET: both Employee↔Student cross-namespace counts = 0, "All checks passed", exit 0 |
 
 ---
 
@@ -229,13 +230,13 @@ Security Pass: No Pass 1 issues found in phase-modified files.
 |------------------|--------|
 | SC-1: getEmployeeContext + contextBlock prepend | code_verified |
 | SC-2: :BLOCKED_BY edge + field plumbing (critical !skipped lock honored) | code_verified |
-| SC-3: Cross-namespace smoke test | deferred_to_operator (script ships; creds needed) |
-| SC-4: A/B harness 10 extractions | deferred_to_operator (script ships; creds + data needed) |
-| SC-5a: Confetti triggers (first_todo_resolved + 5_emails_responded) | code_verified |
-| SC-5b: ParrotMascot loading state | code_verified (visual render deferred) |
+| SC-3: Cross-namespace smoke test | **live_verified (2026-06-16)** — ran live, both counts 0, exit 0 |
+| SC-4: A/B harness 10 extractions | deferred_to_operator (script ships; creds + 10 real emails needed) |
+| SC-5a: Confetti triggers (first_todo_resolved + 5_emails_responded) | code_verified — **live visual deferred to POST-DEPLOY** (items 2 & 3) |
+| SC-5b: ParrotMascot loading state | code_verified — **live visual deferred to POST-DEPLOY** (item 1) |
 | SC-5c: Mattermost GIF plugin | deferred_to_operator (runbook ships; mmctl + Tenor key needed) |
 
-**5/5 success criteria have all production code shipped. 3 live verification items are deferred to the operator window with documented runbooks for all 3.**
+**All production code shipped. SC-3 live-verified 2026-06-16. Remaining live checks: SC-5a/5b visual (items 1-3) deferred to POST-DEPLOY browser verify on workspace.internjobs.ai — local dev verify is blocked because Clerk production keys are domain-locked to that host and refuse to run on localhost; SC-4 (A/B) + SC-5c (/gif) deferred to operator window.**
 
 ---
 
@@ -243,11 +244,12 @@ Security Pass: No Pass 1 issues found in phase-modified files.
 
 All open items are already logged in `.planning/workstreams/team-workspace/STATE.md` under Open Items - Operator Handoff (Phase 26). Schedule one operator window covering:
 
-1. **Browser visual verify** (~10 min): ParrotMascot render + confetti console-clean on any deployed or local dev Worker. Closes SC-5b live gate.
-2. **KGRAPH-04 smoke run + KGRAPH-05 A/B harness** (~30 min including data assembly): Requires Fly graph-api + CF AI Gateway credentials. Runbooks in 26-01-SUMMARY.md. Closes SC-3 and SC-4.
-3. **Mattermost GIF plugin install** (~20 min): Follow apps/parrot/docs/genz-mattermost-gif-runbook.md. Requires mmctl admin session to chat.internjobs.ai + Tenor API key from Google Cloud Console. Closes SC-5c. Capture evidence screenshot per runbook Step 6.
+1. ✅ **KGRAPH-04 smoke — DONE 2026-06-16.** Ran live against Fly graph-api: both cross-namespace counts 0, exit 0. Closes SC-3.
+2. **Browser visual verify — POST-DEPLOY (~10 min).** ParrotMascot loader + first_todo_resolved confetti + 5-emails confetti, on **workspace.internjobs.ai once Phase 26 is deployed** (NOT local — Clerk prod keys are domain-locked to that host and won't run on localhost). Closes SC-5a/5b live gates. Steps in memory `phase-26-deferred-verification`.
+3. **KGRAPH-05 A/B harness — operator (~30 min).** Assemble 10 real emails + Fly graph-api + CF AI Gateway creds; `node scripts/26-kgraph-ab.mjs emails.json`. Closes SC-4.
+4. **Mattermost GIF plugin install — operator (~20 min).** Follow apps/parrot/docs/genz-mattermost-gif-runbook.md; mmctl admin + Tenor API key. Closes SC-5c. Screenshot per runbook Step 6.
 
-After the operator window, mark the three open items resolved in `.planning/workstreams/team-workspace/STATE.md` and promote Phase 26 status to live_verified.
+After the post-deploy browser pass + operator window, promote Phase 26 status to live_verified.
 
 ---
 
