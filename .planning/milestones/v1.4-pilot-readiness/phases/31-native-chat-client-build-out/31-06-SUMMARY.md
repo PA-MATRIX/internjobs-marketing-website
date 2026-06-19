@@ -3,7 +3,7 @@ phase: 31-native-chat-client-build-out
 plan: "06"
 subsystem: chat
 tags: [mattermost, vitest, fly-secrets, personal-access-tokens, uat, hardening, cloudflare-workers]
-status: checkpoint-pending
+status: uat-pending
 
 # Dependency graph
 requires:
@@ -57,18 +57,19 @@ Wave 5 (final wave) of the native chat client build-out — hardening + verifica
 - `npm test` (vitest run): **14 files, 64 tests, all passing.** 11 of those are new.
 - `tsc -b`: clean (exit 0).
 
-## What Remains (operator-only — checkpoint-pending)
+## Operator Steps — COMPLETED 2026-06-19
 
-The following are production / infrastructure actions the executor agent must NOT perform (flyctl, wrangler, live production curl). They satisfy the remaining `must_haves` truths and the two blocking human-verify checkpoints in the plan:
+Executed by the operator after merging `integration/v1.4` into the branch (chat + email together, conflict in ROADMAP.md only, resolved; `tsc` clean, 67 tests green):
 
-1. **CHAT-HARD-01 — Fly secret hygiene** (Task 1 + checkpoint #1):
-   - `flyctl secrets set MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true --app internjobs-mattermost` (restarts MM).
-   - Check `flyctl secrets list --app internjobs-mattermost` for a stray `ENABLEPERSONALACCESSTOKENS`; if present, `flyctl secrets unset ENABLEPERSONALACCESSTOKENS --app internjobs-mattermost`.
-   - Confirm MM restarted healthy via `flyctl status --app internjobs-mattermost`.
-2. **Production token backfill** (Task 2, ONLY after secret confirmed):
-   - `POST https://workspace.internjobs.ai/api/admin/chat/backfill-tokens` with an operator session token; expect `{ minted: N, skipped: M, failed: 0 }`. `failed > 0` ⇒ secret not yet active.
-3. **Deploy** (if any worker redeploy is needed): operator runs `wrangler deploy` with `CLOUDFLARE_ACCOUNT_ID=0fffd3dc…` pinned (the known silent-no-op gotcha).
-4. **CHAT-HARD-03 — Employee UAT** (checkpoint #2): the 15-step production walkthrough (send/reply/DM/group-DM/file/search/react/@mention/WS-real-time/typing/presence/offline-email).
+1. **CHAT-HARD-01 — Fly secret hygiene** ✓ (checkpoint #1 satisfied):
+   - `flyctl secrets set MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true --stage` then `flyctl secrets unset MM_SERVICESETTINGS_ENABLEPERSONALACCESSTOKENS` (single restart). The stray var was the **prefixed** `MM_SERVICESETTINGS_ENABLEPERSONALACCESSTOKENS` (no such MM setting — the real one is `EnableUserAccessTokens`), which is why prod PAT minting never worked before.
+   - Verified: `flyctl secrets list` shows `MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS` present and `...ENABLEPERSONALACCESSTOKENS` absent; MM ping `https://chat.internjobs.ai/api/v4/system/ping` → `200 {"status":"OK"}`; Fly health check passing (machine `6e820d55b13648`, version 11).
+2. **Deploy** ✓: `CLOUDFLARE_ACCOUNT_ID=0fffd3dc637bdb26d4963df445a69fd3 npm run deploy` — Worker `internjobs-parrot` **Version `41889c8e-38fb-4ca9-97d9-72d08f097746`** live on `workspace.internjobs.ai`.
+3. **Production token backfill** ✓: `POST /api/admin/chat/backfill-tokens` with an operator (CEO) Clerk session JWT → **`{"minted":3,"skipped":0,"failed":0}`**. PAT minting confirmed working in production.
+
+## What Remains (live UAT only)
+
+4. **CHAT-HARD-03 — Employee UAT** (checkpoint #2): the 15-step production walkthrough at `https://workspace.internjobs.ai/chat` (send/reply/DM/group-DM/file/search/react/@mention/WS-real-time/typing/presence/offline-email), incl. the nginx WebSocket-upgrade check (set `MATTERMOST_WS_URL` override only if WS upgrade is blocked). This genuinely requires a logged-in employee browser session and is the only outstanding item before the phase is fully verified.
 
 ## Deviations from Plan
 
@@ -80,4 +81,4 @@ None — the autonomous portion executed exactly as written. Test assertions use
 
 ## Status
 
-**CHECKPOINT-PENDING.** Autonomous tests committed (`98ffbec`). Final plan-completion docs commit is intentionally deferred until the operator completes the Fly secret + backfill + UAT and the two blocking checkpoints are approved.
+**UAT-PENDING.** Autonomous tests committed (`98ffbec`). Infra checkpoint #1 (Fly secret hygiene) + production deploy (`41889c8e`) + token backfill (`minted:3, failed:0`) all completed and verified 2026-06-19. The only remaining item is the live 15-step employee UAT (checkpoint #2), which needs a logged-in employee browser session. Once UAT passes, flip this to complete and run `/rrr:submit-phase 31 --team team-workspace`.
