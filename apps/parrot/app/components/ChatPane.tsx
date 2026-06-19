@@ -102,6 +102,12 @@ interface MmPost {
 	message: string;
 	create_at: number;
 	update_at?: number;
+	// Mattermost bumps update_at on replies/reactions too, so it is NOT a
+	// reliable "this message was edited" marker. edit_at is set ONLY when the
+	// message text itself is edited (0 otherwise). Use edit_at for the tag.
+	edit_at?: number;
+	// Set true by MM when a post is pinned in its channel (#6a).
+	is_pinned?: boolean;
 	root_id?: string;
 	reply_count?: number;
 	props?: Record<string, unknown>;
@@ -349,6 +355,13 @@ function postFiles(post: MmPost): MmFileInfo[] {
 	return [];
 }
 
+// #5 + #12a: a post is "edited" ONLY when MM set edit_at (> 0). Replies and
+// reactions bump update_at but leave edit_at at 0, so keying the tag off
+// update_at vs create_at wrongly flagged those posts as edited.
+function isEdited(post: MmPost): boolean {
+	return typeof post.edit_at === "number" && post.edit_at > 0;
+}
+
 function isImageFile(file: MmFileInfo): boolean {
 	if (file.mime_type) return file.mime_type.startsWith("image/");
 	const ext = (file.extension ?? file.name.split(".").pop() ?? "").toLowerCase();
@@ -361,16 +374,24 @@ function isImageFile(file: MmFileInfo): boolean {
 function renderMessageText(text: string, myUsername?: string): ReactNode {
 	if (!text) return text;
 	const parts: ReactNode[] = [];
-	const regex = /(\B@\w+)/g;
+	// #13: capture the WHOLE mention token INCLUDING the leading @, so the
+	// highlight span wraps "@John" rather than just "John". A mention starts at
+	// the beginning of the string or after whitespace/punctuation. We capture an
+	// optional leading boundary char in group 1 (re-emitted as plain text) and
+	// the @handle in group 2 (highlighted).
+	const regex = /(^|[\s.,;:!?()[\]{}"'])(@\w+)/g;
 	let lastIndex = 0;
 	let match: RegExpExecArray | null;
 	let key = 0;
 	// biome-ignore lint/suspicious/noAssignInExpressions: standard regex walk
 	while ((match = regex.exec(text)) !== null) {
-		if (match.index > lastIndex) {
-			parts.push(text.slice(lastIndex, match.index));
+		const boundary = match[1] ?? "";
+		const mentionStart = match.index + boundary.length;
+		// Emit any text before the mention (including the boundary char) as-is.
+		if (mentionStart > lastIndex) {
+			parts.push(text.slice(lastIndex, mentionStart));
 		}
-		const mention = match[0]; // includes the leading @
+		const mention = match[2]; // the @handle, including the leading @
 		const handle = mention.slice(1).toLowerCase();
 		const isMe = !!myUsername && handle === myUsername.toLowerCase();
 		parts.push(
@@ -385,7 +406,7 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 				{mention}
 			</span>,
 		);
-		lastIndex = match.index + mention.length;
+		lastIndex = mentionStart + mention.length;
 	}
 	if (lastIndex < text.length) parts.push(text.slice(lastIndex));
 	return parts.length ? parts : text;
@@ -1477,7 +1498,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 												<span className="text-xs text-slate-400">
 													{formatMessageTime(post.create_at)}
 												</span>
-												{post.update_at && post.update_at > post.create_at && (
+												{isEdited(post) && (
 													<span className="text-[10px] text-slate-400">
 														(edited)
 													</span>
@@ -2152,6 +2173,11 @@ function ThreadPanel({
 									<span className="text-xs text-slate-400">
 										{formatMessageTime(post.create_at)}
 									</span>
+									{isEdited(post) && (
+										<span className="text-[10px] text-slate-400">
+											(edited)
+										</span>
+									)}
 								</div>
 								<p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
 									{post.message || "(attachment)"}
