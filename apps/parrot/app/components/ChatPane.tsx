@@ -605,15 +605,17 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	>({});
 	// presenceMap[userId] = "online" | "away" | "offline" | "dnd".
 	const [presenceMap, setPresenceMap] = useState<Record<string, string>>({});
-	// Channels/DMs with unread posts (not currently viewed).
-	const [unreadChannels, setUnreadChannels] = useState<Set<string>>(
-		() => new Set(),
-	);
+	// #7 + #17: unread message COUNT per channel/DM not currently viewed.
+	// unreadCounts[channelId] = number of unread posts (0/absent ⇒ read).
+	const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 	// Debounce guard so we emit at most one user_typing per 2s.
 	const lastTypingSentRef = useRef(0);
 	// Keep the active channel id in a ref so WS callbacks (stable closures) can
 	// read the CURRENT active channel without re-subscribing the socket.
 	const activeIdRef = useRef<string | null>(null);
+	// Same idea for the local user id, so the `posted` handler can skip our own
+	// echoed posts when counting unreads (#17) without re-binding the socket.
+	const meIdRef = useRef<string | undefined>(undefined);
 
 	const bootstrap = useQuery({
 		queryKey: ["native-chat", "bootstrap"],
@@ -755,6 +757,11 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		activeIdRef.current = activeId;
 	}, [activeId]);
 
+	// Keep the local-user-id ref current for the stable WS `posted` handler.
+	useEffect(() => {
+		meIdRef.current = me?.id;
+	}, [me?.id]);
+
 	// Mark-read mutation: clears MM's unread tracking for the employee.
 	const markRead = useMutation({
 		mutationFn: (channelId: string) =>
@@ -813,14 +820,13 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 						return { ...prev, posts, order };
 					},
 				);
-			} else {
-				// A post in a channel we're not viewing → mark unread.
-				setUnreadChannels((prev) => {
-					if (prev.has(post.channel_id)) return prev;
-					const next = new Set(prev);
-					next.add(post.channel_id);
-					return next;
-				});
+			} else if (post.user_id !== meIdRef.current) {
+				// #17: a post in a channel we're NOT viewing (and not authored by us)
+				// → bump that conversation's unread count.
+				setUnreadCounts((prev) => ({
+					...prev,
+					[post.channel_id]: (prev[post.channel_id] ?? 0) + 1,
+				}));
 			}
 		},
 		[queryClient],
@@ -923,10 +929,10 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	}, []);
 
 	const handleChannelViewed = useCallback((channelId: string) => {
-		setUnreadChannels((prev) => {
-			if (!prev.has(channelId)) return prev;
-			const next = new Set(prev);
-			next.delete(channelId);
+		setUnreadCounts((prev) => {
+			if (!prev[channelId]) return prev;
+			const next = { ...prev };
+			delete next[channelId];
 			return next;
 		});
 	}, []);
@@ -962,25 +968,31 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		return () => clearInterval(interval);
 	}, []);
 
-	// Dispatch a window event whenever the unread-channel count changes so
-	// WorkspaceShell can drive the Chat nav badge (see Task 3 listener).
+	// Dispatch a window event whenever the unread-conversation COUNT changes so
+	// WorkspaceShell can drive the Chat nav badge. We report the number of
+	// conversations with unreads (the nav icon shows a per-conversation count,
+	// not a grand-total of messages).
+	const unreadConversationCount = useMemo(
+		() => Object.values(unreadCounts).filter((n) => n > 0).length,
+		[unreadCounts],
+	);
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		window.dispatchEvent(
 			new CustomEvent("chat-unread-change", {
-				detail: { count: unreadChannels.size },
+				detail: { count: unreadConversationCount },
 			}),
 		);
-	}, [unreadChannels]);
+	}, [unreadConversationCount]);
 
-	// When the active channel changes, clear its unread flag (optimistically) and
-	// tell MM to mark it read.
+	// When the active channel changes, clear its unread count (optimistically)
+	// and tell MM to mark it read.
 	useEffect(() => {
 		if (!activeId) return;
-		setUnreadChannels((prev) => {
-			if (!prev.has(activeId)) return prev;
-			const next = new Set(prev);
-			next.delete(activeId);
+		setUnreadCounts((prev) => {
+			if (!prev[activeId]) return prev;
+			const next = { ...prev };
+			delete next[activeId];
 			return next;
 		});
 		markRead.mutate(activeId);
@@ -1412,6 +1424,10 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 					channels.map((channel) => {
 						const active = channel.id === activeId;
 						const Icon = channel.type === "P" ? Lock : Hash;
+						// #17: a non-active channel with unreads gets a BOLD name and a
+						// count badge on the right; the active one is always read.
+						const count = active ? 0 : unreadCounts[channel.id] ?? 0;
+						const unread = count > 0 || (!active && channel.has_unreads);
 						return (
 							<button
 								key={channel.id}
@@ -1420,19 +1436,26 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
 									active
 										? "bg-slate-100 font-semibold text-slate-900"
-										: "text-slate-600 hover:bg-slate-50"
+										: unread
+											? "font-semibold text-slate-900 hover:bg-slate-50"
+											: "text-slate-600 hover:bg-slate-50"
 								}`}
 							>
 								<span className="flex min-w-0 items-center gap-2">
 									<Icon size={14} className="shrink-0 text-slate-400" />
 									<span className="truncate">{channelLabel(channel)}</span>
 								</span>
-								{(channel.has_unreads ||
-									unreadChannels.has(channel.id)) && (
-									<span
-										aria-hidden="true"
-										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
-									/>
+								{count > 0 ? (
+									<span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
+										{count > 99 ? "99+" : count}
+									</span>
+								) : (
+									unread && (
+										<span
+											aria-hidden="true"
+											className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
+										/>
+									)
 								)}
 							</button>
 						);
@@ -1468,6 +1491,10 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 						const active = dm.id === activeId;
 						const label = dmLabel(dm);
 						const presence = dmPresence(dm);
+						// #7: unread message count badge to the RIGHT of the partner name,
+						// mirroring channels. Cleared on open (mark-read).
+						const count = active ? 0 : unreadCounts[dm.id] ?? 0;
+						const unread = count > 0 || (!active && dm.has_unreads);
 						return (
 							<button
 								key={dm.id}
@@ -1476,7 +1503,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
 									active
 										? "bg-slate-100 font-semibold text-slate-900"
-										: "text-slate-600 hover:bg-slate-50"
+										: unread
+											? "font-semibold text-slate-900 hover:bg-slate-50"
+											: "text-slate-600 hover:bg-slate-50"
 								}`}
 							>
 								<span className="flex min-w-0 items-center gap-2">
@@ -1496,11 +1525,17 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									</span>
 									<span className="truncate">{label}</span>
 								</span>
-								{(dm.has_unreads || unreadChannels.has(dm.id)) && (
-									<span
-										aria-hidden="true"
-										className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
-									/>
+								{count > 0 ? (
+									<span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
+										{count > 99 ? "99+" : count}
+									</span>
+								) : (
+									unread && (
+										<span
+											aria-hidden="true"
+											className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
+										/>
+									)
 								)}
 							</button>
 						);
