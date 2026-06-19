@@ -58,7 +58,10 @@ export const MM_USER_ID_NONE = "__not_found__";
 const DEFAULT_TEAM_NAME = "internjobs";
 const DEFAULT_TEAM_DISPLAY_NAME = "InternJobs";
 
-async function mmFetch<T>(
+// Exported (Phase 31 Wave 0) so the WS proxy (Wave 4) and mmFetchAsUser can
+// reuse the raw fetch wrapper. The second arg is "any bearer token" — bot
+// token, admin token, or a per-user PAT — not strictly the bot token anymore.
+export async function mmFetch<T>(
 	mattermostUrl: string,
 	botToken: string,
 	path: string,
@@ -492,4 +495,71 @@ export async function getMmPostsSince(
 	} catch {
 		return [];
 	}
+}
+
+// ── Phase 31 Wave 0: per-employee Mattermost PAT identity ───────────
+//
+// Until now every chat REST call went through a single bot identity
+// (MATTERMOST_BOT_TOKEN) with `parrot_author_*` props as a human-attribution
+// workaround. These helpers let the Worker mint + use a personal access token
+// (PAT) per employee so human messages are authored by the real MM user.
+
+/**
+ * Mint a Mattermost personal access token (PAT) for a specific MM user using
+ * the system-admin token. Returns the raw token string, or null on failure.
+ *
+ * IMPORTANT: requires MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true on the
+ * Mattermost server (set on the internjobs-mattermost Fly app in Wave 5 /
+ * plan 31-06; for local dev enable it in your local MM config). Without it MM
+ * returns 501 with id "api.user.create_user_access_token.disabled.app_error"
+ * and this returns null — do NOT run the production backfill until 31-06
+ * Task 1 confirms the Fly secret is present.
+ */
+export async function mintMmUserToken(
+	mattermostUrl: string,
+	adminToken: string,
+	mmUserId: string,
+): Promise<string | null> {
+	const resp = await mmFetch<{ token: string }>(
+		mattermostUrl,
+		adminToken,
+		`/api/v4/users/${mmUserId}/tokens`,
+		{ method: "POST", body: JSON.stringify({ description: "parrot-workspace" }) },
+	);
+	return resp.ok ? resp.data.token : null;
+}
+
+/**
+ * Proxy a Mattermost REST call AS the employee using their stored PAT.
+ *
+ * Token resolution is injected (getToken/setToken) so this file stays free of
+ * any Durable Object coupling — the caller wires it to WorkspaceDO.
+ * getEmployeeToken / setEmployeeToken.
+ *
+ * 401 handling: a PAT may have been revoked by an MM admin. On a 401 we
+ * re-mint via the admin token, persist the new PAT (setToken), and retry once.
+ */
+export async function mmFetchAsUser<T>(
+	mattermostUrl: string,
+	adminToken: string,
+	path: string,
+	init: RequestInit,
+	getToken: () => Promise<{ mmUserId: string; token: string } | null>,
+	setToken: (mmUserId: string, token: string) => Promise<void>,
+): Promise<{ ok: true; data: T } | { ok: false; status: number; data: unknown }> {
+	const tokenRow = await getToken();
+	if (!tokenRow) return { ok: false, status: 503, data: { error: "chat_not_provisioned" } };
+
+	let result = await mmFetch<T>(mattermostUrl, tokenRow.token, path, init);
+
+	// 401-triggered re-mint: PAT may have been revoked by an MM admin.
+	if (!result.ok && result.status === 401) {
+		const newToken = await mintMmUserToken(mattermostUrl, adminToken, tokenRow.mmUserId);
+		if (newToken) {
+			await setToken(tokenRow.mmUserId, newToken);
+			result = await mmFetch<T>(mattermostUrl, newToken, path, init);
+		}
+	}
+
+	return result;
 }
