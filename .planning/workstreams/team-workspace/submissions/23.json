@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "workstream": "team-workspace",
+  "github_team": "@PA-MATRIX/team-workspace",
+  "milestone": "v1.4",
+  "phase": "23",
+  "branch": "rrr/v1.4/team-workspace-23",
+  "expected_branch": "rrr/v1.4/team-workspace",
+  "base_branch": "main",
+  "base_sha": "c10e8d14cc2bd03dcb1dc4a962f4aedf76031394",
+  "head_sha": "3b35a3ce16592a45653bc95ef8f775b9ad57bc22",
+  "phases_assigned": [],
+  "phases_completed": [
+    "23"
+  ],
+  "ready_for_integration": true,
+  "files_touched": [
+    ".planning/ROADMAP.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-01-PLAN.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-01-SUMMARY.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-02-PLAN.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-02-SUMMARY.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-03-PLAN.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-03-SUMMARY.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-04-PLAN.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-04-SUMMARY.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-VERIFICATION.md",
+    "apps/parrot/app/components/EmailAttachmentList.tsx",
+    "apps/parrot/app/components/EmailPanel.tsx",
+    "apps/parrot/test/agent-uat-results.md",
+    "apps/parrot/test/attachment-download-verify.md",
+    "apps/parrot/test/safety-email-verify.md",
+    "apps/parrot/workers/index.ts",
+    "apps/parrot/workers/lib/ai.ts",
+    "apps/parrot/workers/lib/email-helpers.ts",
+    "apps/parrot/workers/lib/graph.ts",
+    "apps/parrot/workers/lib/inbound-email.ts",
+    "apps/parrot/workers/routes/agent.ts",
+    "apps/parrot/workers/routes/attachments.ts",
+    "apps/parrot/workers/routes/reply-forward.ts",
+    "apps/parrot/workers/types.ts",
+    "apps/parrot/wrangler.jsonc",
+    "infra/graph-api/src/index.mjs"
+  ],
+  "tests_run": [
+    "typecheck",
+    "agent-lift-uat-14step",
+    "graph-api-smoke",
+    "safety-email-live",
+    "attachment-download-chrome"
+  ],
+  "uat_artifacts": [
+    "apps/parrot/test/agent-uat-results.md",
+    "apps/parrot/test/safety-email-verify.md",
+    "apps/parrot/test/attachment-download-verify.md",
+    ".planning/milestones/v1.4-pilot-readiness/phases/23-workspace-pilot-closeouts/23-VERIFICATION.md"
+  ],
+  "risks": [
+    "Safari attachment download deferred — no Mac available",
+    "translate latency 10-22s for verbose scripts (Hindi/German) — accepted v1.4 deviation; v1.5 tuning",
+    "v1.5 Lakera false-positive watchlist SAFETY-HARD-BLOCK-EXPAND-01"
+  ],
+  "updated_at": "2026-06-02T22:05:55.476Z",
+  "migrated_from": "SUBMISSION.json (CH-01 per-phase split, 2026-06-20)"
+}

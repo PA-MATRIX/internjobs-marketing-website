@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // RRR submission gate.
 //
-// A team phase only reaches the integration branch through `/rrr:submit-phase`,
-// which writes `.planning/workstreams/<team>/SUBMISSION.json`. Before phase-27
-// we learned the hard way that this is a *convention* GitHub never enforced —
-// the coordinator could open a PR straight off a team branch and merge it the
-// moment CI was green, with no submission at all. This script turns the
-// convention into an enforced check.
+// A team phase only reaches the integration branch once it is *submitted* — a
+// marker file the owning developer writes with `node scripts/submit-phase.mjs`.
+// Before phase-27 we learned the hard way that this hand-off was a *convention*
+// GitHub never enforced — the coordinator could open a PR straight off a team
+// branch and merge it the moment CI was green, with no submission at all. This
+// script turns the convention into an enforced check.
+//
+// The marker is a per-phase file `.planning/workstreams/<team>/submissions/<phase>.json`
+// (collision-free: one file per phase, so two concurrent phase branches never
+// conflict on it). A single rolling `.planning/workstreams/<team>/SUBMISSION.json`
+// is honored as a fallback for branches predating per-phase markers.
 //
 // It validates the submission marker that lives at the tip of the PR's head
 // branch against the branch+phase actually being merged:
@@ -25,7 +30,7 @@
 //   node scripts/check-submission.mjs --head-ref <ref> [--head-sha <sha>] [--base-sha <sha>]
 //   node scripts/check-submission.mjs            # derive ref/sha from local git
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -60,7 +65,11 @@ if (changed && changed.length && changed.every(isDocFile)) {
   );
 }
 
-const submissionPath = path.join(repoRoot, ".planning", "workstreams", team, "SUBMISSION.json");
+// Prefer the per-phase marker `submissions/<phase>.json` so two of a team's phase
+// branches in flight at once never collide on one rolling file (the SUBMISSION.json
+// problem, same rolling-state class as STATE.md). Fall back to the legacy single
+// `SUBMISSION.json` so any branch created before per-phase markers still validates.
+const { path: submissionPath, kind: submissionKind } = resolveSubmissionPath(repoRoot, team, branchPhase);
 
 let submission;
 try {
@@ -68,7 +77,7 @@ try {
 } catch (err) {
   fail(
     `no submission for ${team}: ${path.relative(repoRoot, submissionPath)} is missing or unreadable.`,
-    `The owning developer must run \`/rrr:submit-phase ${branchPhase ?? "<phase>"} --team ${team} --ready\` and push before this branch can be merged.`,
+    `The owning developer must run \`node scripts/submit-phase.mjs --team ${team} --phase ${branchPhase ?? "<phase>"} --ready\` and push before this branch can be merged.`,
     err.code === "ENOENT" ? null : err.message,
   );
 }
@@ -114,10 +123,24 @@ if (problems.length) {
 
 pass(
   `submission gate ok: ${team}${branchPhase ? ` phase ${branchPhase}` : ""} — ready, ` +
-    `branch matches, ${(submission.phases_completed || []).length} phase(s) completed, marker in branch history.`,
+    `branch matches, ${(submission.phases_completed || []).length} phase(s) completed, marker in branch history ` +
+    `(${submissionKind} marker: ${path.relative(repoRoot, submissionPath)}).`,
 );
 
 // ---- helpers ----
+
+// Resolve which submission marker governs this branch+phase. Per-phase markers
+// (`submissions/<phase>.json`) are collision-free — one file per phase, never
+// rewritten by another phase — so they win when present. A bare team branch (no
+// phase) and any legacy branch fall back to the single rolling `SUBMISSION.json`.
+function resolveSubmissionPath(root, team, phase) {
+  const dir = path.join(root, ".planning", "workstreams", team);
+  if (phase) {
+    const perPhase = path.join(dir, "submissions", `${phase}.json`);
+    if (existsSync(perPhase)) return { path: perPhase, kind: "per-phase" };
+  }
+  return { path: path.join(dir, "SUBMISSION.json"), kind: "legacy" };
+}
 
 function parseArgs(argv) {
   const out = {};
@@ -213,7 +236,7 @@ function fail(headline, ...lines) {
   console.error(`✗ ${headline}`);
   for (const line of lines.filter(Boolean)) console.error(`  - ${line}`);
   console.error(
-    `\nThe integration merge is blocked until the owning developer submits this phase via \`/rrr:submit-phase\`.`,
+    `\nThe integration merge is blocked until the owning developer submits this phase via \`node scripts/submit-phase.mjs --team <team> --phase <phase> --ready\`.`,
   );
   process.exit(1);
 }
