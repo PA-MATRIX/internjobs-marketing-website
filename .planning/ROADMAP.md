@@ -501,7 +501,13 @@ Marketing site + LinkedIn Clerk auth + Postgres schema + Photon/Spectrum SMS + w
 
 ---
 
+## Pre-v1.5 Coordinator Hardening (landed on `main`, outside the integer-phase sequence)
+
+- ✅ **CH-01 — Per-Phase Submission Markers** — *coordinator (team-cms)* — landed on `main` 2026-06-20 (PR #18). Retired the rolling `.planning/workstreams/<team>/SUBMISSION.json` (rewritten + accumulated every phase → two concurrent phase branches merge-conflicted on it; same class as `STATE.md`) for per-phase markers `.planning/workstreams/<team>/submissions/<phase>.json`. Gate (`scripts/check-submission.mjs`) reads per-phase first, legacy fallback; new repo-owned producer `scripts/submit-phase.mjs` (survives `/rrr:update`). Plan: `.planning/coordinator/CH-01-per-phase-submission-markers/PLAN.md`. **Must precede `integration/v1.5`** so concurrent v1.5 branches can't collide on the marker.
+
+---
+
 **Next Steps:**
-1. v1.4 is shipped to `main` (2026-06-16). To open v1.5: `/rrr:new-milestone` → `/rrr:discuss-milestone` → `/rrr:create-roadmap`, promoting the v1.5 Candidates above into numbered phases.
+1. v1.4 is shipped to `main` (2026-06-16); CH-01 gate-hardening landed (2026-06-20). To open v1.5: `/rrr:new-milestone` → `/rrr:discuss-milestone` → `/rrr:create-roadmap`, promoting the v1.5 Candidates above into numbered phases.
 2. `/rrr:assign-phases` — assign the v1.5 phases across `team-cms` (startup bring-up) and `team-workspace` (WORKSPACE-TRUE-INTEGRATION) in `.planning/team-mode.json`.
-3. The coordinator cuts `integration/v1.5` (inherits the `integration/**` ruleset automatically) before either team branches off it.
+3. The coordinator cuts `integration/v1.5` (inherits the `integration/**` ruleset automatically) before either team branches off it. Teams submit phases with `node scripts/submit-phase.mjs --team <team> --phase <N> --ready` (per-phase markers, per CH-01).
