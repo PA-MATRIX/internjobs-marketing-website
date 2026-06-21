@@ -60,7 +60,7 @@ RRR will regenerate any of these it needs.
 `integration/**`:
 
 - **submission gate (rrr)** — on PRs only; enforces that a team branch carries a
-  fresh `/rrr:submit-phase` marker for the exact branch+phase being merged (see below).
+  fresh per-phase submission marker for the exact branch+phase being merged (see below).
 - **workspaces** — `npm ci`; build marketing, employers, and verify the student app.
 - **parrot** — `npm ci`; `npm run typecheck`; `npm test` (vitest); `npm run build`.
 - **startup** — `npm ci`; `npm run typecheck`; `npm test` (node:test via `tsx`).
@@ -72,26 +72,41 @@ GitHub Actions yet. To enable real CD later, add `CLOUDFLARE_API_TOKEN` +
 
 ## Submission gate — a phase must be *submitted* before it can be merged
 
-A team branch only enters `integration/<ver>` through `/rrr:submit-phase`, which
-writes `.planning/workstreams/<team>/SUBMISSION.json` (the developer's "this phase
-is done and verified — take it" signal). That hand-off used to be a convention
-nothing enforced: the coordinator could open a PR straight off a team branch and
-merge it as soon as CI was green, even though the owning developer had never
+A team branch only enters `integration/<ver>` once the owning developer **submits**
+the phase by writing a per-phase marker `.planning/workstreams/<team>/submissions/<phase>.json`
+(the "this phase is done and verified — take it" signal). That hand-off used to be a
+convention nothing enforced: the coordinator could open a PR straight off a team branch
+and merge it as soon as CI was green, even though the owning developer had never
 submitted it. (That is exactly how phase-27 reached `main` while the developer's
 marker still said phase-23 / "human-verify pending".)
 
-`scripts/check-submission.mjs` closes that hole, and the **submission gate (rrr)**
+Write the marker with the repo producer:
+
+```bash
+node scripts/submit-phase.mjs --team team-cms --phase 31 --ready --tests typecheck,build,uat
+```
+
+**Per-phase, not rolling.** Each phase gets its own file, so two of a team's phase
+branches in flight never collide on the marker — the old single rolling
+`SUBMISSION.json` was rewritten wholesale every phase and merge-conflicted between
+concurrent branches (the same rolling-state class as `STATE.md`; PR #12 vs #13 hit
+this on the v1.4 tail). `SUBMISSION.json` is now gitignored; `/rrr:submit-phase`
+remains usable for RRR's own advisory `coordinate-merge` / `integration-report` but
+no longer writes the tracked, enforced marker.
+
+`scripts/check-submission.mjs` closes the hole, and the **submission gate (rrr)**
 CI job runs it on every PR. For a `rrr/<ver>/team-<name>-<NN>` head branch it fails
 the PR unless the marker:
 
-1. exists for the team and is `ready_for_integration: true`,
+1. exists for the team+phase and is `ready_for_integration: true`,
 2. names *this* branch (a stale marker from an earlier phase is rejected),
 3. lists the phase `<NN>` in `phases_completed`, and
 4. was recorded against a commit in this branch's history.
 
-Non-team branches (e.g. the `integration/<ver> → main` promotion PR) are not
-subject to the gate — the job passes as "not applicable". Run it locally before
-opening a PR:
+The gate reads `submissions/<NN>.json` first and falls back to a legacy
+`SUBMISSION.json` only for branches predating per-phase markers. Non-team branches
+(e.g. the `integration/<ver> → main` promotion PR) are not subject to the gate — the
+job passes as "not applicable". Run it locally before opening a PR:
 
 ```bash
 node scripts/check-submission.mjs --head-ref "$(git branch --show-current)"
@@ -110,9 +125,9 @@ git switch -c rrr/v1.4/team-cms-30 origin/integration/v1.4
 
 # ...do the work, commit...
 
-# submit the phase — writes SUBMISSION.json, the signal the gate checks for
-/rrr:submit-phase 30 --team team-cms --ready --tests typecheck,build,uat
-git add .planning/workstreams/team-cms/SUBMISSION.json && git commit -m "submit(30): ready for integration"
+# submit the phase — writes the per-phase marker the gate checks for
+node scripts/submit-phase.mjs --team team-cms --phase 30 --ready --tests typecheck,build,uat
+git add .planning/workstreams/team-cms/submissions/30.json && git commit -m "submit(30): ready for integration"
 
 # open the PR against integration (NOT main)
 gh pr create --base integration/v1.4 --fill

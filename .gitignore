@@ -22,6 +22,11 @@ apps/mac-bridge/node_modules
 .planning/STATE.md
 .planning/workstreams/*/STATE.md
 .planning/learnings.jsonl
+# SUBMISSION.json is the OLD rolling submission marker — same collision class.
+# The enforced marker is now per-phase: .planning/workstreams/<team>/submissions/<phase>.json
+# (committed, read by scripts/check-submission.mjs). /rrr:submit-phase may still
+# write SUBMISSION.json locally for RRR's advisory coordinate-merge; don't track it.
+.planning/workstreams/*/SUBMISSION.json
 
 # Playwright trace/screenshot output — local debug artifacts, never commit.
 test-results/

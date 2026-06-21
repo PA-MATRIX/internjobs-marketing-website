@@ -3,6 +3,7 @@
   "workstream": "team-workspace",
   "github_team": "@PA-MATRIX/team-workspace",
   "milestone": "v1.4",
+  "phase": "30",
   "branch": "rrr/v1.4/team-workspace-30",
   "expected_branch": "rrr/v1.4/team-workspace",
   "base_branch": "main",
@@ -10,7 +11,6 @@
   "head_sha": "3921674bb2839ea317949b3850be547095720082",
   "phases_assigned": [],
   "phases_completed": [
-    "23",
     "30"
   ],
   "ready_for_integration": true,
@@ -45,5 +45,6 @@
   ],
   "uat_artifacts": [],
   "risks": [],
-  "updated_at": "2026-06-18T16:16:42.110Z"
+  "updated_at": "2026-06-18T16:16:42.110Z",
+  "migrated_from": "SUBMISSION.json (CH-01 per-phase split, 2026-06-20)"
 }
