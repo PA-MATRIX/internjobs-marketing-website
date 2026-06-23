@@ -7,7 +7,7 @@
 //      via the `secondaryNav` prop.
 //   3. Main content: the active pane's primary surface.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -21,6 +21,7 @@ import {
 	Shield,
 	Settings,
 	Bell,
+	Loader2,
 	X,
 } from "lucide-react";
 import { UserMenu } from "./UserMenu";
@@ -59,6 +60,33 @@ export interface WorkspaceShellProps {
 	title?: string;
 }
 
+// #3: shape of the enriched search rows returned by POST /api/chat/search.
+interface HeaderSearchResult {
+	id: string;
+	channel_id: string;
+	message: string;
+	create_at: number;
+	author_name?: string;
+	channel_label?: string;
+}
+interface HeaderSearchList {
+	order?: string[];
+	posts?: Record<string, HeaderSearchResult>;
+}
+
+// The global header search is context-aware: on the Email pane it searches
+// emails, everywhere else it searches chat. Results are a tagged union so the
+// dropdown can render + route each kind correctly.
+type HeaderSearchItem =
+	| ({ kind: "chat" } & HeaderSearchResult)
+	| {
+			kind: "email";
+			id: string;
+			subject: string | null;
+			sender: string | null;
+			snippet?: string;
+	  };
+
 export function WorkspaceShell({
 	children,
 	secondaryNav,
@@ -68,27 +96,96 @@ export function WorkspaceShell({
 	const navigate = useNavigate();
 	const { data: me } = useCurrentEmployee();
 	const [drawerOpen, setDrawerOpen] = useState(false);
-	// #11: the global header search was a disabled input (cursor-not-allowed,
-	// untypeable). Make it a real search box that drives the Chat pane search.
+	// #3: the header search is a GLOBAL search across every chat, with its own
+	// results dropdown anchored to the input. Clicking a result opens that
+	// channel/DM in the Chat pane (via the `chat-open-channel` event). This is
+	// separate from the in-chat search icon, which scopes to the open channel.
 	const [headerSearch, setHeaderSearch] = useState("");
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [searchResults, setSearchResults] = useState<HeaderSearchItem[] | null>(
+		null,
+	);
+	const [searchLoading, setSearchLoading] = useState(false);
+	const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	function runHeaderSearch() {
+	// On the Email pane the header search targets emails; everywhere else it
+	// targets chat. This drives the query, placeholder, and result rendering.
+	const searchMode: "email" | "chat" = location.pathname.startsWith("/inbox")
+		? "email"
+		: "chat";
+
+	useEffect(() => {
 		const term = headerSearch.trim();
-		if (!term) return;
-		// Ask the Chat pane to open its search with this term. If we're not on the
-		// chat route, navigate there first — ChatPane mounts and the event fires
-		// after a tick so the listener is ready.
-		const onChat = location.pathname.startsWith("/chat");
-		const dispatch = () =>
+		if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+		if (!term) {
+			setSearchResults(null);
+			setSearchLoading(false);
+			return;
+		}
+		setSearchLoading(true);
+		searchDebounceRef.current = setTimeout(async () => {
+			try {
+				if (searchMode === "email") {
+					const data = await api.searchEmails(term);
+					setSearchResults(
+						(data.results ?? []).map((m) => ({
+							kind: "email" as const,
+							id: m.id,
+							subject: m.subject,
+							sender: m.sender,
+							snippet: m.snippet,
+						})),
+					);
+				} else {
+					// No channel_id ⇒ MM searches every channel/DM the employee can see.
+					const res = await apiFetch("/api/chat/search", {
+						method: "POST",
+						body: JSON.stringify({ terms: term }),
+					});
+					const data = res.ok ? ((await res.json()) as HeaderSearchList) : null;
+					const order = data?.order ?? [];
+					const posts = data?.posts ?? {};
+					setSearchResults(
+						order
+							.map((id) => posts[id])
+							.filter((p): p is HeaderSearchResult => Boolean(p))
+							.map((p) => ({ kind: "chat" as const, ...p })),
+					);
+				}
+			} catch {
+				setSearchResults([]);
+			} finally {
+				setSearchLoading(false);
+			}
+		}, 300);
+		return () => {
+			if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+		};
+	}, [headerSearch, searchMode]);
+
+	function closeSearch() {
+		setSearchOpen(false);
+		setHeaderSearch("");
+		setSearchResults(null);
+	}
+
+	function openSearchResult(channelId: string) {
+		closeSearch();
+		const go = () =>
 			window.dispatchEvent(
-				new CustomEvent("chat-search", { detail: { term } }),
+				new CustomEvent("chat-open-channel", { detail: { channelId } }),
 			);
-		if (onChat) {
-			dispatch();
+		if (location.pathname.startsWith("/chat")) {
+			go();
 		} else {
 			navigate("/chat");
-			setTimeout(dispatch, 150);
+			setTimeout(go, 150);
 		}
+	}
+
+	function openEmailResult(emailId: string) {
+		closeSearch();
+		navigate(`/inbox?message=${encodeURIComponent(emailId)}`);
 	}
 
 	// Phase 13 Wave 1: register the push service worker once on mount.
@@ -267,19 +364,101 @@ export function WorkspaceShell({
 				<header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
 					<h1 className="text-base font-semibold truncate">{activeLabel}</h1>
 					<div className="flex items-center gap-3">
-						<input
-							type="search"
-							placeholder="Search messages"
-							value={headerSearch}
-							onChange={(e) => setHeaderSearch(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") {
-									e.preventDefault();
-									runHeaderSearch();
+						<div className="relative hidden md:block">
+							<input
+								type="search"
+								placeholder={
+									searchMode === "email"
+										? "Search emails"
+										: "Search all messages"
 								}
-							}}
-							className="hidden md:block w-64 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
-						/>
+								value={headerSearch}
+								onChange={(e) => {
+									setHeaderSearch(e.target.value);
+									setSearchOpen(true);
+								}}
+								onFocus={() => setSearchOpen(true)}
+								className="w-64 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+							/>
+							{searchOpen && headerSearch.trim() && (
+								<>
+									{/* click-outside backdrop */}
+									<button
+										type="button"
+										aria-label="Close search"
+										tabIndex={-1}
+										onClick={() => setSearchOpen(false)}
+										className="fixed inset-0 z-30 cursor-default"
+									/>
+									<div className="absolute right-0 top-full z-40 mt-1 w-96 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+										<div className="max-h-96 overflow-auto p-1">
+											{searchLoading ? (
+												<div className="flex items-center gap-2 px-2 py-3 text-sm text-slate-500">
+													<Loader2 className="animate-spin" size={14} />
+													Searching
+												</div>
+											) : searchResults === null ? (
+												<p className="px-2 py-3 text-sm text-slate-400">
+													{searchMode === "email"
+														? "Type to search your emails."
+														: "Type to search every chat."}
+												</p>
+											) : searchResults.length === 0 ? (
+												<p className="px-2 py-3 text-sm text-slate-500">
+													{searchMode === "email"
+														? `No emails match “${headerSearch.trim()}”.`
+														: `No messages match “${headerSearch.trim()}”.`}
+												</p>
+											) : (
+												searchResults.map((item) =>
+													item.kind === "email" ? (
+														<button
+															key={item.id}
+															type="button"
+															onClick={() => openEmailResult(item.id)}
+															className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-slate-50"
+														>
+															<div className="flex flex-wrap items-baseline gap-x-2">
+																<span className="text-sm font-bold text-slate-900">
+																	{item.subject || "(no subject)"}
+																</span>
+															</div>
+															<div className="text-xs font-medium text-violet-700">
+																{item.sender ?? "Unknown sender"}
+															</div>
+															{item.snippet && (
+																<p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs text-slate-600">
+																	{item.snippet}
+																</p>
+															)}
+														</button>
+													) : (
+														<button
+															key={item.id}
+															type="button"
+															onClick={() => openSearchResult(item.channel_id)}
+															className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-slate-50"
+														>
+															<div className="flex flex-wrap items-baseline gap-x-2">
+																<span className="text-xs font-bold text-sky-700">
+																	{item.channel_label ?? "channel"}
+																</span>
+																<span className="text-sm font-bold text-slate-900">
+																	{item.author_name ?? "Someone"}
+																</span>
+															</div>
+															<p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs text-slate-600">
+																{item.message}
+															</p>
+														</button>
+													),
+												)
+											)}
+										</div>
+									</div>
+								</>
+							)}
+						</div>
 						{/* Phase 13 Wave 1: notification bell. Red dot when unread > 0. */}
 						<button
 							type="button"
@@ -359,6 +538,15 @@ function NotificationDrawer({ open, onClose, items }: NotificationDrawerProps) {
 		},
 	});
 
+	// Phase 31 gap-fix: dismiss/discard notifications. Clicking a notification
+	// removes it from the drawer; "Clear all" empties the drawer entirely.
+	const clearNotifs = useMutation({
+		mutationFn: (ids?: string[]) => api.clearNotifications(ids),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["notifications"] });
+		},
+	});
+
 	// On open, mark all unread as read after a short delay (lets the user
 	// see the unread highlight first). Bell badge clears on success.
 	useEffect(() => {
@@ -395,10 +583,10 @@ function NotificationDrawer({ open, onClose, items }: NotificationDrawerProps) {
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
-							onClick={() => markRead.mutate(undefined)}
+							onClick={() => clearNotifs.mutate(undefined)}
 							className="text-xs font-medium text-slate-500 hover:text-slate-900"
 						>
-							Mark all read
+							Clear all
 						</button>
 						<button
 							type="button"
@@ -426,7 +614,8 @@ function NotificationDrawer({ open, onClose, items }: NotificationDrawerProps) {
 										<button
 											type="button"
 											onClick={() => {
-												markRead.mutate([n.id]);
+												// Discard the notification once the user acts on it.
+												clearNotifs.mutate([n.id]);
 												if (n.url) navigate(n.url);
 												onClose();
 											}}

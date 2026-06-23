@@ -477,10 +477,15 @@ export async function getMmChannelPosts(
 	perPage = 50,
 ): Promise<MattermostPostList | null> {
 	try {
+		// #2: request collapsed-thread metadata so MM populates `reply_count` (and
+		// last_reply_at) on root posts. With Collapsed Reply Threads enabled
+		// server-side, the plain endpoint returns reply_count: 0 on roots, so the
+		// channel feed's "N replies" affordance reverted to nothing on every
+		// refetch. The param is ignored when CRT is off, so it is safe either way.
 		const resp = await mmFetch<MattermostPostList>(
 			mattermostUrl,
 			botToken,
-			`/api/v4/channels/${channelId}/posts?page=${page}&per_page=${perPage}`,
+			`/api/v4/channels/${channelId}/posts?page=${page}&per_page=${perPage}&collapsedThreads=true&collapsedThreadsExtended=true`,
 		);
 		return resp.ok ? resp.data : null;
 	} catch {
@@ -741,6 +746,33 @@ export async function getMmPost(
 		`/api/v4/posts/${postId}`,
 	);
 	return resp.ok ? resp.data : null;
+}
+
+/** Fetch a single channel's metadata (name/display_name/type) by id. */
+export async function getMmChannel(
+	mattermostUrl: string,
+	token: string,
+	channelId: string,
+): Promise<MattermostChannel | null> {
+	const resp = await mmFetch<MattermostChannel>(
+		mattermostUrl,
+		token,
+		`/api/v4/channels/${channelId}`,
+	);
+	return resp.ok ? resp.data : null;
+}
+
+/**
+ * Human-friendly label for a channel, shown in parentheses in mention
+ * notification titles, e.g. "Mention in Chat (#general)":
+ *   - "D" (direct) → "DM"
+ *   - "G" (group)  → "group DM"
+ *   - "O"/"P"      → "#<display name>"
+ */
+export function mmChannelLabel(ch: MattermostChannel): string {
+	if (ch.type === "D") return "DM";
+	if (ch.type === "G") return "group DM";
+	return `#${ch.display_name || ch.name || "channel"}`;
 }
 
 /**

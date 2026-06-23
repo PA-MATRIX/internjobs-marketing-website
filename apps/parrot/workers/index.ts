@@ -367,6 +367,18 @@ app.get("/api/inbox/messages", requireEmployeeMailbox, async (c: AppContext) => 
 	return c.json({ emails, totalCount, folder });
 });
 
+// Phase 31 gap-fix: GET /api/inbox/search?q=… — full-mailbox email search for
+// the global header search when the user is on the Email pane. Backs onto the
+// DO's existing searchEmails (SQL LIKE over subject/sender/body). Returns
+// metadata + a short snippet; empty/blank query yields no results.
+app.get("/api/inbox/search", requireEmployeeMailbox, async (c: AppContext) => {
+	const query = (c.req.query("q") ?? "").trim();
+	if (!query) return c.json({ results: [] });
+	const stub = c.var.mailboxStub;
+	const results = await stub.searchEmails({ query, limit: 20 });
+	return c.json({ results });
+});
+
 // PARROT-FOLDER-COUNTS-01: total message count per folder, for the sidebar
 // badges. "starred" is the cross-folder virtual view (same as the list
 // route). One COUNT(*) per folder — cheap, and the result is cached/
@@ -673,6 +685,44 @@ app.post(
 		return c.json({ ok: true });
 	},
 );
+
+// Phase 31 gap-fix: DELETE /api/notifications — discard notifications from the
+// drawer. Optional body { ids } clears a subset (per-row dismiss); no body
+// clears all of the employee's notifications ("Clear all").
+app.delete(
+	"/api/notifications",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			ids?: string[];
+		} | null;
+		await c.var.mailboxStub.clearNotifications(body?.ids);
+		return c.json({ ok: true });
+	},
+);
+
+// Phase 31 gap-fix: POST /api/chat/notify — real-time bell notification for a
+// chat @mention or DM, created instantly off the client's live WebSocket event
+// (instead of waiting for the 60s background poll). The DO dedupes on the
+// post-scoped url so this and the poll never double-insert.
+app.post("/api/chat/notify", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as {
+		postId?: string;
+		channelId?: string;
+		title?: string;
+		body?: string;
+	} | null;
+	if (!body?.postId || !body?.channelId || !body?.title) {
+		return c.json({ error: "Missing postId, channelId, or title" }, 400);
+	}
+	await c.var.mailboxStub.addNotification({
+		event_type: "chat_mention",
+		title: body.title,
+		body: body.body,
+		url: `/chat?channel=${body.channelId}&post=${body.postId}`,
+	});
+	return c.json({ ok: true });
+});
 
 // -- Meetings (Daily.co — Phase 11 Wave 1) --------------------------
 //
@@ -1688,11 +1738,14 @@ app.get(
 app.route("/api/chat/files", chatFilesRoute);
 
 // POST /api/chat/search — full-text search across the employee's visible
-// channels. Body: { terms: string, team_id?: string }. team_id falls back to
-// the employee's bootstrap team when omitted.
+// channels. Body: { terms, team_id?, channel_id? }. team_id falls back to the
+// employee's bootstrap team. When channel_id is given the search is SCOPED to
+// that one channel (#3: the in-chat search icon → "search this chat only").
+// Results are enriched with author_name + channel_label so the header dropdown
+// (which has no MM lookups of its own) can render labelled rows.
 app.post("/api/chat/search", requireEmployeeMailbox, async (c: AppContext) => {
 	const body = (await c.req.json().catch(() => null)) as
-		| { terms?: string; team_id?: string }
+		| { terms?: string; team_id?: string; channel_id?: string }
 		| null;
 	const terms = body?.terms?.trim();
 	if (!terms) return c.json({ error: "Missing terms" }, 400);
@@ -1706,15 +1759,80 @@ app.post("/api/chat/search", requireEmployeeMailbox, async (c: AppContext) => {
 		}
 		teamId = chat.team.id;
 	}
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+
+	// #3: per-channel scoping. For named (public/private) channels, the MM `in:`
+	// search modifier scopes server-side for good recall; we ALSO post-filter by
+	// channel_id so DMs/group-DMs (which have no friendly `in:` name) are scoped
+	// correctly too.
+	const scopeChannelId = body?.channel_id?.trim();
+	let searchTerms = terms;
+	if (scopeChannelId) {
+		const ch = await proxy.call<{ name?: string; type?: string }>(
+			`/api/v4/channels/${scopeChannelId}`,
+			{ method: "GET" },
+		);
+		if (ch.ok && (ch.data.type === "O" || ch.data.type === "P") && ch.data.name) {
+			searchTerms = `in:${ch.data.name} ${terms}`;
+		}
+	}
+
 	const result = await proxy.call<MattermostPostList>(
 		`/api/v4/teams/${teamId}/posts/search`,
-		{ method: "POST", body: JSON.stringify({ terms, is_or_search: false }) },
+		{ method: "POST", body: JSON.stringify({ terms: searchTerms, is_or_search: false }) },
 	);
 	if (!result.ok) {
 		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
 		return c.json({ error: "Search failed" }, 502);
 	}
-	return c.json(result.data);
+
+	const posts = result.data.posts ?? {};
+	let order = result.data.order ?? [];
+	if (scopeChannelId) {
+		order = order.filter((id) => posts[id]?.channel_id === scopeChannelId);
+	}
+
+	// Enrich rows with display labels (best-effort; falls back to generic text).
+	const channelLabel = new Map<string, string>();
+	const authorName = new Map<string, string>();
+	if (botToken && order.length) {
+		const chList = await proxy.call<
+			Array<{ id: string; display_name?: string; name?: string; type?: string }>
+		>(`/api/v4/users/me/teams/${teamId}/channels`, { method: "GET" });
+		if (chList.ok && Array.isArray(chList.data)) {
+			for (const ch of chList.data) {
+				channelLabel.set(
+					ch.id,
+					ch.type === "O" || ch.type === "P"
+						? `#${ch.display_name || ch.name || "channel"}`
+						: "Direct message",
+				);
+			}
+		}
+		const userIds = [
+			...new Set(order.map((id) => posts[id]?.user_id).filter(Boolean) as string[]),
+		];
+		const users = await getMmUsersByIds(c.env.MATTERMOST_URL, botToken, userIds);
+		for (const u of users) {
+			const name =
+				u.nickname?.trim() ||
+				`${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() ||
+				u.username;
+			authorName.set(u.id, name);
+		}
+	}
+
+	const enrichedPosts: Record<string, unknown> = {};
+	for (const id of order) {
+		const p = posts[id];
+		if (!p) continue;
+		enrichedPosts[id] = {
+			...p,
+			author_name: authorName.get(p.user_id) ?? "Someone",
+			channel_label: channelLabel.get(p.channel_id) ?? "channel",
+		};
+	}
+	return c.json({ order, posts: enrichedPosts });
 });
 
 // POST /api/chat/reactions — add an emoji reaction AS the employee.

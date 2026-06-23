@@ -45,8 +45,11 @@ import {
 	Smile,
 	Trash2,
 	Users,
+	Volume2,
+	VolumeX,
 	X,
 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router";
 import { ChatToEmail } from "./crosspane/ChatToEmail";
 import { StartMeeting } from "./crosspane/StartMeeting";
 import { WorkspaceShell } from "./WorkspaceShell";
@@ -118,6 +121,10 @@ interface MmPost {
 	file_ids?: string[];
 	metadata?: { files?: MmFileInfo[] };
 	reactions?: MmReaction[];
+	// #3: server-enriched display labels attached to search results so any
+	// caller can render channel/author without its own MM lookups.
+	author_name?: string;
+	channel_label?: string;
 }
 
 interface MmPostList {
@@ -256,6 +263,73 @@ function presenceDotClass(status: string | null | undefined): string {
 		default:
 			return "bg-slate-300"; // offline / unknown
 	}
+}
+
+// Notification feedback: a short Web-Audio chime + device vibration on an
+// incoming chat message. A two-tone chime for @mentions, a single tone
+// otherwise. The AudioContext is created lazily (first message after the user
+// has interacted with the page, which browser autoplay policy allows) and
+// reused. Everything is wrapped in try/catch and feature-checks so unsupported
+// browsers (e.g. iOS has no Vibration API) silently no-op.
+let _chatAudioCtx: AudioContext | null = null;
+function playChatChime(strong: boolean) {
+	try {
+		if (typeof window === "undefined") return;
+		const Ctx =
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext?: typeof AudioContext })
+				.webkitAudioContext;
+		if (!Ctx) return;
+		if (!_chatAudioCtx) _chatAudioCtx = new Ctx();
+		const ctx = _chatAudioCtx;
+		if (ctx.state === "suspended") void ctx.resume();
+		const now = ctx.currentTime;
+		const tones = strong ? [880, 1320] : [760];
+		tones.forEach((freq, i) => {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.type = "sine";
+			osc.frequency.value = freq;
+			const t = now + i * 0.13;
+			gain.gain.setValueAtTime(0.0001, t);
+			gain.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+			gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.start(t);
+			osc.stop(t + 0.22);
+		});
+	} catch {
+		/* audio unavailable — ignore */
+	}
+}
+function vibrateDevice(strong: boolean) {
+	try {
+		navigator.vibrate?.(strong ? [55, 35, 55] : 35);
+	} catch {
+		/* vibration unsupported — ignore */
+	}
+}
+
+// #13: three animated "waving" dots shown beside a channel/DM name in the
+// secondary nav whenever a teammate is typing there. Pure CSS bounce with a
+// per-dot delay so the dots ripple left→right.
+function TypingDots({ title }: { title?: string }) {
+	return (
+		<span
+			className="flex shrink-0 items-end gap-0.5"
+			title={title ?? "typing…"}
+			aria-label={title ?? "typing…"}
+		>
+			{[0, 150, 300].map((delay) => (
+				<span
+					key={delay}
+					className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-500"
+					style={{ animationDelay: `${delay}ms`, animationDuration: "900ms" }}
+				/>
+			))}
+		</span>
+	);
 }
 
 function orderedPosts(data?: MmPostList): MmPost[] {
@@ -412,7 +486,11 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 	// the beginning of the string or after whitespace/punctuation. We capture an
 	// optional leading boundary char in group 1 (re-emitted as plain text) and
 	// the @handle in group 2 (highlighted).
-	const regex = /(^|[\s.,;:!?()[\]{}"'])(@\w+)/g;
+	// #11: MM usernames are `firstname.lastname` (dots/hyphens allowed), so the
+	// handle must keep matching across internal `.`/`-` — `@\w+` alone stopped at
+	// the first dot and left ".lastname" un-highlighted. Each separator must be
+	// followed by another word chunk, so a sentence-ending "." is NOT swallowed.
+	const regex = /(^|[\s,;:!?()[\]{}"'])(@\w+(?:[.\-]\w+)*)/g;
 	let lastIndex = 0;
 	let match: RegExpExecArray | null;
 	let key = 0;
@@ -455,8 +533,18 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 //
 // Callbacks are held in a ref so the socket handlers always see the latest
 // closures WITHOUT tearing down + reconnecting the socket on every render.
+// MM's `posted` event carries extra context alongside the post (channel type,
+// human-readable channel/sender names, and the authoritative mention list).
+// We surface it so the bell-notification path can label channels vs DMs and
+// detect @mentions reliably (no fragile substring matching).
+interface PostedMeta {
+	channelType?: string;
+	channelDisplayName?: string;
+	senderName?: string;
+	mentions?: string[];
+}
 interface ChatWsCallbacks {
-	onPosted: (post: MmPost) => void;
+	onPosted: (post: MmPost, meta?: PostedMeta) => void;
 	onTyping: (channelId: string, userId: string) => void;
 	onStatusChange: (userId: string, status: string) => void;
 	onChannelViewed: (channelId: string) => void;
@@ -500,8 +588,12 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 					const msg = JSON.parse(evt.data as string) as {
 						event?: string;
 						data?: Record<string, unknown>;
+						// MM routes events with a `broadcast` envelope; the channel_id
+						// for typing/posted/reaction events lives HERE, not in `data`.
+						broadcast?: { channel_id?: string; user_id?: string };
 					};
 					const cb = cbRef.current;
+					const bcastChannelId = msg.broadcast?.channel_id;
 					// MM embeds the post object as a JSON STRING in data.post for
 					// posted/post_edited; parse it once here.
 					const parsePost = (raw: unknown): MmPost | undefined =>
@@ -510,7 +602,27 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 							: (raw as MmPost | undefined);
 					if (msg.event === "posted") {
 						const post = parsePost(msg.data?.post);
-						if (post?.id) cb.onPosted(post);
+						if (post?.id) {
+							// MM encodes `mentions` as a JSON string array of user ids.
+							let mentions: string[] | undefined;
+							const rawMentions = msg.data?.mentions;
+							if (typeof rawMentions === "string") {
+								try {
+									const parsed = JSON.parse(rawMentions);
+									if (Array.isArray(parsed)) mentions = parsed as string[];
+								} catch {
+									/* malformed — ignore */
+								}
+							}
+							cb.onPosted(post, {
+								channelType: msg.data?.channel_type as string | undefined,
+								channelDisplayName: msg.data?.channel_display_name as
+									| string
+									| undefined,
+								senderName: msg.data?.sender_name as string | undefined,
+								mentions,
+							});
+						}
 					} else if (msg.event === "post_edited") {
 						// #6b: live edit — replace the post text in place.
 						const post = parsePost(msg.data?.post);
@@ -535,7 +647,11 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 							);
 						}
 					} else if (msg.event === "typing") {
-						const channelId = msg.data?.channel_id as string | undefined;
+						// #13: typing's channel_id is ONLY in the broadcast envelope;
+						// data carries just user_id + parent_id. Reading data.channel_id
+						// (undefined) silently dropped every typing event.
+						const channelId =
+							bcastChannelId ?? (msg.data?.channel_id as string | undefined);
 						const userId = msg.data?.user_id as string | undefined;
 						if (channelId && userId) cb.onTyping(channelId, userId);
 					} else if (msg.event === "status_change") {
@@ -543,7 +659,8 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 						const status = msg.data?.status as string | undefined;
 						if (userId && status) cb.onStatusChange(userId, status);
 					} else if (msg.event === "channel_viewed") {
-						const channelId = msg.data?.channel_id as string | undefined;
+						const channelId =
+							(msg.data?.channel_id as string | undefined) ?? bcastChannelId;
 						if (channelId) cb.onChannelViewed(channelId);
 					}
 				} catch {
@@ -591,6 +708,8 @@ function useChatWebSocket(enabled: boolean, callbacks: ChatWsCallbacks) {
 
 export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const queryClient = useQueryClient();
+	const location = useLocation();
+	const navigate = useNavigate();
 	const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
@@ -600,6 +719,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	const [editingPostId, setEditingPostId] = useState<string | null>(null);
 	const [editDraft, setEditDraft] = useState("");
 	const [pinToast, setPinToast] = useState<string | null>(null);
+	// #6a: collapse the pinned bar to the first few when a channel has many
+	// pinned messages, so they don't swamp the whole chat. "Load more" expands.
+	const [pinnedExpanded, setPinnedExpanded] = useState(false);
 	const messagesRef = useRef<HTMLDivElement | null>(null);
 
 	// Wave 3 (31-04) state.
@@ -649,6 +771,14 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	// Same idea for the local user id, so the `posted` handler can skip our own
 	// echoed posts when counting unreads (#17) without re-binding the socket.
 	const meIdRef = useRef<string | undefined>(undefined);
+	// Sound/vibration on incoming messages. Toggle persisted in localStorage;
+	// mirrored into a ref so the stable WS `posted` handler reads it live.
+	const [soundEnabled, setSoundEnabled] = useState(true);
+	const soundEnabledRef = useRef(true);
+	const myUsernameRef = useRef<string | undefined>(undefined);
+	// Latest user directory, mirrored into a ref so the stable WS `posted`
+	// handler can resolve a sender's display name for DM bell notifications.
+	const usersByIdRef = useRef<Map<string, MmUser>>(new Map());
 	// #3: channels we've already tried auto-joining (avoid retry loops).
 	const autoJoinAttemptedRef = useRef<Set<string>>(new Set());
 
@@ -735,6 +865,11 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		[posts],
 	);
 
+	// Collapse the pinned bar back to the first few whenever the channel changes.
+	useEffect(() => {
+		setPinnedExpanded(false);
+	}, [activeId]);
+
 	const userIds = useMemo(
 		() => [...new Set(posts.map((post) => post.user_id).filter(Boolean))],
 		[posts],
@@ -803,6 +938,40 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	useEffect(() => {
 		meIdRef.current = me?.id;
 	}, [me?.id]);
+	useEffect(() => {
+		myUsernameRef.current = me?.username;
+	}, [me?.username]);
+	useEffect(() => {
+		usersByIdRef.current = usersById;
+	}, [usersById]);
+
+	// Restore the sound preference once on mount (default ON).
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const saved = window.localStorage.getItem("parrot_chat_sound");
+		if (saved === "off") {
+			setSoundEnabled(false);
+			soundEnabledRef.current = false;
+		}
+	}, []);
+
+	function toggleSound() {
+		setSoundEnabled((prev) => {
+			const next = !prev;
+			soundEnabledRef.current = next;
+			try {
+				window.localStorage.setItem(
+					"parrot_chat_sound",
+					next ? "on" : "off",
+				);
+			} catch {
+				/* storage blocked — ignore */
+			}
+			// Play a confirmation chime when turning sound ON.
+			if (next) playChatChime(false);
+			return next;
+		});
+	}
 
 	// Mark-read mutation: clears MM's unread tracking for the employee.
 	const markRead = useMutation({
@@ -847,7 +1016,7 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 	// WS callbacks. Stable identities (the hook holds them in a ref), so they may
 	// freely read activeIdRef / queryClient without re-subscribing the socket.
 	const handlePosted = useCallback(
-		(post: MmPost) => {
+		(post: MmPost, meta?: PostedMeta) => {
 			const currentActive = activeIdRef.current;
 			if (post.channel_id === currentActive) {
 				// Append to the active channel's cache so it renders instantly.
@@ -857,6 +1026,15 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 						const posts = { ...(prev?.posts ?? {}) };
 						if (posts[post.id]) return prev; // dedupe (we may have just sent it)
 						posts[post.id] = post;
+						// #4: a threaded reply must bump its root post's reply_count so the
+						// "N replies" affordance on the parent updates live (the reply
+						// itself is filtered out of the main feed by its root_id).
+						if (post.root_id && posts[post.root_id]) {
+							posts[post.root_id] = {
+								...posts[post.root_id],
+								reply_count: (posts[post.root_id].reply_count ?? 0) + 1,
+							};
+						}
 						const order = prev?.order ? [...prev.order] : [];
 						if (!order.includes(post.id)) order.unshift(post.id);
 						return { ...prev, posts, order };
@@ -869,6 +1047,59 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 					...prev,
 					[post.channel_id]: (prev[post.channel_id] ?? 0) + 1,
 				}));
+			}
+			// Sound + vibration on any message from someone else (active channel or
+			// not). A stronger two-tone chime when the message @mentions me.
+			if (post.user_id && post.user_id !== meIdRef.current) {
+				const uname = myUsernameRef.current;
+				const myId = meIdRef.current;
+				// Prefer MM's authoritative mention list; fall back to substring.
+				let mentionsMe = false;
+				if (myId && meta?.mentions && meta.mentions.length > 0) {
+					mentionsMe = meta.mentions.includes(myId);
+				} else if (uname) {
+					mentionsMe = !!post.message
+						?.toLowerCase()
+						.includes(`@${uname.toLowerCase()}`);
+				}
+				const isDm = meta?.channelType === "D" || meta?.channelType === "G";
+				if (soundEnabledRef.current) playChatChime(!!mentionsMe);
+				vibrateDevice(!!mentionsMe);
+
+				// Real-time bell notification: @mentions in any channel, and every DM.
+				// Created instantly off the live WS event (the 60s server poll only
+				// dedupes/backfills) so the drawer no longer lags behind the chime.
+				if (mentionsMe || isDm) {
+					const senderName =
+						displayName(usersByIdRef.current.get(post.user_id)) ||
+						meta?.senderName?.replace(/^@/, "") ||
+						"Someone";
+					const label = isDm
+						? meta?.channelType === "G"
+							? `group DM from ${senderName}`
+							: `DM from ${senderName}`
+						: meta?.channelDisplayName
+							? `#${meta.channelDisplayName}`
+							: null;
+					const title = label
+						? `Mention in Chat (${label})`
+						: "Mention in Chat";
+					void apiFetch("/api/chat/notify", {
+						method: "POST",
+						body: JSON.stringify({
+							postId: post.id,
+							channelId: post.channel_id,
+							title,
+							body: post.message?.slice(0, 100) ?? "",
+						}),
+					})
+						.then(() =>
+							queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+						)
+						.catch(() => {
+							/* best-effort — the server poll will still backfill */
+						});
+				}
 			}
 		},
 		[queryClient],
@@ -1071,6 +1302,23 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 			});
 	}, [typingState, activeId, me?.id, usersById]);
 
+	// #13: set of channel/DM ids where SOMEONE ELSE is typing right now — drives
+	// the waving-dots indicator next to each name in the secondary nav.
+	const typingChannelIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const [channelId, users] of Object.entries(typingState)) {
+			if (Object.keys(users).some((uid) => uid !== me?.id)) ids.add(channelId);
+		}
+		return ids;
+	}, [typingState, me?.id]);
+
+	// #3: channel/DM lookup for labelling search-result rows in the dropdown.
+	const searchChannelById = useMemo(() => {
+		const map = new Map<string, MmChannel>();
+		for (const ch of [...channels, ...dms]) map.set(ch.id, ch);
+		return map;
+	}, [channels, dms]);
+
 	const sendMessage = useMutation({
 		mutationFn: (input: { message: string; fileIds: string[] }) =>
 			chatFetch<MmPost>("/api/chat/posts", {
@@ -1081,17 +1329,73 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 					...(input.fileIds.length ? { file_ids: input.fileIds } : {}),
 				}),
 			}),
-		onSuccess: async () => {
+		// #1: optimistic send — drop the message into the cache IMMEDIATELY so it
+		// renders the instant the user hits enter, instead of waiting for the POST
+		// round-trip + a follow-up refetch. onSuccess swaps in the real post; the
+		// WS `posted` echo is de-duped by id.
+		onMutate: async (input) => {
 			setDraft("");
-			// Revoke any preview object URLs and clear the pending list.
+			setMentionQuery(null);
 			setPendingFiles((prev) => {
 				for (const f of prev) if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
 				return [];
 			});
-			setMentionQuery(null);
-			await queryClient.invalidateQueries({
-				queryKey: ["native-chat", "posts", activeId],
+			if (!activeId) return { tempId: null as string | null };
+			const key = ["native-chat", "posts", activeId];
+			await queryClient.cancelQueries({ queryKey: key });
+			const tempId = `temp-${Date.now()}`;
+			const optimistic: MmPost = {
+				id: tempId,
+				channel_id: activeId,
+				user_id: meIdRef.current ?? "",
+				message: input.message,
+				create_at: Date.now(),
+			};
+			queryClient.setQueryData<MmPostList>(key, (prev) => {
+				const posts = { ...(prev?.posts ?? {}), [tempId]: optimistic };
+				const order = prev?.order ? [tempId, ...prev.order] : [tempId];
+				return { ...prev, posts, order };
 			});
+			return { tempId };
+		},
+		onSuccess: (data, _input, ctx) => {
+			if (!activeId || !data?.id) return;
+			const key = ["native-chat", "posts", activeId];
+			queryClient.setQueryData<MmPostList>(key, (prev) => {
+				if (!prev) return prev;
+				const posts = { ...prev.posts };
+				if (ctx?.tempId) delete posts[ctx.tempId];
+				posts[data.id] = data;
+				const seen = new Set<string>();
+				const order: string[] = [];
+				for (const id of prev.order ?? []) {
+					const realId = id === ctx?.tempId ? data.id : id;
+					if (!seen.has(realId)) {
+						seen.add(realId);
+						order.push(realId);
+					}
+				}
+				if (!seen.has(data.id)) order.unshift(data.id);
+				return { ...prev, posts, order };
+			});
+		},
+		onError: (_err, input, ctx) => {
+			// Roll the optimistic post back out and restore the draft so nothing is
+			// lost when the send fails.
+			if (activeId && ctx?.tempId) {
+				const key = ["native-chat", "posts", activeId];
+				queryClient.setQueryData<MmPostList>(key, (prev) => {
+					if (!prev) return prev;
+					const posts = { ...prev.posts };
+					delete posts[ctx.tempId as string];
+					return {
+						...prev,
+						posts,
+						order: (prev.order ?? []).filter((id) => id !== ctx.tempId),
+					};
+				});
+			}
+			setDraft(input.message);
 		},
 	});
 
@@ -1395,9 +1699,14 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		setSearchLoading(true);
 		searchDebounceRef.current = setTimeout(async () => {
 			try {
+				// #3: the in-chat search icon scopes to the OPEN channel/DM only.
 				const data = await chatFetch<MmPostList>("/api/chat/search", {
 					method: "POST",
-					body: JSON.stringify({ terms: term, team_id: team?.id }),
+					body: JSON.stringify({
+						terms: term,
+						team_id: team?.id,
+						channel_id: activeId,
+					}),
 				});
 				setSearchResults(orderedPosts(data));
 			} catch {
@@ -1405,11 +1714,11 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 			} finally {
 				setSearchLoading(false);
 			}
-		}, 400);
+		}, 250);
 		return () => {
 			if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 		};
-	}, [searchOpen, searchValue, team?.id]);
+	}, [searchOpen, searchValue, team?.id, activeId]);
 
 	// Close search mode on Escape.
 	useEffect(() => {
@@ -1421,19 +1730,65 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [searchOpen]);
 
-	// #11: the WorkspaceShell header search dispatches a `chat-search` event;
-	// open the in-pane search with the supplied term (which then runs
-	// POST /api/chat/search via the debounce effect above).
+	// #3: the WorkspaceShell header runs its OWN global search dropdown; clicking
+	// a result there dispatches `chat-open-channel` so this pane opens that
+	// channel/DM. (The old `chat-search` event is gone — the header no longer
+	// drives the in-pane search, which is now per-channel only.)
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		function onChatSearch(e: Event) {
-			const term = (e as CustomEvent<{ term?: string }>).detail?.term ?? "";
-			setSearchOpen(true);
-			setSearchValue(term);
+		function onOpenChannel(e: Event) {
+			const channelId = (e as CustomEvent<{ channelId?: string }>).detail
+				?.channelId;
+			if (!channelId) return;
+			// Inline the stable setters (selectChannel is recreated each render).
+			setActiveChannelId(channelId);
+			setSelectedPostId(null);
+			setThreadPanelPostId(null);
 		}
-		window.addEventListener("chat-search", onChatSearch);
-		return () => window.removeEventListener("chat-search", onChatSearch);
+		window.addEventListener("chat-open-channel", onOpenChannel);
+		return () => window.removeEventListener("chat-open-channel", onOpenChannel);
 	}, []);
+
+	// Notification deep-link: a `chat_mention` (or chat-sourced todo) notification
+	// routes here with `?channel=<id>&post=<id>`. We watch the router location
+	// (not just mount) so it also works when the user is ALREADY on /chat — open
+	// the channel, remember the post to flash once its feed loads, then strip the
+	// params (which re-runs this effect with an empty search → no-op). The actual
+	// scroll happens in the effect below, once postsQuery has populated the DOM.
+	const pendingScrollPostRef = useRef<string | null>(null);
+	useEffect(() => {
+		const params = new URLSearchParams(location.search);
+		const channelId = params.get("channel");
+		const postId = params.get("post");
+		if (!channelId && !postId) return;
+		if (channelId) {
+			setActiveChannelId(channelId);
+			setSelectedPostId(null);
+			setThreadPanelPostId(null);
+		}
+		if (postId) pendingScrollPostRef.current = postId;
+		// Drop the deep-link params from the URL (replace = no history entry).
+		navigate(location.pathname, { replace: true });
+	}, [location.search, location.pathname, navigate]);
+
+	// Once the deep-linked channel's feed renders, scroll to + flash the target
+	// post. Runs whenever `posts` changes so it fires after the channel switch
+	// backfill lands; clears the pending ref on success so it only fires once.
+	useEffect(() => {
+		const postId = pendingScrollPostRef.current;
+		if (!postId || posts.length === 0) return;
+		// rAF lets the just-rendered rows commit to the DOM before we query them.
+		const raf = requestAnimationFrame(() => {
+			const node = messagesRef.current?.querySelector(
+				`[data-post-id="${postId}"]`,
+			);
+			if (node) {
+				pendingScrollPostRef.current = null;
+				scrollToPost(postId);
+			}
+		});
+		return () => cancelAnimationFrame(raf);
+	}, [posts]);
 
 	function closeSearch() {
 		setSearchOpen(false);
@@ -1558,7 +1913,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								onClick={() => selectChannel(channel.id)}
 								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
 									active
-										? "bg-slate-100 font-semibold text-slate-900"
+										? // #15: selected = white card with a shadow (NOT bold), so
+											// bold can mean "has unread" without colliding with selection.
+											"rounded-md bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
 										: unread
 											? "font-semibold text-slate-900 hover:bg-slate-50"
 											: "text-slate-600 hover:bg-slate-50"
@@ -1568,18 +1925,23 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									<Icon size={14} className="shrink-0 text-slate-400" />
 									<span className="truncate">{channelLabel(channel)}</span>
 								</span>
-								{count > 0 ? (
-									<span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
-										{count > 99 ? "99+" : count}
-									</span>
-								) : (
-									unread && (
-										<span
-											aria-hidden="true"
-											className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
-										/>
-									)
-								)}
+								<span className="flex shrink-0 items-center gap-1.5">
+									{/* #13: waving dots when someone is typing in this channel
+									    (only for channels you're not currently viewing). */}
+									{!active && typingChannelIds.has(channel.id) && <TypingDots />}
+									{count > 0 ? (
+										<span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
+											{count > 99 ? "99+" : count}
+										</span>
+									) : (
+										unread && (
+											<span
+												aria-hidden="true"
+												className="h-2 w-2 rounded-full bg-sky-500"
+											/>
+										)
+									)}
+								</span>
 							</button>
 						);
 					})
@@ -1625,7 +1987,8 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								onClick={() => selectChannel(dm.id)}
 								className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm transition-colors ${
 									active
-										? "bg-slate-100 font-semibold text-slate-900"
+										? // #15: selected = shadow card (NOT bold); bold = unread.
+											"rounded-md bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
 										: unread
 											? "font-semibold text-slate-900 hover:bg-slate-50"
 											: "text-slate-600 hover:bg-slate-50"
@@ -1648,18 +2011,22 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 									</span>
 									<span className="truncate">{label}</span>
 								</span>
-								{count > 0 ? (
-									<span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
-										{count > 99 ? "99+" : count}
-									</span>
-								) : (
-									unread && (
-										<span
-											aria-hidden="true"
-											className="h-2 w-2 shrink-0 rounded-full bg-sky-500"
-										/>
-									)
-								)}
+								<span className="flex shrink-0 items-center gap-1.5">
+									{/* #13: waving dots when this DM partner is typing. */}
+									{!active && typingChannelIds.has(dm.id) && <TypingDots />}
+									{count > 0 ? (
+										<span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[11px] font-bold leading-none text-white tabular-nums">
+											{count > 99 ? "99+" : count}
+										</span>
+									) : (
+										unread && (
+											<span
+												aria-hidden="true"
+												className="h-2 w-2 rounded-full bg-sky-500"
+											/>
+										)
+									)}
+								</span>
 							</button>
 						);
 					})
@@ -1737,17 +2104,112 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							postBody={selectedPost?.message ?? ""}
 						/>
 						<StartMeeting />
-						<button
-							type="button"
-							onClick={() => setSearchOpen((v) => !v)}
-							title="Search messages"
-							aria-label="Search messages"
-							className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-50 ${
-								searchOpen ? "text-sky-600 ring-1 ring-sky-300" : "text-slate-600"
-							}`}
-						>
-							<Search size={16} />
-						</button>
+						{/* #3: search is a small floating dropdown anchored here — you
+						    type in-place and click a result to jump, instead of the
+						    search taking over the whole chat pane. */}
+						<div className="relative">
+							<button
+								type="button"
+								onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+								title="Search messages"
+								aria-label="Search messages"
+								className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-50 ${
+									searchOpen
+										? "text-sky-600 ring-1 ring-sky-300"
+										: "text-slate-600"
+								}`}
+							>
+								<Search size={16} />
+							</button>
+							{searchOpen && (
+								<>
+									{/* click-outside backdrop */}
+									<button
+										type="button"
+										aria-label="Close search"
+										tabIndex={-1}
+										onClick={closeSearch}
+										className="fixed inset-0 z-20 cursor-default"
+									/>
+									<div className="absolute right-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl sm:w-96">
+										<div className="border-b border-slate-100 p-2">
+											<div className="relative">
+												<Search
+													size={14}
+													className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+												/>
+												<input
+													autoFocus
+													value={searchValue}
+													onChange={(e) => setSearchValue(e.target.value)}
+													placeholder={
+														activeChannel
+															? activeIsDm
+																? `Search ${dmLabel(activeChannel)}`
+																: `Search #${channelLabel(activeChannel)}`
+															: "Search this chat"
+													}
+													className="w-full rounded-md border border-slate-200 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+												/>
+											</div>
+										</div>
+										<div className="max-h-80 overflow-auto p-1">
+											{searchLoading ? (
+												<div className="flex items-center gap-2 px-2 py-3 text-sm text-slate-500">
+													<Loader2 className="animate-spin" size={14} />
+													Searching
+												</div>
+											) : !searchValue.trim() || searchResults === null ? (
+												<p className="px-2 py-3 text-sm text-slate-400">
+													Search messages in this chat.
+												</p>
+											) : searchResults.length === 0 ? (
+												<p className="px-2 py-3 text-sm text-slate-500">
+													No messages match “{searchValue}”.
+												</p>
+											) : (
+												searchResults.map((post) => {
+													const ch = searchChannelById.get(post.channel_id);
+													const author =
+														post.author_name ??
+														displayName(usersById.get(post.user_id));
+													const label =
+														post.channel_label ??
+														(ch
+															? ch.type === "D" || ch.type === "G"
+																? dmLabel(ch)
+																: `#${channelLabel(ch)}`
+															: "channel");
+													return (
+														<button
+															key={post.id}
+															type="button"
+															onClick={() => jumpToResult(post.channel_id)}
+															className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-slate-50"
+														>
+															<div className="flex flex-wrap items-baseline gap-x-2">
+																<span className="text-xs font-bold text-sky-700">
+																	{label}
+																</span>
+																<span className="text-sm font-bold text-slate-900">
+																	{author}
+																</span>
+																<span className="text-[11px] text-slate-400">
+																	{formatMessageTime(post.create_at)}
+																</span>
+															</div>
+															<p className="mt-0.5 line-clamp-2 whitespace-pre-wrap break-words text-xs text-slate-600">
+																{renderMessageText(post.message, me?.username)}
+															</p>
+														</button>
+													);
+												})
+											)}
+										</div>
+									</div>
+								</>
+							)}
+						</div>
 						<button
 							type="button"
 							onClick={() => postsQuery.refetch()}
@@ -1760,42 +2222,49 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 								className={postsQuery.isFetching ? "animate-spin" : ""}
 							/>
 						</button>
+						{/* Sound/vibration toggle for incoming-message alerts. */}
+						<button
+							type="button"
+							onClick={toggleSound}
+							title={
+								soundEnabled
+									? "Message sounds on — click to mute"
+									: "Message sounds muted — click to unmute"
+							}
+							aria-label={
+								soundEnabled ? "Mute message sounds" : "Unmute message sounds"
+							}
+							className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white hover:bg-slate-50 ${
+								soundEnabled ? "text-slate-600" : "text-slate-400"
+							}`}
+						>
+							{soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+						</button>
 					</div>
 				</div>
 
 				{/* Message area + right-side thread panel */}
 				<div className="flex min-h-0 flex-1">
 					<section className="flex min-h-0 flex-1 flex-col">
-						{searchOpen ? (
-							<SearchPanel
-								value={searchValue}
-								onChange={setSearchValue}
-								loading={searchLoading}
-								results={searchResults}
-								usersById={usersById}
-								channels={channels}
-								dms={dms}
-								myUsername={me?.username}
-								onJump={jumpToResult}
-								onClose={closeSearch}
-							/>
-						) : (
 						<>
 						{/* #6a: WhatsApp-style pinned bar — lists the channel's pinned
 						    messages; clicking one scrolls to it in the feed. */}
 						{pinnedPosts.length > 0 && (
-							<div className="border-b border-amber-200 bg-amber-50/70 px-3 py-2 sm:px-6">
-								<div className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-									<Pin size={11} className="fill-amber-500 text-amber-500" />
+							<div className="border-b border-sky-200 bg-sky-50/70 px-3 py-2 sm:px-6">
+								<div className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+									<Pin size={11} className="fill-sky-500 text-sky-500" />
 									Pinned
 									{pinnedPosts.length > 1 && (
-										<span className="font-normal text-amber-600">
+										<span className="font-normal text-sky-600">
 											({pinnedPosts.length})
 										</span>
 									)}
 								</div>
 								<div className="flex flex-col gap-1">
-									{pinnedPosts.map((pinned) => {
+									{(pinnedExpanded
+										? pinnedPosts
+										: pinnedPosts.slice(0, 3)
+									).map((pinned) => {
 										const pinnedAuthor =
 											parrotAuthor(pinned) ||
 											displayName(usersById.get(pinned.user_id));
@@ -1807,9 +2276,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 												key={pinned.id}
 												type="button"
 												onClick={() => scrollToPost(pinned.id)}
-												className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-xs hover:bg-amber-100/70"
+												className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-xs hover:bg-sky-100/70"
 											>
-												<span className="shrink-0 font-medium text-amber-800">
+												<span className="shrink-0 font-medium text-sky-800">
 													{isMine(pinned) ? "You" : pinnedAuthor}
 												</span>
 												<span className="truncate text-slate-600">
@@ -1819,6 +2288,17 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 										);
 									})}
 								</div>
+								{pinnedPosts.length > 3 && (
+									<button
+										type="button"
+										onClick={() => setPinnedExpanded((v) => !v)}
+										className="mt-1 px-2 text-[11px] font-semibold text-sky-600 hover:text-sky-700"
+									>
+										{pinnedExpanded
+											? "Show less"
+											: `Load more (${pinnedPosts.length - 3})`}
+									</button>
+								)}
 							</div>
 						)}
 						<div
@@ -1881,9 +2361,9 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 												{post.is_pinned && (
 													<span
 														title="Pinned"
-														className="inline-flex items-center gap-0.5 text-[10px] font-medium text-amber-600"
+														className="inline-flex items-center gap-0.5 text-[10px] font-medium text-sky-600"
 													>
-														<Pin size={11} className="fill-amber-500 text-amber-500" />
+														<Pin size={11} className="fill-sky-500 text-sky-500" />
 														Pinned
 													</span>
 												)}
@@ -2107,13 +2587,13 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 														}}
 														className={`inline-flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 ${
 															post.is_pinned
-																? "text-amber-600 hover:text-amber-700"
+																? "text-sky-600 hover:text-sky-700"
 																: "text-slate-500 hover:text-slate-900"
 														}`}
 													>
 														<Pin
 															size={13}
-															className={post.is_pinned ? "fill-amber-500" : ""}
+															className={post.is_pinned ? "fill-sky-500" : ""}
 														/>
 													</button>
 													{mine && (
@@ -2334,7 +2814,6 @@ export function ChatPane({ isOperator = false }: { isOperator?: boolean }) {
 							)}
 						</form>
 						</>
-						)}
 					</section>
 
 					{threadPanelPostId && (
@@ -2471,10 +2950,10 @@ function SearchPanel({
 								className="block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
 							>
 								<div className="flex flex-wrap items-baseline gap-x-2">
-									<span className="text-xs font-semibold text-sky-700">
+									<span className="text-xs font-bold text-sky-700">
 										{labelFor(post.channel_id)}
 									</span>
-									<span className="text-sm font-medium text-slate-800">
+									<span className="text-sm font-bold text-slate-900">
 										{author}
 									</span>
 									<span className="text-xs text-slate-400">
@@ -2536,6 +3015,24 @@ function ThreadPanel({
 			}),
 		onSuccess: async () => {
 			setReply("");
+			// #4: optimistically bump the root post's reply_count in every cached
+			// channel feed so the "N replies" affordance updates instantly for the
+			// sender — the invalidate below then reconciles with MM's real count.
+			for (const q of queryClient.getQueryCache().findAll({
+				queryKey: ["native-chat", "posts"],
+			})) {
+				queryClient.setQueryData<MmPostList>(q.queryKey, (prev) => {
+					const root = prev?.posts?.[rootPostId];
+					if (!root) return prev;
+					return {
+						...prev,
+						posts: {
+							...prev!.posts,
+							[rootPostId]: { ...root, reply_count: (root.reply_count ?? 0) + 1 },
+						},
+					};
+				});
+			}
 			await queryClient.invalidateQueries({
 				queryKey: ["native-chat", "thread", rootPostId],
 			});
