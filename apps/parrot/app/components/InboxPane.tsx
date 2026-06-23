@@ -97,6 +97,33 @@ export function InboxPane({
 	// modal is open. `composeOriginal` is only set for reply/forward.
 	const [composeMode, setComposeMode] = useState<ComposeMode | null>(null);
 
+	// Chat "Attach to Email" handoff: ChatToEmail stashes a draft in
+	// sessionStorage and routes here with ?compose=1. On mount we pick it up,
+	// open the composer pre-filled, and clear both the stash and the query
+	// param so a refresh doesn't re-open it.
+	const [composeInitialDraft, setComposeInitialDraft] = useState<{
+		to?: string;
+		subject?: string;
+		body?: string;
+	} | null>(null);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const params = new URLSearchParams(window.location.search);
+		if (params.get("compose") !== "1") return;
+		let draft: { to?: string; subject?: string; body?: string } | null = null;
+		try {
+			const raw = window.sessionStorage.getItem("parrot_compose_draft");
+			if (raw) draft = JSON.parse(raw);
+		} catch {
+			/* malformed stash — ignore */
+		}
+		window.sessionStorage.removeItem("parrot_compose_draft");
+		// Drop ?compose=1 from the URL without a navigation.
+		window.history.replaceState(null, "", window.location.pathname);
+		setComposeInitialDraft(draft);
+		setComposeMode("compose");
+	}, []);
+
 	// PARROT-DRAFT-EDIT-01: the saved draft currently being edited. Set when
 	// the user clicks a row in the Drafts folder; ComposePane opens in
 	// 'draft' mode pre-filled with this message and, on send, the draft is
@@ -166,6 +193,7 @@ export function InboxPane({
 	function closeCompose() {
 		setComposeMode(null);
 		setDraftMessage(null);
+		setComposeInitialDraft(null);
 	}
 
 	function handleSent() {
@@ -431,6 +459,7 @@ export function InboxPane({
 								? draftMessage
 								: selected ?? null
 					}
+					initialDraft={composeMode === "compose" ? composeInitialDraft : null}
 					onClose={closeCompose}
 					onSent={composeMode === "draft" ? handleDraftSent : handleSent}
 				/>
