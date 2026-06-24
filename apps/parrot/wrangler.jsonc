@@ -64,6 +64,14 @@
 		// domain with workspace.internjobs.ai so session cookies are
 		// SAME-SITE and aren't blocked by third-party cookie policies.
 		"MATTERMOST_URL": "https://chat.internjobs.ai",
+		// Phase 31 (#12/#13/#14 fix): the chat.internjobs.ai nginx proxy does
+		// NOT pass `Upgrade: websocket` through to Fly (verified: a WS handshake
+		// returns 400 there, but 101 against the fly.dev backend). So the
+		// Worker-proxied real-time socket (mm-ws-proxy.ts) MUST upgrade directly
+		// against the Fly backend, or live posts/typing/presence never arrive.
+		// REST traffic still goes through chat.internjobs.ai (MATTERMOST_URL);
+		// only the WS upstream is overridden here. (31-RESEARCH Q3 resolved.)
+		"MATTERMOST_WS_URL": "wss://internjobs-mattermost.fly.dev",
 		// v1.3.1: full upstream Agentic Inbox surface for the Email tab.
 		// Parrot mounts this as an app frame while the deeper one-boundary
 		// migration is planned.

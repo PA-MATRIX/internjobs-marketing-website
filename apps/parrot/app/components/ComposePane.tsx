@@ -59,6 +59,12 @@ interface ComposePaneProps {
 		| null;
 	onClose: () => void;
 	onSent?: (sentMessageId: string) => void;
+	/**
+	 * Pre-fill for a fresh "compose" opened from elsewhere (e.g. the chat
+	 * "Attach to Email" handoff). `body` is plain text and is wrapped into the
+	 * HTML editor on mount.
+	 */
+	initialDraft?: { to?: string; subject?: string; body?: string } | null;
 }
 
 function prefixSubject(prefix: string, subject: string | null | undefined): string {
@@ -85,6 +91,7 @@ export function ComposePane({
 	original,
 	onClose,
 	onSent,
+	initialDraft,
 }: ComposePaneProps) {
 	const [to, setTo] = useState<string>("");
 	const [cc, setCc] = useState<string>("");
@@ -135,6 +142,20 @@ export function ComposePane({
 			}
 			setSubject(original.subject ?? "");
 			setBody(original.body ?? "");
+		} else if (mode === "compose" && initialDraft) {
+			// Pre-filled fresh compose (e.g. from chat "Attach to Email"). The
+			// handed-off body is plain text with "> " quote markers — strip the
+			// markers and wrap as an HTML blockquote for the rich editor.
+			if (initialDraft.to) setTo(initialDraft.to);
+			if (initialDraft.subject) setSubject(initialDraft.subject);
+			const raw = (initialDraft.body ?? "").replace(/^> ?/gm, "").trimEnd();
+			if (raw) {
+				const escaped = raw
+					.replace(/&/g, "&amp;")
+					.replace(/</g, "&lt;")
+					.replace(/>/g, "&gt;");
+				setBody(`<p></p><blockquote>${escaped.replace(/\n/g, "<br>")}</blockquote>`);
+			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
