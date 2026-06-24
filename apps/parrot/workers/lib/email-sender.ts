@@ -71,3 +71,51 @@ export async function sendEmail(
 	);
 	return { messageId: result.messageId };
 }
+
+// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): offline chat-mention/DM email.
+//
+// Sent by the EmployeeMailboxDO alarm when the employee has been offline
+// (last_seen_at older than 5 minutes) AND has unread `chat_mention`
+// notifications. This is the deliberate substitute for background push when
+// the Workspace tab is closed (push-when-closed is out of scope natively —
+// see 31-CONTEXT "Deferred / Decided-Out").
+//
+// Fail-soft contract: returns `{ ok: false }` (never throws) when the EMAIL
+// binding is missing or the send fails, so the alarm's at-least-once
+// reschedule loop is never broken by a transient SMTP error.
+const WORKSPACE_CHAT_URL = "https://workspace.internjobs.ai/chat";
+const OFFLINE_FROM = "noreply@internjobs.ai";
+
+export async function sendOfflineChatNotification(
+	env: { EMAIL?: SendEmail },
+	email: string,
+	mentionCount: number,
+): Promise<{ ok: boolean; messageId?: string }> {
+	if (!env.EMAIL) {
+		console.warn(
+			"sendOfflineChatNotification: EMAIL binding missing — skipping",
+		);
+		return { ok: false };
+	}
+	const plural = mentionCount === 1 ? "" : "s";
+	const subject = `You have ${mentionCount} unread mention${plural} in your workspace chat`;
+	const text =
+		`You were mentioned ${mentionCount} time${plural} in your workspace while you were away.\n\n` +
+		`Open your workspace to read your messages:\n${WORKSPACE_CHAT_URL}\n`;
+	const html =
+		`<p>You were mentioned <strong>${mentionCount}</strong> time${plural} in your workspace while you were away.</p>` +
+		`<p><a href="${WORKSPACE_CHAT_URL}">Open your workspace</a> to read your messages.</p>`;
+	try {
+		const result = await sendEmail(env.EMAIL, {
+			to: email,
+			from: OFFLINE_FROM,
+			subject,
+			text,
+			html,
+		});
+		return { ok: true, messageId: result.messageId };
+	} catch (err) {
+		console.error("sendOfflineChatNotification: send failed", err);
+		return { ok: false };
+	}
+}

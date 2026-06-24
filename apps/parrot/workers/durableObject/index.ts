@@ -29,12 +29,18 @@ import { applyMigrations, employeeMailboxMigrations } from "./migrations";
 import { extractTodosFromText } from "../lib/ai";
 import {
 	resolveMmUserId,
+	getMmUserByEmail,
 	getMmChannelsForUser,
+	getMmChannel,
+	mmChannelLabel,
 	getMmPostsSince,
+	matchesMention,
 	MM_USER_ID_NONE,
 } from "../lib/mattermost";
 import { buildVapidAuthHeader } from "../lib/vapid";
 import { createRoom } from "../lib/daily";
+// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): offline @mention/DM email.
+import { sendOfflineChatNotification } from "../lib/email-sender";
 // Phase 14 Wave 2: graph wiring (fail-soft when FALKORDB_URL absent).
 import {
 	getEmployeeContext,
@@ -197,6 +203,33 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			`UPDATE profile SET onboarded_at = ?1, updated_at = ?1 WHERE id = 1`,
 			now,
 		);
+	}
+
+	/**
+	 * Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): record activity for the
+	 * offline-detection path. Called fire-and-forget from requireEmployeeMailbox
+	 * (via c.executionCtx.waitUntil) on every authenticated request, so
+	 * `last_seen_at` always reflects the employee's most recent Workspace touch.
+	 *
+	 * Stored as `datetime('now')` (UTC, SQLite text) so the alarm can compare it
+	 * directly against `datetime('now', '-5 minutes')`. Cheap single-row UPDATE;
+	 * no profile row yet (pre-/api/me) is a harmless no-op (0 rows written).
+	 */
+	async touchLastSeen(): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`UPDATE profile SET last_seen_at = datetime('now') WHERE id = 1`,
+		);
+		// Employee is active again → reset the offline-email high-water mark so a
+		// future away-period re-notifies from scratch (see maybeSendOfflineChatEmail).
+		await this.ctx.storage.delete("offline_chat_notified_count");
+		// Phase 31 gap-fix (#18): guarantee the 2-minute Mattermost polling alarm
+		// is scheduled. initAlarm() runs from upsertProfile() on first login, but
+		// a mailbox provisioned by another path (or whose alarm somehow lapsed)
+		// could otherwise never start polling — so the offline @mention email
+		// would never fire. touchLastSeen runs on every authenticated request, so
+		// it is a reliable hook. getAlarm() guards against clobbering a pending
+		// alarm (we must NOT reset the timer on every request).
+		await this.initAlarm();
 	}
 
 	/**
@@ -662,7 +695,8 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			void this.sendPushToSubscriptions({
 				title: `Starred email from ${email.sender}`,
 				body: email.subject ?? undefined,
-				url: "/inbox",
+				// Phase 31 gap-fix: deep-link straight to the email in the reader.
+				url: `/inbox?message=${email.id}`,
 				event_type: "starred_email",
 			});
 		}
@@ -681,6 +715,10 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			mentioned_actors?: string[];
 			is_mention: boolean;
 			employee_id: string;
+			// Phase 31 gap-fix: deep-link target for the urgent-todo notification
+			// (e.g. `/chat?channel=…&post=…` or `/inbox?message=…`). Falls back to
+			// `/dashboard` when absent.
+			source_url?: string;
 		}>,
 	) {
 		// Phase 13 Wave 1: fire a push for every newly-inserted urgent todo.
@@ -688,7 +726,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		// row was a duplicate, so we guard by `source_id` being present in
 		// the table BEFORE insert. (Phase 12 dedup uses the unique index
 		// on (source_channel, source_id) — a re-insert silently no-ops.)
-		const urgentToPush: Array<{ title: string; preview?: string }> = [];
+		const urgentToPush: Array<{
+			title: string;
+			preview?: string;
+			url?: string;
+		}> = [];
 		for (const todo of todos) {
 			const id = crypto.randomUUID();
 			const wasPresent =
@@ -718,7 +760,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				todo.is_mention ? 1 : 0,
 			);
 			if (todo.urgency_score >= 70 && !wasPresent) {
-				urgentToPush.push({ title: todo.title, preview: todo.preview });
+				urgentToPush.push({
+					title: todo.title,
+					preview: todo.preview,
+					url: todo.source_url,
+				});
 			}
 		}
 		// Phase 13 Wave 1: fire-and-forget push notifications for new urgent todos.
@@ -727,7 +773,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				void this.sendPushToSubscriptions({
 					title: t.title,
 					body: t.preview,
-					url: "/dashboard",
+					url: t.url ?? "/dashboard",
 					event_type: "urgent_todo",
 				});
 			}
@@ -994,6 +1040,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					source_channel: "email",
 					source_id: email.id,
 					employee_id: employeeId,
+					source_url: `/inbox?message=${email.id}`,
 				})),
 			);
 
@@ -1023,13 +1070,15 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	// ── DO Alarm — Mattermost polling ──────────────────────────────
 
 	/**
-	 * Register the 2-minute polling alarm if not already set.
+	 * Register the 60-second polling alarm if not already set.
 	 * Called from upsertProfile() so the alarm starts on first employee login.
+	 * #15: tightened from 2min → 60s so offline @mention emails (and todo
+	 * extraction) fire closer to real time.
 	 */
 	async initAlarm() {
 		const existing = await this.ctx.storage.getAlarm();
 		if (!existing) {
-			await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+			await this.ctx.storage.setAlarm(Date.now() + 60 * 1000);
 		}
 	}
 
@@ -1046,9 +1095,79 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			await this.pollMattermostNewPosts();
 		} catch (err) {
 			console.error("Parrot alarm: Mattermost poll failed", err);
+		}
+		// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): offline @mention/DM email.
+		// Run in its own try/catch so a poll failure above never skips it and an
+		// email failure never blocks the reschedule below.
+		try {
+			await this.maybeSendOfflineChatEmail();
+		} catch (err) {
+			console.error("Parrot alarm: offline chat email check failed", err);
 		} finally {
-			// Always reschedule unconditionally (at-least-once guarantee)
-			await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+			// Always reschedule unconditionally (at-least-once guarantee).
+			// #15: 60s cadence so offline @mention emails arrive promptly.
+			await this.ctx.storage.setAlarm(Date.now() + 60 * 1000);
+		}
+	}
+
+	/**
+	 * Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): when the employee has been
+	 * offline (last_seen_at older than 90 seconds) AND has unread `chat_mention`
+	 * notifications, email them so they don't miss mentions/DMs while the
+	 * Workspace tab is closed.
+	 *
+	 * De-dupe: we only email when there are NEW unread mentions since the last
+	 * email we sent. The high-water mark is the count we last notified about,
+	 * stored in DO KV (`offline_chat_notified_count`). This keeps the 2-minute
+	 * alarm from spamming a fresh email every cycle while the employee stays
+	 * away — a follow-up email only fires when the unread-mention count grows.
+	 *
+	 * Fail-soft: sendOfflineChatNotification never throws; any read/email error
+	 * is swallowed by the alarm's wrapping try/catch.
+	 */
+	private async maybeSendOfflineChatEmail(): Promise<void> {
+		const profileRow = [
+			...this.ctx.storage.sql.exec(
+				`SELECT email, last_seen_at FROM profile WHERE id = 1`,
+			),
+		][0] as { email: string; last_seen_at: string | null } | undefined;
+		if (!profileRow) return;
+
+		const lastSeen = profileRow.last_seen_at
+			? new Date(`${profileRow.last_seen_at}Z`)
+			: null;
+		// No last_seen_at yet → employee never touched the WS-era request path;
+		// treat as "not offline" to avoid false-positive emails on first deploy.
+		if (!lastSeen) return;
+		// #15: "offline" threshold tightened from 5min → 90s so a mention emails
+		// soon after the tab is closed, instead of forcing a 5-7min wait. Active
+		// employees still see mentions instantly in-app via the WebSocket, so the
+		// only people this emails are genuinely away from the Workspace.
+		const offlineCutoff = new Date(Date.now() - 90 * 1000);
+		if (lastSeen >= offlineCutoff) return; // still active — no email
+
+		const unreadRow = [
+			...this.ctx.storage.sql.exec(
+				`SELECT COUNT(*) AS cnt FROM notifications
+				 WHERE event_type = 'chat_mention' AND read = 0`,
+			),
+		][0] as { cnt: number } | undefined;
+		const unreadCount = unreadRow?.cnt ?? 0;
+		if (unreadCount === 0) return;
+
+		// Only email when the unread count has GROWN since our last notification,
+		// so a stationary backlog doesn't re-email every 2 minutes.
+		const lastNotified =
+			(await this.ctx.storage.get<number>("offline_chat_notified_count")) ?? 0;
+		if (unreadCount <= lastNotified) return;
+
+		const result = await sendOfflineChatNotification(
+			this.env,
+			profileRow.email,
+			unreadCount,
+		);
+		if (result.ok) {
+			await this.ctx.storage.put("offline_chat_notified_count", unreadCount);
 		}
 	}
 
@@ -1063,32 +1182,43 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		const profile = await this.getProfile();
 		if (!profile) return;
 
-		// Resolve or retrieve cached MM user_id
+		// Resolve or retrieve cached MM user_id + username.
+		//
+		// Phase 31 gap-fix (#18): we now also resolve and cache the employee's MM
+		// `username`, because mention detection below matches the @username that
+		// Mattermost autocomplete actually inserts — not the human display name.
+		// getMmUserByEmail returns both id and username in one call, so we use it
+		// in place of resolveMmUserId (which returns the id only).
 		let mmUserId = await this.ctx.storage.get<string>("mm_user_id");
-		if (!mmUserId) {
-			const resolved = await resolveMmUserId(
+		let mmUsername = await this.ctx.storage.get<string>("mm_username");
+		if (!mmUserId || (mmUserId !== MM_USER_ID_NONE && !mmUsername)) {
+			const user = await getMmUserByEmail(
 				mattermostUrl,
 				botToken,
 				profile.email,
 			);
-			if (!resolved) {
+			if (!user?.id) {
 				// Employee hasn't logged into Mattermost yet — retry next cycle
 				await this.ctx.storage.put("mm_user_id", MM_USER_ID_NONE);
 				return;
 			}
-			mmUserId = resolved;
+			mmUserId = user.id;
+			mmUsername = user.username ?? undefined;
 			await this.ctx.storage.put("mm_user_id", mmUserId);
+			if (mmUsername) await this.ctx.storage.put("mm_username", mmUsername);
 		}
 		if (mmUserId === MM_USER_ID_NONE) {
 			// Retry resolution on each alarm — employee may have logged in since
-			const resolved = await resolveMmUserId(
+			const user = await getMmUserByEmail(
 				mattermostUrl,
 				botToken,
 				profile.email,
 			);
-			if (!resolved) return;
-			mmUserId = resolved;
+			if (!user?.id) return;
+			mmUserId = user.id;
+			mmUsername = user.username ?? undefined;
 			await this.ctx.storage.put("mm_user_id", mmUserId);
+			if (mmUsername) await this.ctx.storage.put("mm_username", mmUsername);
 		}
 
 		const lastPollMs =
@@ -1114,16 +1244,43 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			);
 			if (posts.length === 0) continue;
 
-			// Phase 13 Wave 1: @mention push notifications. For every post in
-			// this batch that includes the employee's display name preceded
-			// by '@', enqueue a push (and a notification drawer row).
-			const mentionToken = `@${profile.displayName}`;
+			// Phase 13 Wave 1 / Phase 31 gap-fix (#18): @mention push + offline
+			// email. For every post in this batch that @mentions the employee,
+			// enqueue a push (which also writes the read=0 `chat_mention`
+			// notification row that maybeSendOfflineChatEmail() keys off).
+			//
+			// We match BOTH the MM @username (what autocomplete inserts, e.g.
+			// "@john.doe") AND the @displayName (manual "@John Doe"), with
+			// word-boundary safety so "@john" never matches "@johnny". The
+			// username is the primary fix for #18 — the original detector only
+			// matched displayName and missed every real autocomplete mention.
+			//
+			// DM-offline LIMITATION (#18 follow-up): this poll only covers
+			// CHANNEL posts the bot can see. The bot token cannot enumerate or
+			// read the employee's direct-message ("D"/"G") channels, so an
+			// offline DM-only mention is NOT detected here and produces no email.
+			// Closing that gap needs a per-employee PAT-based poll (the Wave 0
+			// identity) and is deliberately out of scope for this fix — see the
+			// scope note in the #18 gap report.
+			// Resolve the channel/DM label once per channel (only when a mention
+			// is actually found, to avoid an extra fetch on every quiet channel).
+			let channelLabel: string | null = null;
 			for (const post of posts) {
-				if (post.message && post.message.includes(mentionToken)) {
+				if (matchesMention(post.message, [mmUsername, profile.displayName])) {
+					if (channelLabel === null) {
+						const ch = await getMmChannel(mattermostUrl, botToken, channelId);
+						channelLabel = ch ? mmChannelLabel(ch) : "";
+					}
 					void this.sendPushToSubscriptions({
-						title: "Mention in Chat",
+						// Phase 31 gap-fix: name the channel/DM in the title so the user
+						// knows where the mention happened, e.g. "Mention in #general".
+						title: channelLabel
+							? `Mention in Chat (${channelLabel})`
+							: "Mention in Chat",
 						body: post.message.slice(0, 100),
-						url: "/chat",
+						// Phase 31 gap-fix: deep-link to the exact channel + message so
+						// clicking the notification opens that channel and flashes the post.
+						url: `/chat?channel=${channelId}&post=${post.id}`,
 						event_type: "chat_mention",
 					});
 				}
@@ -1135,7 +1292,12 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 				.join("\n---\n")
 				.slice(0, 8000);
 
-			await this.extractTodosFromChat(batchText, posts, profile.employeeId);
+			await this.extractTodosFromChat(
+				batchText,
+				posts,
+				profile.employeeId,
+				channelId,
+			);
 		}
 
 		// Advance watermark only on success
@@ -1146,6 +1308,7 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 		batchText: string,
 		posts: Array<{ id: string; message: string }>,
 		employeeId: string,
+		channelId?: string,
 	) {
 		try {
 			// Phase 14 Wave 2: pre-extraction context from graph (fail-soft).
@@ -1190,6 +1353,11 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 					source_channel: "chat",
 					source_id: sourceId,
 					employee_id: employeeId,
+					// Deep-link to the channel + first message of the batch when we
+					// know the channel; otherwise the notification falls back to /dashboard.
+					source_url: channelId
+						? `/chat?channel=${channelId}&post=${sourceId}`
+						: undefined,
 				})),
 			);
 
@@ -1277,6 +1445,21 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	}): Promise<void> {
 		const profile = await this.getProfile();
 		if (!profile) return;
+		// Phase 31 gap-fix: chat mentions/DMs can be created from TWO sources —
+		// the live WS path (client POST /api/chat/notify, instant) and the 60s
+		// background poll. Both stamp the same `/chat?channel=…&post=…` url, so
+		// dedupe on (employee_id, url) to avoid a duplicate drawer row.
+		if (input.event_type === "chat_mention" && input.url) {
+			const existing = [
+				...this.ctx.storage.sql.exec(
+					`SELECT 1 FROM notifications
+					 WHERE employee_id = ? AND url = ? LIMIT 1`,
+					profile.employeeId,
+					input.url,
+				),
+			];
+			if (existing.length > 0) return;
+		}
 		const id = crypto.randomUUID();
 		this.ctx.storage.sql.exec(
 			`INSERT INTO notifications (id, employee_id, event_type, title, body, url, read, created_at)
@@ -1342,6 +1525,30 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 			this.ctx.storage.sql.exec(
 				`UPDATE notifications SET read = 1
 				 WHERE employee_id = ? AND read = 0`,
+				profile.employeeId,
+			);
+		}
+	}
+
+	/**
+	 * Phase 31 gap-fix: permanently DELETE notifications (the drawer's "Clear
+	 * all" and per-row dismiss). With `ids` deletes just those; without, clears
+	 * the employee's entire notification history.
+	 */
+	async clearNotifications(ids?: string[]): Promise<void> {
+		const profile = await this.getProfile();
+		if (!profile) return;
+		if (ids && ids.length > 0) {
+			const placeholders = ids.map(() => "?").join(",");
+			this.ctx.storage.sql.exec(
+				`DELETE FROM notifications
+				 WHERE employee_id = ? AND id IN (${placeholders})`,
+				profile.employeeId,
+				...ids,
+			);
+		} else {
+			this.ctx.storage.sql.exec(
+				`DELETE FROM notifications WHERE employee_id = ?`,
 				profile.employeeId,
 			);
 		}

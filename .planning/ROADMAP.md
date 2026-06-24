@@ -27,7 +27,8 @@ v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification
 - [x] **Phase 28: Startup MCP Server + Channel-Adapter Core** — *team-cms* — SHIPPED 2026-05-25 (5/5 plans; live first-pilot install deferred to v1.5 STARTUP-PILOT-LIVE-01 per explicit user decision). New `apps/startup/` Cloudflare Worker exposing a Stainless-style `search` + `execute` + `me` + `discover_actions` MCP tool surface at `mcp.internjobs.ai`; reaches every founder using Claude Desktop / Code / Cursor / Cline / ChatGPT (all MCP-native by 2026). Ridhi handles concierge onboarding for first 5–10 pilots via a small admin endpoint (`/admin/startups/new` issues per-startup MCP install token). Channel-adapter pattern + `startup_channel_links` schema future-proofs Phase 28.5 (web), Phase 29 (Telnyx) and v1.5 (Slack/Discord/Teams).
 - [x] **Phase 28.5: Startups Web App + Clerk #3 + Per-Startup Agent Email** — *team-cms* — CODE-COMPLETE 2026-05-25 (5/5 plans; ops-config deferred to PHASE-28.5-DEFERRED-OPS.md — 12 user-action steps including DNS, Email Routing domain verification, wrangler secret put for STARTUPS_CLERK_*, Clerk webhook registration). Inserted between Phase 28 and Phase 29 in response to "we need to onboard startups now" — gives non-Claude/Cursor founders a web alternative AND assigns each startup a per-startup agent email (`<slug>@startups.internjobs.ai`) so outbound candidate communication has a clean from-address. Third Clerk app (Google OAuth + email magic-link, **work-email-only**) at `startups.internjobs.ai` mirrors the Workspace tripod (Student → LinkedIn, Workspace → phone OTP, Startups → work-email). Reuses Phase 28's API layer; new web app `apps/startups/`.
 - [x] **Phase 29: Startup Telnyx SMS + Voice AI + Voice-Based Onboarding** — *team-cms* — CODE-COMPLETE 2026-05-25 (3/3 plans; ops-config deferred to PHASE-29-DEFERRED-OPS.md — 22 user-action steps spanning DEFER-29-01-A..K + 29-02-A..F + 29-03-A..E, including Telnyx account signup + BRN submission + number purchase + API key + Voice AI portal config + R2 bucket + KV namespace + cron deploy + first pilot E2E). Toll-free Telnyx number (skips A2P 10DLC wait); SMS inbound webhook → intent classifier → MCP `execute()`; Telnyx Voice AI Agent configured to call our MCP tools directly; voice-intake onboarding flow ("call, get onboarded in 30 seconds"); weekly text touchbase scheduled task for non-Slack/non-MCP founders. The killer "feel heard, no work" channel for non-tech startup founders.
-- [ ] **Phase 30: Parrot Email-Pane Parity** — *team-workspace*. Enable the Star toggle + a cross-folder Starred view, add Archive & Delete actions (DO `updateEmail`/`moveEmail`/`deleteEmail` already exist → routes + client + buttons), promote AgentPanel's chat/Tools toggle into proper Agent | MCP tabs, and add an inbound auto-draft + agent activity feed (scope locked in discuss-phase). Keeps the InternJobs multi-channel shell (no Kumo skin).
+- [x] **Phase 30: Parrot Email-Pane Parity** — *team-workspace* — VERIFIED 2026-06-18 (17/17 must-haves + 6/6 browser UAT + 6 operator-requested post-UAT UI refinements). PR #13 → integration/v1.4. Starred cross-folder view, move + two-stage delete, Archive/Delete + Undo, Agent|MCP segmented tabs, on-demand agent activity feed, icon-only toolbar, drafts-open-in-compose, folder count badges, mark-read-on-open.
+- [ ] **Phase 31: Native Chat Client Build-Out** — *team-workspace*. Turn the channel-only ChatPane into a full in-app chat client (per-employee Mattermost tokens, channels + threads, DMs + group DMs, files + search + reactions + @mentions, WebSocket real-time + notifications). Mattermost-on-Fly stays source of truth; only the in-Workspace UI renderer + per-employee auth change. Folds in the native-chat provisioning foundation (was prod-only, never merged). Out of scope: native mobile/desktop apps, background push (email substitutes for offline mentions).
 
 ## Phase Details
 
@@ -368,6 +369,55 @@ Plans:
 - [x] 29-03-PLAN.md — Weekly cron + reply parser + opt-in + CHANNELS.md live update + PILOT-EVIDENCE.md (Wave 2, parallel with 29-02) [STARTUP-TOUCHBASE-01..02 + STARTUP-MULTICHAN-01..02]
 
 **Research flags**: Resolved — 29-RESEARCH.md confirmed (1) toll-free Telnyx skips A2P 10DLC, BRN required for verification, (2) Voice AI MCP integration confirmed supported; may be plan-tier gated → TELNYX_USE_MCP_INTEGRATION feature flag codes both paths, (3) SMS webhook Ed25519-signed, inbound shape fully documented
+
+---
+
+### Phase 31: Native Chat Client Build-Out
+
+**Goal**: Turn the shipped channel-only ChatPane (bot-proxied Mattermost, town-square/off-topic only) into a full in-app chat client an employee uses entirely inside the Workspace tab — DMs, threads, files, search, reactions, @mentions, and real-time delivery. Mattermost self-hosted on Fly stays the source of truth; only the UI renderer + per-employee auth change. Native is forced: MM Team Edition is unlicensed and OIDC/SSO is a paid Enterprise feature (see `mm-oidc-sso-blocked-by-license`).
+
+**Team owner**: `team-workspace`
+**Branch**: `rrr/v1.4/team-workspace-31` (off `integration/v1.4`)
+**Depends on**: Phase 30 (sequential on the team-workspace line). Folds in the native-chat provisioning foundation (auto-create MM accounts at invite + `/api/chat/*` bootstrap + ChatPane reason codes) that was deployed to prod (Worker `8e998c22`) but never merged — cherry-picked onto this branch as the Wave 0 base.
+
+**Requirements**: CHAT-TOKEN-01..03 (Wave 0), CHAT-CHAN-01..04 (Wave 1), CHAT-DM-01..03 (Wave 2), CHAT-RICH-01..04 (Wave 3), CHAT-RT-01..04 (Wave 4), CHAT-HARD-01..03 (Wave 5)
+
+**Waves & Success Criteria** (what must be TRUE):
+
+*Wave 0 — Per-user token identity (architectural unlock, first):*
+1. Each provisioned employee has a Mattermost personal access token minted via `MATTERMOST_ADMIN_TOKEN` at provision time, stored server-side; the Worker proxies MM REST calls AS that employee, not as the `parrot` bot
+2. Existing provisioned users backfilled with a token; human messages authored as the real MM user (`parrot_author_*` props reliance dropped for human messages)
+
+*Wave 1 — Channels + threads:*
+3. Employee can browse / create / join channels from the ChatPane; thread replies (`root_id`) send + render; edit / delete / pin work
+
+*Wave 2 — DMs + group DMs:*
+4. Employee can open a direct or group DM with another employee via a user picker; DM list shows conversations
+
+*Wave 3 — Rich content + search:*
+5. File / image upload + inline preview (`/api/v4/files` → `file_ids`); message search (`/posts/search`); emoji reactions; @mention parsing + highlight
+
+*Wave 4 — Real-time + notifications:*
+6. MM WebSocket replaces the 5s polling (instant delivery, presence, typing, unread counts); in-app notifications (badges / toast); an email notification is sent for @mentions while the Workspace tab is closed
+
+*Wave 5 — Hardening + verify:*
+7. Fly secret hygiene (`MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true`, unset stray `ENABLEPERSONALACCESSTOKENS`); Vitest route coverage extends the Phase 27 floor; employee UAT passes
+
+**Out of scope** (impossible natively): native mobile/desktop apps (those are the official MM clients — only SSO/iframe reaches them); background push when the Workspace tab is closed (substituted by email notifications for offline mentions).
+
+**Open technical decisions** (for research/planning): per-user token storage (Workers KV vs DO vs Clerk privateMetadata vs encrypted column); keep the bot for system/agent messages (hybrid); WebSocket path (browser→MM direct vs Worker-proxied Cloudflare WS).
+
+**Plans**: 6 plans
+
+Plans:
+- [ ] 31-01-PLAN.md — Wave 0: per-user MM PAT in WorkspaceDO + mmFetchAsUser + backfill (CHAT-TOKEN-01..03)
+- [ ] 31-02-PLAN.md — Wave 1: channel browser/create/join + thread panel + edit/delete/pin (CHAT-CHAN-01..04)
+- [ ] 31-03-PLAN.md — Wave 2: DMs + group DMs + user picker + DM section in nav (CHAT-DM-01..03)
+- [ ] 31-04-PLAN.md — Wave 3: file upload streaming proxy + search + reactions + @mentions (CHAT-RICH-01..04)
+- [ ] 31-05-PLAN.md — Wave 4: Worker-proxied WebSocket + typing/presence + unread + offline email (CHAT-RT-01..04)
+- [ ] 31-06-PLAN.md — Wave 5: Fly secret hygiene + Vitest coverage + employee UAT (CHAT-HARD-01..03)
+
+**Research flags**: Likely (MM WebSocket auth from a Worker-proxied browser session; per-user PAT minting + storage; multipart file upload through the Worker proxy)
 
 ---
 

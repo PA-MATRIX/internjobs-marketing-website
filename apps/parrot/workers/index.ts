@@ -17,6 +17,10 @@ import {
 } from "./routes/reply-forward";
 // v1.4 Phase 23-03 ATTACH-DOWN-01..03: attachment download route.
 import { handleAttachmentDownload } from "./routes/attachments";
+// Phase 31 Wave 3 (31-04): file/image upload + download streaming proxy.
+import { chatFilesRoute } from "./routes/chat-files";
+// Phase 31 Wave 4 (31-05): Worker-proxied real-time WebSocket (PAT server-side).
+import { handleChatWebSocket } from "./lib/mm-ws-proxy";
 import {
 	requireEmployeeMailbox,
 	type ParrotContext,
@@ -40,14 +44,27 @@ import {
 import { pingParrotGraph } from "./lib/graph";
 import { isOperator as hasOperatorAccess } from "./lib/operator";
 import {
+	createMmDirectChannel,
+	createMmGroupChannel,
 	createMmParrotPost,
 	ensureMmWorkspaceMembership,
 	getMmChannelPosts,
+	getMmMyDirectChannels,
 	getMmTeamChannels,
 	getMmTeamChannelsForUser,
 	getMmTeamsForUser,
 	getMmUserByEmail,
 	getMmUsersByIds,
+	mintMmUserToken,
+	mmFetch,
+	mmFetchAsUser,
+} from "./lib/mattermost";
+import { getWorkspaceStub } from "./durableObject/workspace";
+import type {
+	MattermostChannel,
+	MattermostPost,
+	MattermostPostList,
+	MattermostUser,
 } from "./lib/mattermost";
 import type { Env } from "./types";
 
@@ -348,6 +365,18 @@ app.get("/api/inbox/messages", requireEmployeeMailbox, async (c: AppContext) => 
 	const emails = await stub.getEmails({ folder });
 	const totalCount = await stub.countEmails({ folder });
 	return c.json({ emails, totalCount, folder });
+});
+
+// Phase 31 gap-fix: GET /api/inbox/search?q=… — full-mailbox email search for
+// the global header search when the user is on the Email pane. Backs onto the
+// DO's existing searchEmails (SQL LIKE over subject/sender/body). Returns
+// metadata + a short snippet; empty/blank query yields no results.
+app.get("/api/inbox/search", requireEmployeeMailbox, async (c: AppContext) => {
+	const query = (c.req.query("q") ?? "").trim();
+	if (!query) return c.json({ results: [] });
+	const stub = c.var.mailboxStub;
+	const results = await stub.searchEmails({ query, limit: 20 });
+	return c.json({ results });
 });
 
 // PARROT-FOLDER-COUNTS-01: total message count per folder, for the sidebar
@@ -657,6 +686,44 @@ app.post(
 	},
 );
 
+// Phase 31 gap-fix: DELETE /api/notifications — discard notifications from the
+// drawer. Optional body { ids } clears a subset (per-row dismiss); no body
+// clears all of the employee's notifications ("Clear all").
+app.delete(
+	"/api/notifications",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as {
+			ids?: string[];
+		} | null;
+		await c.var.mailboxStub.clearNotifications(body?.ids);
+		return c.json({ ok: true });
+	},
+);
+
+// Phase 31 gap-fix: POST /api/chat/notify — real-time bell notification for a
+// chat @mention or DM, created instantly off the client's live WebSocket event
+// (instead of waiting for the 60s background poll). The DO dedupes on the
+// post-scoped url so this and the poll never double-insert.
+app.post("/api/chat/notify", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as {
+		postId?: string;
+		channelId?: string;
+		title?: string;
+		body?: string;
+	} | null;
+	if (!body?.postId || !body?.channelId || !body?.title) {
+		return c.json({ error: "Missing postId, channelId, or title" }, 400);
+	}
+	await c.var.mailboxStub.addNotification({
+		event_type: "chat_mention",
+		title: body.title,
+		body: body.body,
+		url: `/chat?channel=${body.channelId}&post=${body.postId}`,
+	});
+	return c.json({ ok: true });
+});
+
 // -- Meetings (Daily.co — Phase 11 Wave 1) --------------------------
 //
 // POST /api/meetings/ensure-room lazily provisions the signed-in
@@ -916,6 +983,12 @@ async function loadChatContext(c: AppContext):
 		c.env.MATTERMOST_URL,
 		botToken,
 		employee.email,
+		{
+			displayName: employee.displayName,
+			givenName: employee.givenName,
+			familyName: employee.familyName,
+		},
+		c.env.MATTERMOST_ADMIN_TOKEN,
 	);
 	if (!membership.ok) {
 		return {
@@ -1004,6 +1077,12 @@ app.post(
 			c.env.MATTERMOST_URL,
 			botToken,
 			employee.email,
+			{
+				displayName: employee.displayName,
+				givenName: employee.givenName,
+				familyName: employee.familyName,
+			},
+			c.env.MATTERMOST_ADMIN_TOKEN,
 		);
 		if (!result.ok) {
 			const status = result.reason === "user_not_found" ? 404 : 502;
@@ -1046,8 +1125,21 @@ app.get(
 				chat.status as 404 | 502 | 503,
 			);
 		}
+		// Wave 2 (31-03): DM/group channels aren't in the team-channel bootstrap
+		// list. If the channel isn't a known team channel, verify the employee is
+		// a member via their OWN PAT before reading (so they can only read DMs
+		// they belong to) — then read the posts with the bot token as before.
 		if (!chat.channels.some((channel) => channel.id === channelId)) {
-			return c.json({ error: "Channel not available" }, 403);
+			const proxy = chatUserProxy(c);
+			const membership = proxy.ok
+				? await proxy.call<{ channel_id: string }>(
+						`/api/v4/channels/${channelId}/members/me`,
+						{ method: "GET" },
+					)
+				: null;
+			if (!membership || !membership.ok) {
+				return c.json({ error: "Channel not available" }, 403);
+			}
 		}
 
 		const page = Number.parseInt(c.req.query("page") ?? "0", 10);
@@ -1064,13 +1156,50 @@ app.get(
 	},
 );
 
+// ── Phase 31 Wave 0: per-employee Mattermost PAT resolution ─────────
+//
+// Resolve (and lazily provision) the employee's own Mattermost personal
+// access token so human chat REST calls are authored AS the real MM user
+// rather than through the parrot bot. Returns null when MM can't be reached,
+// the user has no MM account, or PAT minting is disabled on the MM server
+// (MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=false — see plan 31-06 Task 1).
+async function resolveEmployeeToken(
+	c: AppContext,
+): Promise<{ mmUserId: string; token: string } | null> {
+	const employee = c.var.employee;
+	const stub = getWorkspaceStub(c.env);
+
+	const existing = await stub.getEmployeeToken(employee.employeeId);
+	if (existing) return existing;
+
+	// No stored PAT yet — resolve the MM user by email and mint one.
+	const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	if (!adminToken || !botToken) return null;
+	const user = await getMmUserByEmail(
+		c.env.MATTERMOST_URL,
+		botToken,
+		employee.email,
+	);
+	if (!user) return null;
+	const token = await mintMmUserToken(c.env.MATTERMOST_URL, adminToken, user.id);
+	if (!token) return null;
+	await stub.setEmployeeToken(employee.employeeId, user.id, token);
+	return { mmUserId: user.id, token };
+}
+
 app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 	const body = (await c.req.json().catch(() => null)) as
-		| { channel_id?: string; message?: string }
+		| { channel_id?: string; message?: string; file_ids?: string[] }
 		| null;
 	const channelId = body?.channel_id?.trim();
-	const message = body?.message?.trim();
-	if (!channelId || !message) {
+	const message = body?.message?.trim() ?? "";
+	// Wave 3 (31-04): a post may carry file attachments only (empty text). Accept
+	// the post when EITHER message text OR at least one file_id is present.
+	const fileIds = Array.isArray(body?.file_ids)
+		? body.file_ids.filter((id): id is string => typeof id === "string" && !!id)
+		: [];
+	if (!channelId || (!message && fileIds.length === 0)) {
 		return c.json({ error: "Missing channel_id or message" }, 400);
 	}
 
@@ -1081,21 +1210,814 @@ app.post("/api/chat/posts", requireEmployeeMailbox, async (c: AppContext) => {
 			chat.status as 404 | 502 | 503,
 		);
 	}
-	if (!chat.channels.some((channel) => channel.id === channelId)) {
-		return c.json({ error: "Channel not available" }, 403);
+	// Wave 2 (31-03): DM/group channels are NOT in the team-channel bootstrap
+	// list, so the old "channel must be in chat.channels" gate would reject DM
+	// posts. We drop the redundant gate: because the post is sent via the
+	// employee's own PAT (mmFetchAsUser), Mattermost itself enforces that the
+	// employee may only post to channels they are a member of — a non-member
+	// PAT post returns 403 from MM and is surfaced as a 502 below.
+
+	// Phase 31 Wave 0: post AS the employee using their own PAT — no
+	// parrot_author_* props for human posts (the post's user_id IS the
+	// real MM user). createMmParrotPost stays for bot/agent/cross-pane msgs.
+	const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+	if (!adminToken) {
+		return c.json({ error: "chat_not_provisioned" }, 503);
+	}
+	const stub = getWorkspaceStub(c.env);
+	const employee = c.var.employee;
+	const result = await mmFetchAsUser<MattermostPost>(
+		c.env.MATTERMOST_URL,
+		adminToken,
+		"/api/v4/posts",
+		{
+			method: "POST",
+			body: JSON.stringify({
+				channel_id: channelId,
+				message,
+				...(fileIds.length ? { file_ids: fileIds } : {}),
+			}),
+		},
+		() => resolveEmployeeToken(c),
+		(mmUserId, token) =>
+			stub.setEmployeeToken(employee.employeeId, mmUserId, token),
+	);
+	if (!result.ok) {
+		if (result.status === 503) {
+			return c.json({ error: "chat_not_provisioned" }, 503);
+		}
+		return c.json({ error: "Message send failed" }, 502);
+	}
+	return c.json(result.data);
+});
+
+// ── Phase 31 Wave 1 (plan 31-02): channel CRUD + thread ops ─────────
+//
+// All routes proxy AS the employee via their own PAT (mmFetchAsUser), so
+// channel creates/joins, post edits/deletes/pins, and thread replies are
+// authored by the real MM user. Shared helper resolves the admin token +
+// the per-employee token callbacks once per request.
+//
+// PAT resolution returns 503 chat_not_provisioned when the employee has no
+// MM account / PAT minting is disabled (see plan 31-06). 403 for authz
+// failures (private channel create, editing someone else's post). 400 for
+// missing body fields.
+
+function chatUserProxy(c: AppContext):
+	| {
+			ok: true;
+			adminToken: string;
+			call: <T>(
+				path: string,
+				init: RequestInit,
+			) => Promise<
+				{ ok: true; data: T } | { ok: false; status: number; data: unknown }
+			>;
+			getToken: () => Promise<{ mmUserId: string; token: string } | null>;
+	  }
+	| { ok: false } {
+	const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+	if (!adminToken) return { ok: false };
+	const stub = getWorkspaceStub(c.env);
+	const employee = c.var.employee;
+	const getToken = () => resolveEmployeeToken(c);
+	const setToken = (mmUserId: string, token: string) =>
+		stub.setEmployeeToken(employee.employeeId, mmUserId, token);
+	return {
+		ok: true,
+		adminToken,
+		getToken,
+		call: <T>(path: string, init: RequestInit) =>
+			mmFetchAsUser<T>(
+				c.env.MATTERMOST_URL,
+				adminToken,
+				path,
+				init,
+				getToken,
+				setToken,
+			),
+	};
+}
+
+// GET /api/chat/channels — list the team's channels as the employee (their
+// own visibility). The employee's first team is read from the bootstrap
+// context; falls back to the membership team.
+app.get("/api/chat/channels", requireEmployeeMailbox, async (c: AppContext) => {
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const chat = await loadChatContext(c);
+	if (!chat.ok) {
+		return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+	}
+	const result = await proxy.call<MattermostChannel[]>(
+		`/api/v4/teams/${chat.team.id}/channels?page=0&per_page=100`,
+		{ method: "GET" },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Channels unavailable" }, 502);
+	}
+	return c.json(result.data);
+});
+
+// POST /api/chat/channels — create a channel. Public ("O") is open to all
+// employees; private ("P") is operator-gated.
+app.post("/api/chat/channels", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { name?: string; display_name?: string; type?: string }
+		| null;
+	const name = body?.name?.trim();
+	const displayName = body?.display_name?.trim();
+	const type = body?.type === "P" ? "P" : "O";
+	if (!name || !displayName) {
+		return c.json({ error: "Missing name or display_name" }, 400);
+	}
+	if (type === "P" && !(await hasOperatorAccess(c.env, c.var.employee))) {
+		return c.json({ error: "forbidden_operator_only" }, 403);
+	}
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const chat = await loadChatContext(c);
+	if (!chat.ok) {
+		return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+	}
+	const result = await proxy.call<MattermostChannel>("/api/v4/channels", {
+		method: "POST",
+		body: JSON.stringify({
+			team_id: chat.team.id,
+			name,
+			display_name: displayName,
+			type,
+		}),
+	});
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Channel create failed" }, 502);
+	}
+	return c.json(result.data);
+});
+
+// POST /api/chat/channels/:id/join — add the employee to a channel.
+app.post(
+	"/api/chat/channels/:id/join",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const channelId = c.req.param("id");
+		if (!channelId) return c.json({ error: "Missing channel id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const result = await proxy.call<unknown>(
+			`/api/v4/channels/${channelId}/members`,
+			{ method: "POST", body: JSON.stringify({ user_id: tokenRow.mmUserId }) },
+		);
+		// 400 = already a member — treat as success (idempotent join).
+		if (!result.ok && result.status !== 400) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Join failed" }, 502);
+		}
+		return c.json({ ok: true, channel_id: channelId });
+	},
+);
+
+// GET /api/chat/posts/:id/thread — full thread for a root post.
+app.get(
+	"/api/chat/posts/:id/thread",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const postId = c.req.param("id");
+		if (!postId) return c.json({ error: "Missing post id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const result = await proxy.call<MattermostPostList>(
+			`/api/v4/posts/${postId}/thread`,
+			{ method: "GET" },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Thread unavailable" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// POST /api/chat/posts/:id/thread — reply to a thread (root_id = :id). The
+// reply targets the same channel as the root post.
+app.post(
+	"/api/chat/posts/:id/thread",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const rootId = c.req.param("id");
+		if (!rootId) return c.json({ error: "Missing post id" }, 400);
+		const body = (await c.req.json().catch(() => null)) as
+			| { message?: string }
+			| null;
+		const message = body?.message?.trim();
+		if (!message) return c.json({ error: "Missing message" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		// Resolve the root post's channel so the reply lands in the same channel.
+		const root = await proxy.call<MattermostPost>(`/api/v4/posts/${rootId}`, {
+			method: "GET",
+		});
+		if (!root.ok) {
+			if (root.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Root post not found" }, 404);
+		}
+		const result = await proxy.call<MattermostPost>("/api/v4/posts", {
+			method: "POST",
+			body: JSON.stringify({
+				channel_id: root.data.channel_id,
+				message,
+				root_id: rootId,
+			}),
+		});
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Reply failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// PATCH /api/chat/posts/:id — edit a message. Author-only.
+app.patch(
+	"/api/chat/posts/:id",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const postId = c.req.param("id");
+		if (!postId) return c.json({ error: "Missing post id" }, 400);
+		const body = (await c.req.json().catch(() => null)) as
+			| { message?: string }
+			| null;
+		const message = body?.message?.trim();
+		if (!message) return c.json({ error: "Missing message" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		// Authorship gate: only the post author may edit.
+		const existing = await proxy.call<MattermostPost>(`/api/v4/posts/${postId}`, {
+			method: "GET",
+		});
+		if (!existing.ok) {
+			if (existing.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Post not found" }, 404);
+		}
+		if (existing.data.user_id !== tokenRow.mmUserId) {
+			return c.json({ error: "forbidden_not_author" }, 403);
+		}
+		const result = await proxy.call<MattermostPost>(`/api/v4/posts/${postId}`, {
+			method: "PUT",
+			body: JSON.stringify({ id: postId, message }),
+		});
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Edit failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// DELETE /api/chat/posts/:id — delete a message. Author-only.
+app.delete(
+	"/api/chat/posts/:id",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const postId = c.req.param("id");
+		if (!postId) return c.json({ error: "Missing post id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const existing = await proxy.call<MattermostPost>(`/api/v4/posts/${postId}`, {
+			method: "GET",
+		});
+		if (!existing.ok) {
+			if (existing.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Post not found" }, 404);
+		}
+		if (existing.data.user_id !== tokenRow.mmUserId) {
+			return c.json({ error: "forbidden_not_author" }, 403);
+		}
+		const result = await proxy.call<unknown>(`/api/v4/posts/${postId}`, {
+			method: "DELETE",
+		});
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Delete failed" }, 502);
+		}
+		return c.json({ ok: true, deleted: postId });
+	},
+);
+
+// POST /api/chat/channels/:id/pin — pin OR unpin a post (#6a).
+// Body: { post_id, unpin? }. When unpin is truthy we call MM's /unpin
+// endpoint; otherwise /pin. Both are idempotent on the MM side.
+app.post(
+	"/api/chat/channels/:id/pin",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { post_id?: string; unpin?: boolean }
+			| null;
+		const postId = body?.post_id?.trim();
+		if (!postId) return c.json({ error: "Missing post_id" }, 400);
+		const unpin = body?.unpin === true;
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const result = await proxy.call<unknown>(
+			`/api/v4/posts/${postId}/${unpin ? "unpin" : "pin"}`,
+			{ method: "POST" },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: unpin ? "Unpin failed" : "Pin failed" }, 502);
+		}
+		return c.json({ ok: true, pinned: unpin ? null : postId, unpinned: unpin ? postId : null });
+	},
+);
+
+// ── Phase 31 Wave 2 (plan 31-03): DMs + group DMs ───────────────────
+//
+// MM DMs are channels of type "D" (direct, 2 users) and "G" (group, 3-8).
+// Create/open is idempotent — MM returns the existing channel if it exists.
+// All DM routes proxy AS the employee via their PAT (chatUserProxy), so the
+// DM belongs to the real MM user and messages (posted via the existing
+// /api/chat/posts route with channel_id = the DM channel id) arrive under
+// the employee identity, never the parrot bot.
+//
+// A "D" channel name is `userIdA__userIdB` (the two member IDs sorted), which
+// we parse to derive the partner id without an extra members lookup. "G"
+// channels have an opaque hash name, so we resolve their members via the
+// channel-members endpoint to build partner names.
+
+// GET /api/chat/dms — list the employee's DM channels (type D + G), enriched
+// with resolved partner display names.
+app.get("/api/chat/dms", requireEmployeeMailbox, async (c: AppContext) => {
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+
+	const result = await proxy.call<MattermostChannel[]>(
+		"/api/v4/users/me/channels?include_deleted=false",
+		{ method: "GET" },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "DMs unavailable" }, 502);
+	}
+	const dms = result.data.filter(
+		(channel) => channel.type === "D" || channel.type === "G",
+	);
+
+	// Collect every partner user id. Direct ("D") channel names encode the two
+	// member ids as `idA__idB`; group ("G") names are opaque so we fetch their
+	// members. We resolve all partner ids in one batched user lookup (bot token
+	// is fine — read access only).
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	const groupMembers = new Map<string, string[]>();
+	const partnerIds = new Set<string>();
+	for (const dm of dms) {
+		if (dm.type === "D") {
+			for (const id of (dm.name ?? "").split("__")) {
+				if (id && id !== tokenRow.mmUserId) partnerIds.add(id);
+			}
+		} else {
+			// Group DM: fetch members (as the employee — they're a member).
+			const members = await proxy.call<Array<{ user_id: string }>>(
+				`/api/v4/channels/${dm.id}/members`,
+				{ method: "GET" },
+			);
+			const ids = members.ok
+				? members.data
+						.map((m) => m.user_id)
+						.filter((id) => id && id !== tokenRow.mmUserId)
+				: [];
+			groupMembers.set(dm.id, ids);
+			for (const id of ids) partnerIds.add(id);
+		}
 	}
 
-	const employee = c.var.employee;
-	const post = await createMmParrotPost(c.env.MATTERMOST_URL, chat.botToken, {
-		channelId,
-		message,
-		authorUserId: chat.user.id,
-		authorName: employee.displayName || chat.user.username || employee.email,
-		authorEmail: employee.email,
+	const users = botToken
+		? await getMmUsersByIds(c.env.MATTERMOST_URL, botToken, [...partnerIds])
+		: [];
+	const nameById = new Map<string, string>();
+	for (const u of users) {
+		const full = `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim();
+		nameById.set(u.id, u.nickname || full || u.username || "Teammate");
+	}
+
+	const enriched = dms.map((dm) => {
+		let ids: string[];
+		if (dm.type === "D") {
+			ids = (dm.name ?? "")
+				.split("__")
+				.filter((id) => id && id !== tokenRow.mmUserId);
+		} else {
+			ids = groupMembers.get(dm.id) ?? [];
+		}
+		return {
+			...dm,
+			dm_partner_names: ids.map((id) => nameById.get(id) ?? "Teammate"),
+		};
 	});
-	if (!post) return c.json({ error: "Message send failed" }, 502);
-	return c.json(post);
+
+	return c.json(enriched);
 });
+
+// POST /api/chat/dms/direct — open/create a DM with one user.
+// Body: { mm_user_id: string }.
+app.post(
+	"/api/chat/dms/direct",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { mm_user_id?: string }
+			| null;
+		const partnerId = body?.mm_user_id?.trim();
+		if (!partnerId) return c.json({ error: "Missing mm_user_id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		if (partnerId === tokenRow.mmUserId) {
+			return c.json({ error: "Cannot DM yourself" }, 400);
+		}
+		const result = await proxy.call<MattermostChannel>(
+			"/api/v4/channels/direct",
+			{ method: "POST", body: JSON.stringify([tokenRow.mmUserId, partnerId]) },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "DM create failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// POST /api/chat/dms/group — open/create a group DM.
+// Body: { mm_user_ids: string[] } (2+ other users; the employee is added
+// server-side). MM requires the final list be 3-8 users total.
+app.post(
+	"/api/chat/dms/group",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const body = (await c.req.json().catch(() => null)) as
+			| { mm_user_ids?: string[] }
+			| null;
+		const others = Array.isArray(body?.mm_user_ids)
+			? [...new Set(body.mm_user_ids.filter((id) => typeof id === "string" && id.trim()))]
+			: [];
+		if (others.length < 2) {
+			return c.json({ error: "Group DM needs at least 2 other users" }, 400);
+		}
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const userIds = [
+			...new Set([tokenRow.mmUserId, ...others.filter((id) => id !== tokenRow.mmUserId)]),
+		];
+		if (userIds.length < 3 || userIds.length > 8) {
+			return c.json({ error: "Group DM must have 3-8 members" }, 400);
+		}
+		const result = await proxy.call<MattermostChannel>(
+			"/api/v4/channels/group",
+			{ method: "POST", body: JSON.stringify(userIds) },
+		);
+		if (!result.ok) {
+			if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Group DM create failed" }, 502);
+		}
+		return c.json(result.data);
+	},
+);
+
+// GET /api/chat/team-members — list every member of the employee's team
+// (minus the requesting employee), for the new-DM user picker. Uses the bot
+// token (system-admin read access) + a batched user lookup. Cached 60s at the
+// edge since team membership changes rarely.
+app.get(
+	"/api/chat/team-members",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const botToken = c.env.MATTERMOST_BOT_TOKEN;
+		if (!botToken) return c.json({ error: "chat_not_provisioned" }, 503);
+		const chat = await loadChatContext(c);
+		if (!chat.ok) {
+			return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+		}
+		const members = await mmFetch<Array<{ user_id: string }>>(
+			c.env.MATTERMOST_URL,
+			botToken,
+			`/api/v4/teams/${chat.team.id}/members?page=0&per_page=200`,
+		);
+		if (!members.ok) return c.json({ error: "Team members unavailable" }, 502);
+		const ids = members.data
+			.map((m) => m.user_id)
+			.filter((id) => id && id !== chat.user.id);
+		const users: MattermostUser[] = await getMmUsersByIds(
+			c.env.MATTERMOST_URL,
+			botToken,
+			ids,
+		);
+		return c.json(users, 200, { "Cache-Control": "private, max-age=60" });
+	},
+);
+
+// ── Phase 31 Wave 3 (plan 31-04): files + search + reactions ────────
+//
+// File upload/download lives in routes/chat-files.ts (streaming proxy — see
+// that file for the c.req.raw.body / Content-Type rationale). Mounted under
+// /api/chat/files. Search + reactions stay here as thin routes that proxy AS
+// the employee via their PAT (chatUserProxy), reusing the Wave 0 identity.
+
+app.route("/api/chat/files", chatFilesRoute);
+
+// POST /api/chat/search — full-text search across the employee's visible
+// channels. Body: { terms, team_id?, channel_id? }. team_id falls back to the
+// employee's bootstrap team. When channel_id is given the search is SCOPED to
+// that one channel (#3: the in-chat search icon → "search this chat only").
+// Results are enriched with author_name + channel_label so the header dropdown
+// (which has no MM lookups of its own) can render labelled rows.
+app.post("/api/chat/search", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { terms?: string; team_id?: string; channel_id?: string }
+		| null;
+	const terms = body?.terms?.trim();
+	if (!terms) return c.json({ error: "Missing terms" }, 400);
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	let teamId = body?.team_id?.trim();
+	if (!teamId) {
+		const chat = await loadChatContext(c);
+		if (!chat.ok) {
+			return c.json({ ok: false, reason: chat.reason }, chat.status as 404 | 502 | 503);
+		}
+		teamId = chat.team.id;
+	}
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+
+	// #3: per-channel scoping. For named (public/private) channels, the MM `in:`
+	// search modifier scopes server-side for good recall; we ALSO post-filter by
+	// channel_id so DMs/group-DMs (which have no friendly `in:` name) are scoped
+	// correctly too.
+	const scopeChannelId = body?.channel_id?.trim();
+	let searchTerms = terms;
+	if (scopeChannelId) {
+		const ch = await proxy.call<{ name?: string; type?: string }>(
+			`/api/v4/channels/${scopeChannelId}`,
+			{ method: "GET" },
+		);
+		if (ch.ok && (ch.data.type === "O" || ch.data.type === "P") && ch.data.name) {
+			searchTerms = `in:${ch.data.name} ${terms}`;
+		}
+	}
+
+	const result = await proxy.call<MattermostPostList>(
+		`/api/v4/teams/${teamId}/posts/search`,
+		{ method: "POST", body: JSON.stringify({ terms: searchTerms, is_or_search: false }) },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Search failed" }, 502);
+	}
+
+	const posts = result.data.posts ?? {};
+	let order = result.data.order ?? [];
+	if (scopeChannelId) {
+		order = order.filter((id) => posts[id]?.channel_id === scopeChannelId);
+	}
+
+	// Enrich rows with display labels (best-effort; falls back to generic text).
+	const channelLabel = new Map<string, string>();
+	const authorName = new Map<string, string>();
+	if (botToken && order.length) {
+		const chList = await proxy.call<
+			Array<{ id: string; display_name?: string; name?: string; type?: string }>
+		>(`/api/v4/users/me/teams/${teamId}/channels`, { method: "GET" });
+		if (chList.ok && Array.isArray(chList.data)) {
+			for (const ch of chList.data) {
+				channelLabel.set(
+					ch.id,
+					ch.type === "O" || ch.type === "P"
+						? `#${ch.display_name || ch.name || "channel"}`
+						: "Direct message",
+				);
+			}
+		}
+		const userIds = [
+			...new Set(order.map((id) => posts[id]?.user_id).filter(Boolean) as string[]),
+		];
+		const users = await getMmUsersByIds(c.env.MATTERMOST_URL, botToken, userIds);
+		for (const u of users) {
+			const name =
+				u.nickname?.trim() ||
+				`${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() ||
+				u.username;
+			authorName.set(u.id, name);
+		}
+	}
+
+	const enrichedPosts: Record<string, unknown> = {};
+	for (const id of order) {
+		const p = posts[id];
+		if (!p) continue;
+		enrichedPosts[id] = {
+			...p,
+			author_name: authorName.get(p.user_id) ?? "Someone",
+			channel_label: channelLabel.get(p.channel_id) ?? "channel",
+		};
+	}
+	return c.json({ order, posts: enrichedPosts });
+});
+
+// POST /api/chat/reactions — add an emoji reaction AS the employee.
+// Body: { post_id, emoji_name }.
+app.post("/api/chat/reactions", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { post_id?: string; emoji_name?: string }
+		| null;
+	const postId = body?.post_id?.trim();
+	const emojiName = body?.emoji_name?.trim();
+	if (!postId || !emojiName) {
+		return c.json({ error: "Missing post_id or emoji_name" }, 400);
+	}
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+	const result = await proxy.call<unknown>("/api/v4/reactions", {
+		method: "POST",
+		body: JSON.stringify({
+			user_id: tokenRow.mmUserId,
+			post_id: postId,
+			emoji_name: emojiName,
+			create_at: 0,
+		}),
+	});
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Reaction failed" }, 502);
+	}
+	return c.json({ ok: true, post_id: postId, emoji_name: emojiName });
+});
+
+// DELETE /api/chat/reactions — remove an emoji reaction AS the employee.
+// Body: { post_id, emoji_name }.
+app.delete("/api/chat/reactions", requireEmployeeMailbox, async (c: AppContext) => {
+	const body = (await c.req.json().catch(() => null)) as
+		| { post_id?: string; emoji_name?: string }
+		| null;
+	const postId = body?.post_id?.trim();
+	const emojiName = body?.emoji_name?.trim();
+	if (!postId || !emojiName) {
+		return c.json({ error: "Missing post_id or emoji_name" }, 400);
+	}
+	const proxy = chatUserProxy(c);
+	if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+	const tokenRow = await proxy.getToken();
+	if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+	const result = await proxy.call<unknown>(
+		`/api/v4/users/${tokenRow.mmUserId}/posts/${postId}/reactions/${encodeURIComponent(emojiName)}`,
+		{ method: "DELETE" },
+	);
+	if (!result.ok) {
+		if (result.status === 503) return c.json({ error: "chat_not_provisioned" }, 503);
+		return c.json({ error: "Reaction remove failed" }, 502);
+	}
+	return c.json({ ok: true, post_id: postId, emoji_name: emojiName });
+});
+
+// ── Phase 31 Wave 4 (plan 31-05): real-time WebSocket + presence + mark-read ──
+//
+// /api/chat/ws is the browser's single real-time connection. The Worker
+// authenticates with Mattermost using the employee PAT SERVER-SIDE (the PAT
+// never reaches the browser — see lib/mm-ws-proxy.ts). This replaces the 5s
+// post polling in ChatPane.
+//
+// /api/chat/presence returns online/away/offline/dnd for a batch of MM user
+// ids (bot token, since status is workspace-wide read).
+//
+// /api/chat/channels/:id/mark-read clears MM's unread tracking for the
+// employee on a channel (posted AS the employee via their PAT).
+
+// GET /api/chat/ws — WebSocket upgrade endpoint.
+app.get("/api/chat/ws", requireEmployeeMailbox, async (c: AppContext) => {
+	return handleChatWebSocket(c.req.raw, c.env, c.var.employee);
+});
+
+// GET /api/chat/presence?ids=uid1,uid2 — batch presence lookup.
+// Returns the MM status array: [{ user_id, status: "online"|"away"|"offline"|"dnd" }].
+app.get("/api/chat/presence", requireEmployeeMailbox, async (c: AppContext) => {
+	const botToken = c.env.MATTERMOST_BOT_TOKEN;
+	if (!botToken) return c.json({ error: "chat_not_provisioned" }, 503);
+	const idsParam = c.req.query("ids") ?? "";
+	const ids = idsParam
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	if (ids.length === 0) return c.json([]);
+	const result = await mmFetch<
+		Array<{ user_id: string; status: string }>
+	>(c.env.MATTERMOST_URL, botToken, "/api/v4/users/status/ids", {
+		method: "POST",
+		body: JSON.stringify(ids),
+	});
+	if (!result.ok) return c.json({ error: "Presence unavailable" }, 502);
+	return c.json(result.data, 200, { "Cache-Control": "private, max-age=15" });
+});
+
+// POST /api/chat/channels/:id/mark-read — mark a channel read for the employee
+// in Mattermost (clears MM's unread/mention tracking for that user on the
+// channel). Proxied AS the employee via their PAT.
+app.post(
+	"/api/chat/channels/:id/mark-read",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const channelId = c.req.param("id");
+		if (!channelId) return c.json({ error: "Missing channel id" }, 400);
+		const proxy = chatUserProxy(c);
+		if (!proxy.ok) return c.json({ error: "chat_not_provisioned" }, 503);
+		const tokenRow = await proxy.getToken();
+		if (!tokenRow) return c.json({ error: "chat_not_provisioned" }, 503);
+		const result = await proxy.call<unknown>(
+			`/api/v4/channels/members/${tokenRow.mmUserId}/view`,
+			{
+				method: "POST",
+				body: JSON.stringify({ channel_id: channelId }),
+			},
+		);
+		if (!result.ok) {
+			if (result.status === 503)
+				return c.json({ error: "chat_not_provisioned" }, 503);
+			return c.json({ error: "Mark-read failed" }, 502);
+		}
+		return c.json({ ok: true, channel_id: channelId });
+	},
+);
+
+// ── Phase 31 Wave 0: operator-gated PAT backfill ────────────────────
+//
+// Iterate every employee and mint+store a Mattermost PAT for any that lack
+// one, so existing employees provisioned before migration 3_mm_tokens get a
+// per-user token without sending a message first.
+//
+// PRODUCTION GATE: Do not call this endpoint against production until
+// MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS=true is confirmed set on the
+// internjobs-mattermost Fly app (plan 31-06 Task 1). Without the secret,
+// mintMmUserToken returns null (501 from MM) and all employees will land in
+// the failed count.
+app.post(
+	"/api/admin/chat/backfill-tokens",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!(await hasOperatorAccess(c.env, c.var.employee))) {
+			return c.json({ error: "forbidden_operator_only" }, 403);
+		}
+		const adminToken = c.env.MATTERMOST_ADMIN_TOKEN;
+		const botToken = c.env.MATTERMOST_BOT_TOKEN;
+		if (!adminToken || !botToken) {
+			return c.json({ error: "mattermost_admin_not_configured" }, 503);
+		}
+		const stub = getWorkspaceStub(c.env);
+		const employees = await stub.listEmployees();
+		let minted = 0;
+		let skipped = 0;
+		let failed = 0;
+		for (const emp of employees) {
+			const existing = await stub.getEmployeeToken(emp.clerk_user_id);
+			if (existing) {
+				skipped++;
+				continue;
+			}
+			const user = await getMmUserByEmail(
+				c.env.MATTERMOST_URL,
+				botToken,
+				emp.workspace_email,
+			);
+			if (!user) {
+				failed++;
+				continue;
+			}
+			const token = await mintMmUserToken(
+				c.env.MATTERMOST_URL,
+				adminToken,
+				user.id,
+			);
+			if (!token) {
+				failed++;
+				continue;
+			}
+			await stub.setEmployeeToken(emp.clerk_user_id, user.id, token);
+			minted++;
+		}
+		return c.json({ minted, skipped, failed });
+	},
+);
 
 // -- Wave 2b: employee admin + OIDC bridge --------------------------
 // Both subtrees are mounted on the same Hono app so they inherit the

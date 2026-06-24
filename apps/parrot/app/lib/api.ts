@@ -167,6 +167,12 @@ export const api = {
 	// PARROT-FOLDER-COUNTS-01: total message count per folder for the
 	// sidebar badges.
 	getFolderCounts: () => request<FolderCounts>("/api/inbox/folder-counts"),
+	// Phase 31 gap-fix: full-mailbox email search for the global header search
+	// when the user is on the Email pane.
+	searchEmails: (query: string) =>
+		request<{ results: InboxMessage[] }>(
+			`/api/inbox/search?q=${encodeURIComponent(query)}`,
+		),
 	getMessage: (id: string) =>
 		request<InboxMessage & { body?: string; attachments?: Attachment[] }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}`,
@@ -311,6 +317,12 @@ export const api = {
 	markNotificationsRead: (ids?: string[]) =>
 		request<{ ok: boolean }>("/api/notifications/mark-read", {
 			method: "POST",
+			body: JSON.stringify({ ids }),
+		}),
+	// Phase 31 gap-fix: discard notifications from the drawer. No ids ⇒ clear all.
+	clearNotifications: (ids?: string[]) =>
+		request<{ ok: boolean }>("/api/notifications", {
+			method: "DELETE",
 			body: JSON.stringify({ ids }),
 		}),
 	subscribePush: (subscription: PushSubscription) => {

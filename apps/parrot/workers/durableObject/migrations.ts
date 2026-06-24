@@ -318,4 +318,18 @@ export const employeeMailboxMigrations: Migration[] = [
 				CHECK (resolution_source IN ('agent', 'user') OR resolution_source IS NULL);
 		`,
 	},
+	{
+		// Phase 31 Wave 4 (plan 31-05, CHAT-RT-04): last-seen tracking for the
+		// offline @mention/DM email path. `last_seen_at` is touched
+		// fire-and-forget on every authenticated request (requireEmployeeMailbox
+		// → touchLastSeen). The DO alarm reads it: when it's older than 5 minutes
+		// AND there are unread `chat_mention` notifications, the employee is
+		// considered offline and an email is sent (sendOfflineChatNotification).
+		//
+		// Nullable ALTER (no DEFAULT, no backfill) — existing profile rows read
+		// NULL as "never seen via the WS-era request path", which the alarm
+		// treats as "not offline" (no false-positive emails on first deploy).
+		name: "9_last_seen",
+		sql: `ALTER TABLE profile ADD COLUMN last_seen_at TEXT;`,
+	},
 ];
