@@ -6,7 +6,20 @@
 - ✅ **v1.1 Seamless Waitlist and Student Threading** — Phase 07 (shipped 2026-05-15)
 - ✅ **v1.2 Two-Sided Agent MVP** — Phases 08–17 (shipped 2026-05-19)
 - ✅ **v1.3 Pilot Hardening** — Phases 18–20 shipped; Phase 21 skipped (sole-user deferral). Plus un-roadmapped Neon-exit shipped 2026-05-21.
-- ✅ **v1.4 Pilot Readiness** — Phases 22–29 (first team-mode milestone: `team-cms` + `team-workspace`; shipped to `main` 2026-06-16)
+- ✅ **v1.4 Pilot Readiness** — Phases 22–31 (first team-mode milestone: `team-cms` + `team-workspace`; core shipped 2026-06-16, tail phases 30–31 + CH-01 shipped through 2026-06-24)
+- 🚧 **v1.5 Workspace Integration Finish + Startup Pilot Go-Live** — Phases 32–36 (**whole milestone assigned to team-workspace / Nithin**; started 2026-06-30, on `integration/v1.5`)
+
+## v1.5 Phases (assigned to team-workspace — Nithin owns the whole milestone)
+
+Focused scope: finish the last Workspace true-integration pane + take the startup pilot live. team-cms is idle this milestone. Each phase is one PR into `integration/v1.5` (cut off `main`, inherits CH-01 per-phase submission markers + the `integration/**` ruleset). Assignment detail + pickup steps: `.planning/workstreams/team-workspace/ASSIGNMENT.md`.
+
+- [ ] **Phase 32: Workspace SMS/phone → Parrot** — *team-workspace* — wire the Workspace SMS + phone-call panes as thin entry points into ParrotAgent (Telnyx + Cloudflare Voice). Integrate the real backing service; do NOT reinvent the UX. Completes WORKSPACE-TRUE-INTEGRATION (Mail→Agent-Inbox = phase 30, Chat→Mattermost = phase 31).
+- [ ] **Phase 33: Startups web app go-live** — *team-workspace* — execute `PHASE-28.5-DEFERRED-OPS.md` (DNS, Email Routing domain verification, `STARTUPS_CLERK_*` → Infisical, Clerk webhook) to bring `startups.internjobs.ai` + per-startup agent email live.
+- [ ] **Phase 34: Telnyx SMS + Voice AI go-live** — *team-workspace* — execute `PHASE-29-DEFERRED-OPS.md` (Telnyx signup + toll-free number + BRN + API key + Voice AI portal + R2 + KV + cron) to bring startup SMS + voice-intake onboarding live.
+- [ ] **Phase 35: First live pilot install** — *team-workspace* — STARTUP-PILOT-LIVE-01; depends on 33/34; evidence in `PILOT-EVIDENCE.md`.
+- [ ] **Phase 36: Lakera fail-open + tier confirm** — *team-workspace* — LAKERA-VERIFY-LIVE-03 + tier/quota confirmation (`infra/LAKERA-PRICING.md`).
+
+**Account-gated ops caveat:** S1–S4 (phases 33–36) include steps that need Raj's accounts (Cloudflare DNS/Email, Telnyx signup + number, Clerk secrets, Infisical writes). Nithin does the code/config; credential-gated steps are handed to Raj or done with granted access. Secrets → Infisical only.
 
 ## Overview
 
