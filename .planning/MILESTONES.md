@@ -1,5 +1,30 @@
 # Project Milestones: InternJobs.ai
 
+## v1.4 Pilot Readiness (Shipped: 2026-06-24)
+
+**Delivered:** First RRR **team-mode** milestone (team-cms + team-workspace on parallel branches → `integration/v1.4` → `main`). Closed v1.3's dangling work, completed the Neon-exit, landed Workspace upgrades, and stood up the startup channel foundation — plus two beyond-roadmap Workspace true-integration panes.
+
+**Phases shipped (22–31):**
+- **22 Lakera Verification + Marketing Brand Refresh** (team-cms) — Lakera live-verified in prod; v1.0 brand system live on `internjobs.ai`.
+- **23 Workspace Pilot Closeouts** (team-workspace) — closeTodoFact writer + Workspace email Lakera test + attachment download + agent-lift UAT.
+- **24 Neon-Exit Closeout** (team-cms) — E2E `safety_events` API verification + doc refresh.
+- **25 SSO Activation + Admin UX** (team-workspace) — Mattermost OIDC SSO + admin capability toggles.
+- **26 Knowledge Graph + GenZ Polish** (team-workspace) — FalkorDB `:Employee` reuse + GIF picker + confetti.
+- **27 Polish + Test Floor** (team-workspace) — Daily.co theme + star API + `formatQuotedDate` cleanup + Vitest smoke tests.
+- **28 Startup MCP Server + Channel-Adapter Core** (team-cms) — MCP server at `mcp.internjobs.ai` (code-complete; live pilot → v1.5).
+- **28.5 Startups Web App + Clerk #3 + Per-Startup Agent Email** (team-cms) — code-complete; ops → v1.5 S1.
+- **29 Startup Telnyx SMS + Voice AI** (team-cms) — code-complete; ops → v1.5 S2.
+- **30 Parrot Email-Pane Parity** (team-workspace) — Mail → Agent-Inbox true integration.
+- **31 Native Mattermost Chat Client** (team-workspace, +10k LOC) — Chat → Mattermost true integration (real-time WS, channels/DMs, presence, search, reactions, files, @mentions, pins).
+
+**Coordinator hardening:** CH-01 — enforced **per-phase submission markers** (`submissions/<phase>.json`) replacing the collision-prone rolling `SUBMISSION.json`; landed on `main` pre-v1.5. Submission gate + `integration/**` ruleset established mid-milestone (the coordinator can no longer merge unsubmitted team work).
+
+**Deferred to v1.5:** startup ops go-live (28.5 + 29 deferred-ops runbooks), first live pilot install, Lakera fail-open + tier confirm, and the final Workspace pane (SMS/phone → Parrot).
+
+**Archive:** `.planning/milestones/v1.4-pilot-readiness/`
+
+---
+
 ## v1.3 Pilot Hardening (Shipped: 2026-05-19, partial)
 
 **Delivered:** 3 of 4 planned phases shipped; 1 explicitly skipped; 1 large un-roadmapped initiative also landed.
