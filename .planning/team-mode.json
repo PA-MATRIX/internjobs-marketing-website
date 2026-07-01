@@ -4,12 +4,12 @@
   "status": "pilot",
   "created_at": "2026-05-24T18:04:31.017Z",
   "project_root": "/Users/rajren/internjobs-cms",
-  "milestone": "v1.4",
+  "milestone": "v1.5",
   "github": {
     "org": "PA-MATRIX",
     "repo": "PA-MATRIX/internjobs-marketing-website",
     "base_branch": "main",
-    "integration_branch": "integration/v1.4"
+    "integration_branch": "integration/v1.5"
   },
   "runner": {
     "type": "sprites",
@@ -22,15 +22,15 @@
   "teams": {
     "team-cms": {
       "github_team": "@PA-MATRIX/team-cms",
-      "branch": "rrr/v1.4/team-cms",
-      "sprite": "rrr-internjobs-marketing-website-v1-4-team-cms",
+      "branch": "rrr/v1.5/team-cms",
+      "sprite": "rrr-internjobs-marketing-website-v1-5-team-cms",
       "phases": [],
       "status": "assigned"
     },
     "team-workspace": {
       "github_team": "@PA-MATRIX/team-workspace",
-      "branch": "rrr/v1.4/team-workspace",
-      "sprite": "rrr-internjobs-marketing-website-v1-4-team-workspace",
+      "branch": "rrr/v1.5/team-workspace",
+      "sprite": "rrr-internjobs-marketing-website-v1-5-team-workspace",
       "phases": [],
       "status": "assigned"
     }
