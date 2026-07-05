@@ -16,7 +16,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 
 **Target features (focused scope, confirmed 2026-06-30):**
 
-- **W1 — Workspace SMS/phone → Parrot** (team-workspace): wire the Workspace SMS + phone-call panes as thin entry points into ParrotAgent (Telnyx + Cloudflare Voice) — integrate the real backing service, no reinvented UX. Completes WORKSPACE-TRUE-INTEGRATION (Mail→Agent-Inbox shipped v1.4 phase 30; Chat→Mattermost shipped v1.4 phase 31).
+- **W1 — Embed Parrot into the Workspace SMS/phone pane** (team-workspace): Parrot is a *separate* dialer/phone+SMS product (built by our own dev) — we embed its internjobs tenant via `<iframe>` + OIDC SSO (reuse the Mattermost `/oidc/*` bridge), we do NOT build a dialer or reinvent UX. Completes WORKSPACE-TRUE-INTEGRATION (Mail→Agent-Inbox shipped v1.4 phase 30; Chat→Mattermost shipped v1.4 phase 31). Spec: `.planning/workstreams/team-workspace/PARROT-EMBED-SPEC.md`.
 - **S1 — Startups web app go-live** (team-cms): execute `PHASE-28.5-DEFERRED-OPS.md` (DNS, Email Routing domain verification, `STARTUPS_CLERK_*` secrets → Infisical, Clerk webhook) to bring `startups.internjobs.ai` + per-startup agent email live.
 - **S2 — Telnyx SMS + Voice AI go-live** (team-cms): execute `PHASE-29-DEFERRED-OPS.md` (Telnyx signup + toll-free number + BRN + API key + Voice AI portal + R2 + KV + cron) to bring startup SMS + voice-intake onboarding live.
 - **S3 — First live pilot install** (team-cms): STARTUP-PILOT-LIVE-01 — real founder installs MCP (or web onboard) and completes `me()` + `post_role` + `search` + `reply`; evidence in `PILOT-EVIDENCE.md`.
@@ -133,7 +133,7 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 
 **Track W — Workspace true-integration finish (team-workspace):**
 
-- [ ] **W1 WORKSPACE-SMS-PHONE-PARROT**: Wire the Workspace SMS + phone-call panes as thin entry points into ParrotAgent (Telnyx + Cloudflare Voice). Integrate the real backing service — no reinvented UX (per the WORKSPACE-TRUE-INTEGRATION directive). Completes the tripod: Mail→Agent-Inbox (phase 30) + Chat→Mattermost (phase 31) already shipped. **Team: team-workspace**
+- [ ] **W1 WORKSPACE-PARROT-EMBED**: Embed the **Parrot** dialer (a separate phone+SMS product built by our own dev) into the Workspace SMS/phone pane — `<iframe>` of Parrot's internjobs tenant + OIDC SSO via the existing Mattermost `/oidc/*` bridge. Do NOT build a dialer or reinvent UX (per WORKSPACE-TRUE-INTEGRATION). Completes the tripod: Mail→Agent-Inbox (phase 30) + Chat→Mattermost (phase 31) already shipped. Spec: `PARROT-EMBED-SPEC.md`. **Team: team-workspace**
 
 **Track S — Startup pilot go-live (team-cms):**
 
