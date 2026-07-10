@@ -28,8 +28,10 @@
 		// only if you want to keep them out of git; otherwise leave empty here and
 		// populate at deploy time from Infisical /internjobs-ai env=prod keys
 		// STARTUPS_CLERK_ISSUER + STARTUPS_CLERK_JWKS_URL.
-		"STARTUPS_CLERK_JWKS_URL": "",
-		"STARTUPS_CLERK_ISSUER": ""
+		// v1.5 Phase 33: employers Clerk app (renamed from startups; frontend API on
+		// clerk.employers.internjobs.ai). Public endpoints — safe to keep in config.
+		"STARTUPS_CLERK_JWKS_URL": "https://clerk.employers.internjobs.ai/.well-known/jwks.json",
+		"STARTUPS_CLERK_ISSUER": "https://clerk.employers.internjobs.ai"
 	},
 	// Workers AI binding (Phase 28 Plan 03). Used by lib/embed.ts to compute
 	// 768-dim bge-base-en-v1.5 vectors directly via env.AI.run() — NO dependency
