@@ -19,11 +19,12 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import worker, {
-	dispatchToEmployersHandoff,
-	EMPLOYERS_HANDOFF_TIMEOUT_MS,
-	OVERHEAD_BUDGET_MS,
-} from "./index.js";
+import * as entrypoint from "./index.js";
+import worker, { dispatchToEmployersHandoff } from "./index.js";
+// The latency-budget constants live in a NON-entrypoint module on purpose: a
+// numeric named export on index.js makes workerd refuse to start the whole
+// Worker. See src/constants.js and the entrypoint-export guard test below.
+import { EMPLOYERS_HANDOFF_TIMEOUT_MS, OVERHEAD_BUDGET_MS } from "./constants.js";
 
 // Must match the constants in index.js (intentionally re-stated here rather
 // than imported, so a silent change to either is caught by these tests).
@@ -495,4 +496,47 @@ test("regression: even a FAILING operator forward does not make email() throw", 
 	} finally {
 		mock.restore();
 	}
+});
+
+// ── workerd entrypoint-shape guard (Phase 33 Plan 04) ────────────────────────
+//
+// REGRESSION GUARD for a real production outage caused during 33-04.
+//
+// src/index.js is the Worker ENTRYPOINT. The Workers runtime requires every
+// NAMED export of an entrypoint module to be a handler — a function,
+// ExportedHandler, or WorkerEntrypoint/DurableObject class. Plan 33-02 declared
+// `export const EMPLOYERS_HANDOFF_TIMEOUT_MS = 20000` (a NUMBER) here, and
+// workerd responded by refusing to instantiate the entire script:
+//
+//   Uncaught TypeError: Incorrect type for map entry
+//   'EMPLOYERS_HANDOFF_TIMEOUT_MS': the provided value is not of type
+//   'function or ExportedHandler'.  The Workers runtime failed to start.
+//
+// Because this Worker owns the zone-wide CF Email Routing catch-all, that is a
+// TOTAL inbound-mail outage for internjobs.ai — conv-alias ingestion and the
+// operator forward included.
+//
+// Nothing else in the pipeline catches it: `node --check` passes (valid syntax),
+// node:test passes (Node allows numeric named exports), and `wrangler deploy`
+// ACCEPTS the upload — it only explodes at runtime instantiation. Hence this
+// test, which encodes the runtime's actual constraint.
+test("workerd guard: every named export of the entrypoint is a function (no primitives)", () => {
+	const offenders = Object.entries(entrypoint)
+		.filter(([name]) => name !== "default")
+		.filter(([, value]) => typeof value !== "function")
+		.map(([name, value]) => `${name} (${typeof value})`);
+
+	assert.deepEqual(
+		offenders,
+		[],
+		"src/index.js is the Worker entrypoint: workerd requires every named export to be a " +
+			"function/handler and will REFUSE TO START the whole Worker otherwise (total inbound-mail " +
+			"outage for the zone). Move non-function values (constants, config objects) into a " +
+			"non-entrypoint module such as src/constants.js and import them here instead. " +
+			"Offending export(s): " +
+			(offenders.join(", ") || "none"),
+	);
+
+	// The default export must still be the email handler.
+	assert.equal(typeof entrypoint.default?.email, "function", "default export must expose email()");
 });

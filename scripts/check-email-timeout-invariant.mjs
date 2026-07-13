@@ -50,7 +50,13 @@ import { fileURLToPath } from "node:url";
 // Paths are resolved relative to THIS FILE, not the CWD, so the script behaves
 // identically from the repo root, from a package dir, or from a CI runner.
 const STARTUP_EMAIL_TS = "apps/startup/workers/routes/email.ts";
-const EMAIL_WORKER_JS = "apps/email-worker/src/index.js";
+// NOTE: the email-worker half of the budget lives in src/constants.js, NOT in
+// src/index.js. src/index.js is the Worker ENTRYPOINT, and workerd requires every
+// named export of an entrypoint to be a function/handler — `export const FOO = 5000`
+// there makes the runtime refuse to start the entire Worker (a total inbound-mail
+// outage for the zone; see src/constants.js). The constants were moved out for
+// that reason, so this script reads them from where they actually live.
+const EMAIL_WORKER_JS = "apps/email-worker/src/constants.js";
 
 /**
  * Read a source file, failing loudly if it is missing or moved.

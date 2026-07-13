@@ -83,14 +83,21 @@ const EMPLOYERS_DOMAIN_SUFFIX = "@employers.internjobs.ai";
 //   RESOLVE_TIMEOUT_MS + INSERT_TIMEOUT_MS + OVERHEAD_BUDGET_MS <= EMPLOYERS_HANDOFF_TIMEOUT_MS
 // i.e. 4000 + 5000 + 5000 = 14000 <= 20000 (6000ms real slack). This is
 // enforced in CI by scripts/check-email-timeout-invariant.mjs (Plan 33-04),
-// which reads the real constants from both this file and apps/startup's
+// which reads the real constants from src/constants.js and apps/startup's
 // email.ts — NOT by this comment, and NOT by either package's own
 // self-referential unit test. If you change any of these three numbers, the CI
 // script (not a human re-reading this comment) is what will catch a resulting
 // violation. Wall-clock time spent awaiting fetch() is not CPU-billed on
 // Workers, so keeping this ceiling generous costs nothing.
-export const OVERHEAD_BUDGET_MS = 5000;
-export const EMPLOYERS_HANDOFF_TIMEOUT_MS = 20000;
+//
+// ⚠️ These two constants are IMPORTED, not declared here, and must STAY that
+// way. This file is the Worker ENTRYPOINT: workerd requires every named export
+// of an entrypoint module to be a function/handler, so `export const FOO = 5000`
+// here makes the runtime refuse to start the ENTIRE script ("Incorrect type for
+// map entry ... not of type 'function or ExportedHandler'") — a total inbound-
+// mail outage for the whole zone. `wrangler deploy` ACCEPTS such a script; it
+// only fails at instantiation. See src/constants.js for the full story.
+import { OVERHEAD_BUDGET_MS, EMPLOYERS_HANDOFF_TIMEOUT_MS } from "./constants.js";
 
 /**
  * Hand raw inbound mail off to the startup Worker's internal endpoint.
