@@ -8,7 +8,8 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "tail": "wrangler tail internjobs-email-ingest",
-    "check": "node --check src/index.js"
+    "check": "node --check src/index.js",
+    "test": "node --test src/*.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

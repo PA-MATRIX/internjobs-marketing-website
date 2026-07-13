@@ -109,3 +109,23 @@ jobs:
         if: github.event_name == 'push'
         continue-on-error: true
         run: npx wrangler deploy --dry-run --outdir /tmp/startup-dry
+
+  # ---- Email Worker (apps/email-worker) — the zone-wide CF Email Routing ----
+  # catch-all. Carries ALL live inbound mail for internjobs.ai, and until v1.5
+  # Phase 33 it had ZERO test coverage in the pipeline. Plain ESM JS with no
+  # runtime dependencies, so there is nothing to `npm ci` — node:test runs the
+  # .test.js files natively.
+  email-worker:
+    name: email worker (tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/email-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      - name: unit tests (node:test)
+        run: npm test
