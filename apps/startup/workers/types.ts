@@ -29,6 +29,13 @@ export interface Env {
 	// 28-04 marketing-CTA path already has the same fallback semantics).
 	EMAIL?: SendEmail;
 
+	// v1.5 Phase 33-01 — Shared bearer secret for apps/email-worker's HTTP handoff
+	// to POST /internal/email/inbound. Set via `wrangler secret put`; mirrored in
+	// apps/email-worker's own secret of the same name. Optional at type level (like
+	// every other secret-provisioned field) so routes/email.ts stays the source of
+	// truth for "secret missing -> 401", rather than a compile error.
+	EMAIL_HANDOFF_SECRET?: string;
+
 	// v1.4 Phase 29 — Telnyx SMS + Voice AI bindings (all OPTIONAL at type
 	// level; runtime guards in routes/telnyx.ts and lib/telnyx.ts log + no-op
 	// when absent so the Worker never 500s before Telnyx ops close.

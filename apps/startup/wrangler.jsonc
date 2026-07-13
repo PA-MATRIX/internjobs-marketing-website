@@ -41,9 +41,9 @@
 	//   • routes/api.ts — marketing-CTA leads to raj@internjobs.ai (Plan 28-05)
 	//   • routes/admin.ts — per-startup welcome email from
 	//     welcome@employers.internjobs.ai during /admin/startups/new (Plan 28.5-04)
-	//   • routes/email.ts — inbound catch-all handler (the email() export on
-	//     the Worker default export, not this send binding — this binding only
-	//     covers outbound send via env.EMAIL.send())
+	//   • routes/email.ts — inbound handler (the POST /internal/email/inbound
+	//     HTTP handoff + the legacy email() export — neither uses this binding;
+	//     this binding only covers outbound send via env.EMAIL.send())
 	// The binding is OPTIONAL — both routes/api.ts and routes/admin.ts
 	// gracefully fall back to log-only if env.EMAIL is unbound (handy for
 	// local dev with `wrangler dev` where send_email isn't wired, and for the
@@ -86,6 +86,18 @@
 	//                                   Infisical /internjobs-ai/TELNYX_FROM_NUMBER.
 	//   TELNYX_MESSAGING_PROFILE_ID   — (optional) Telnyx messaging profile id.
 	//                                   Recommended for US production deliverability.
+	//   EMAIL_HANDOFF_SECRET          — v1.5 Phase 33-01. Bearer secret gating
+	//                                   POST /internal/email/inbound, the HTTP
+	//                                   handoff endpoint apps/email-worker
+	//                                   (`internjobs-email-ingest`) uses to deliver
+	//                                   raw MIME for @employers.internjobs.ai mail.
+	//                                   (CF Email Routing allows only ONE zone-wide
+	//                                   catch-all, already owned by email-worker —
+	//                                   hence the HTTP hop instead of a second rule.)
+	//                                   The SAME value must be set on BOTH Workers.
+	//                                   Generate via `openssl rand -hex 32`; set via
+	//                                   `wrangler secret put EMAIL_HANDOFF_SECRET --config apps/startup/wrangler.jsonc`
+	//                                   Infisical key: EMAIL_HANDOFF_SECRET.
 	//
 	// v1.4 Phase 28.5 STARTUPS_CLERK_* — Startups Clerk app #3 secrets.
 	// See .planning/milestones/v1.4-pilot-readiness/phases/28.5-startups-web-app/28.5-01-PLAN.md
