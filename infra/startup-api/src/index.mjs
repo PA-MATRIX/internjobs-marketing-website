@@ -763,6 +763,7 @@ app.get("/v1/startups/:id/stats", async (c) => {
   try {
     const { rows: [stats] } = await pool.query(
       `SELECT
+         (SELECT agent_email FROM startups WHERE id = $1) AS agent_email,
          (SELECT count(*)::int FROM roles
             WHERE startup_id = $1 AND status = 'active') AS active_role_count,
          (SELECT count(*)::int FROM startup_action_log
@@ -774,6 +775,11 @@ app.get("/v1/startups/:id/stats", async (c) => {
     );
     return c.json({
       startup_id: startupId,
+      // Bug B (v1.5 33-08): handleGetMe reads agent_email from THIS response to
+      // render the dashboard "your agent" card. The column (migration 0013) was
+      // never selected here, so the card always showed "pending" despite a
+      // provisioned address. Now surfaced.
+      agent_email: stats?.agent_email ?? null,
       active_role_count: stats?.active_role_count ?? 0,
       actions_last_7d: stats?.actions_last_7d ?? 0,
       last_action_at: stats?.last_action_at ?? null,

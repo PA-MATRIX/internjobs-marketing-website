@@ -229,7 +229,17 @@ async function resolveIdentity(
     env,
     clerkToken,
   });
-  if (!linked.ok) return first; // guard tripped or no match — stay unlinked, do not surface the link error
+  if (!linked.ok) {
+    // Bug A (v1.5 33-08) — first-load race: the dashboard fires /me + /roles +
+    // /threads concurrently. On the ONE load where the concierge:% → user_ flip
+    // happens, one request wins the link; the others then find no concierge:%
+    // row and link-clerk-id 404s here — even though the row is now correctly
+    // linked to OUR OWN verified sub. Re-resolve by clerk_user_id: if a sibling
+    // just linked us it now succeeds; a genuine no-member case still returns its
+    // 404. This only re-reads by our verified sub (no new trust surface) and the
+    // takeover guard (Fly's `clerk_user_id LIKE 'concierge:%'` UPDATE) is untouched.
+    return await lookupIdentityByClerkId(env, clerkToken, sub);
+  }
 
   try {
     const json = await linked.json<{

@@ -360,6 +360,56 @@ test("respects Fly's takeover guard — surfaces the original 404 when link-cler
   );
 });
 
+test("Bug A race: link-clerk-id 404s because a sibling request already linked us — re-resolve by clerk_user_id and succeed", async () => {
+  // Models the dashboard's concurrent /me + /roles + /threads on the ONE load
+  // where the concierge:% → user_ flip happens. This request loses the link
+  // race: identity-by-clerk-id 404s (not yet linked when it first looked),
+  // link-clerk-id 404s (a sibling already flipped the concierge:% row to THIS
+  // same user), and the re-resolve then finds the now-linked row.
+  let identityCall = 0;
+  await withStub(
+    {
+      identity: () => {
+        identityCall += 1;
+        // 1st lookup: not linked yet. 2nd lookup (post-race re-resolve): linked.
+        return identityCall === 1
+          ? jsonRes({ error: "not_found" }, 404)
+          : jsonRes({
+              startup_id: "startup-race",
+              member_id: "member-race",
+              startup_name: "Race Co",
+              role: "founder",
+            });
+      },
+      clerkUser: () =>
+        jsonRes({
+          id: "user_race",
+          primary_email_address_id: "idn_1",
+          email_addresses: [
+            {
+              id: "idn_1",
+              email_address: "founder@raceco.com",
+              verification: { status: "verified" },
+            },
+          ],
+        }),
+      // A sibling request already linked the concierge:% row to user_race, so
+      // there's no concierge:% row left for THIS request to link.
+      link: () => jsonRes({ error: "no_linkable_member_found" }, 404),
+    },
+    async (h) => {
+      const token = await signToken({ sub: "user_race", iss: ISSUER, exp: FUTURE() });
+      const res = await call(meRequest(token));
+      assert.equal(res.status, 200, "must recover via re-resolve, not surface the stale 404");
+      const body = await res.json<{ startup_name: string }>();
+      assert.equal(body.startup_name, "Race Co");
+      assert.equal(identityCall, 2, "identity-by-clerk-id re-resolved exactly once after the lost link");
+      const linkCalls = h.flyCalls.filter((c) => c.path === "/v1/startups/link-clerk-id");
+      assert.equal(linkCalls.length, 1, "link attempted once; not retried");
+    },
+  );
+});
+
 test("missing Authorization header returns 401 missing_clerk_token", async () => {
   await withStub({}, async (h) => {
     const res = await call(meRequest());
