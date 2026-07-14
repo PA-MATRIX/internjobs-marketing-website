@@ -202,6 +202,27 @@ test("employers: 404 unknown slug FAILS SAFE to the operator forward (never drop
 	}
 });
 
+test("33-08: OPERATOR_FALLBACK_EMAIL env overrides the fallback target; unset keeps the default", async () => {
+	// Configured: fail-safe forward goes to the configured operator, not the default.
+	let mock = installFetchMock((url) => (url === HANDOFF_URL ? ok(404) : ok(200)));
+	try {
+		const message = makeMessage({ to: "nobody@employers.internjobs.ai" });
+		await worker.email(message, makeEnv({ OPERATOR_FALLBACK_EMAIL: "ops@growthpods.io" }), {});
+		assert.deepEqual(message.forwards, ["ops@growthpods.io"], "override must be honored");
+	} finally {
+		mock.restore();
+	}
+	// Empty/whitespace override falls back to the hardcoded default (no accidental blank forward).
+	mock = installFetchMock((url) => (url === HANDOFF_URL ? ok(404) : ok(200)));
+	try {
+		const message = makeMessage({ to: "nobody@employers.internjobs.ai" });
+		await worker.email(message, makeEnv({ OPERATOR_FALLBACK_EMAIL: "   " }), {});
+		assert.deepEqual(message.forwards, [OPERATOR_FALLBACK], "blank override must not blank the forward");
+	} finally {
+		mock.restore();
+	}
+});
+
 test("employers: 500 from the startup Worker FAILS SAFE to the operator forward", async () => {
 	const mock = installFetchMock((url) => (url === HANDOFF_URL ? ok(500) : ok(200)));
 	try {

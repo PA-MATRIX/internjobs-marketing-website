@@ -30,7 +30,7 @@
 //      the startup Worker's 404 for an unknown slug) falls through to (3).
 //   3. Everything else (agent.internjobs.ai non-conv addresses, apex addresses
 //      without their own specific-address rule, and employers handoff
-//      failures) → message.forward(OPERATOR_FALLBACK).
+//      failures) → message.forward(operatorFallback).
 //
 // The operator forward is the universal safety net: on EVERY failure path,
 // mail reaches a human rather than being dropped — PITFALLS #7: CF Email
@@ -200,6 +200,13 @@ export default {
    * @param {ExecutionContext} ctx
    */
   async email(message, env, ctx) {
+    // v1.5 33-08: operator fallback address, configurable via env
+    // (OPERATOR_FALLBACK_EMAIL), defaulting to the hardcoded OPERATOR_FALLBACK.
+    // Declared BEFORE the try so it is in scope for the outer catch's forward —
+    // the universal safety net — even when an early line inside try throws.
+    // Cloudflare Email Routing only delivers to a VERIFIED destination address.
+    const operatorFallback =
+      (env.OPERATOR_FALLBACK_EMAIL || "").trim() || OPERATOR_FALLBACK;
     try {
       const from = message.from ?? "";
       const to = message.to ?? "";
@@ -240,7 +247,7 @@ export default {
         }
 
         try {
-          await message.forward(OPERATOR_FALLBACK);
+          await message.forward(operatorFallback);
         } catch (forwardErr) {
           console.log(
             JSON.stringify({
@@ -371,7 +378,7 @@ export default {
         // is never silently lost. Phase-04 will pick up replay from the
         // operator side until the Fly ingest is healthy.
         try {
-          await message.forward(OPERATOR_FALLBACK);
+          await message.forward(operatorFallback);
         } catch (forwardErr) {
           console.log(
             JSON.stringify({
@@ -393,7 +400,7 @@ export default {
         }),
       );
       try {
-        await message.forward(OPERATOR_FALLBACK);
+        await message.forward(operatorFallback);
       } catch (_) {
         /* swallow — last resort, nothing more we can do */
       }
