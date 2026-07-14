@@ -73,9 +73,8 @@
     "33-07-EVIDENCE.md"
   ],
   "risks": [
-    "OPERATOR_FALLBACK_EMAIL now routes zone fallback to nithin@ (reversible",
-    "Raj to confirm)",
-    "integration/v1.5 was stale — this PR un-stales it"
+    "email-worker operator fallback is now configurable via OPERATOR_FALLBACK_EMAIL (33-08); default + current deployed value is rentalaraj@gmail.com (the nithin@ override used only for the 33-05 live test was deleted after)",
+    "integration/v1.5 was stale (cut before the v1.5 planning docs landed); this PR drags in the 4 coordinator commits and un-stales it"
   ],
   "updated_at": "2026-07-14T21:57:34.010Z"
 }
