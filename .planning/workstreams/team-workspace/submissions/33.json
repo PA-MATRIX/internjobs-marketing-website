@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "workstream": "team-workspace",
+  "github_team": "@PA-MATRIX/team-workspace",
+  "milestone": "v1.5",
+  "phase": "33",
+  "branch": "rrr/v1.5/team-workspace-33",
+  "expected_branch": "rrr/v1.5/team-workspace",
+  "base_branch": "integration/v1.5",
+  "base_sha": "8a1c3be332f074869c3f475f43ad6233d7919559",
+  "head_sha": "192650208c658d9976421eb27c7a02531acf55f1",
+  "phases_assigned": [
+    "32",
+    "33",
+    "34",
+    "35",
+    "36"
+  ],
+  "phases_completed": [
+    "33"
+  ],
+  "ready_for_integration": true,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".planning/PROJECT.md",
+    ".planning/ROADMAP.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-01-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-01-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-02-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-02-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-03-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-03-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-04-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-04-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-05-EVIDENCE.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-05-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-06-PLAN.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-06-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-07-EVIDENCE.md",
+    ".planning/milestones/v1.5/phases/33-startups-web-app-golive/33-07-PLAN.md",
+    ".planning/team-mode.json",
+    ".planning/workstreams/team-workspace/ASSIGNMENT.md",
+    ".planning/workstreams/team-workspace/PARROT-EMBED-SPEC.md",
+    "apps/email-worker/package.json",
+    "apps/email-worker/src/constants.js",
+    "apps/email-worker/src/index.js",
+    "apps/email-worker/src/index.test.js",
+    "apps/email-worker/wrangler.toml",
+    "apps/employers/.env.example",
+    "apps/employers/functions/api/[[path]].test.ts",
+    "apps/employers/functions/api/[[path]].ts",
+    "apps/employers/index.html",
+    "apps/employers/package.json",
+    "apps/startup/workers/app.ts",
+    "apps/startup/workers/routes/email.test.ts",
+    "apps/startup/workers/routes/email.ts",
+    "apps/startup/workers/types.ts",
+    "apps/startup/wrangler.jsonc",
+    "infra/startup-api/smoke.mjs",
+    "infra/startup-api/src/index.mjs",
+    "package-lock.json",
+    "scripts/33-clerk-restrictions-config.mjs",
+    "scripts/check-email-timeout-invariant.mjs"
+  ],
+  "tests_run": [
+    "employers-auth:12",
+    "email-worker:23",
+    "startup:103",
+    "timeout-invariant"
+  ],
+  "uat_artifacts": [
+    "33-05-EVIDENCE.md",
+    "33-07-EVIDENCE.md"
+  ],
+  "risks": [
+    "OPERATOR_FALLBACK_EMAIL now routes zone fallback to nithin@ (reversible",
+    "Raj to confirm)",
+    "integration/v1.5 was stale — this PR un-stales it"
+  ],
+  "updated_at": "2026-07-14T21:57:34.010Z"
+}
