@@ -11,6 +11,10 @@
 // API surface (minimal by design):
 //   POST  /v1/startups/token       — lookup startup context by mcp_token_hash
 //   POST  /v1/startups             — create startup + member + issue MCP token
+//   POST  /v1/startups/identity-by-clerk-id — resolve web identity by clerk_user_id
+//   POST  /v1/startups/link-clerk-id — lazy-link a concierge:% placeholder to a
+//                                    real Clerk id (guarded, concierge:%-only;
+//                                    v1.5 Phase 33-06 — replaces deleted webhook)
 //   PATCH /v1/startups/:id/token   — rotate MCP token (returns new plaintext)
 //   GET   /v1/startups/:id/stats   — active role count + 7-day action count
 //                                    (added in 28-03 for me() tool)
@@ -114,9 +118,13 @@ function generateToken() {
 }
 
 function synthClerkUserId() {
-  // Concierge-onboarding placeholder. When the founder eventually goes
-  // through workspace.internjobs.ai Clerk sign-in, the row is UPDATEd
-  // to flip clerk_user_id to the real `user_*` id.
+  // Concierge-onboarding placeholder. The founder's real `user_*` id is
+  // flipped in later by POST /v1/startups/link-clerk-id (v1.5 Phase 33-06),
+  // which the apps/employers Pages Function's resolveIdentity() lazy-link
+  // fallback calls after it (a) cryptographically verifies the Clerk session
+  // JWT signature via JWKS and (b) confirms the founder's email is verified
+  // via the Clerk Backend API. No webhook is involved (the 28.5-05
+  // user.created webhook that once did this was deleted 2026-05-27).
   return `concierge:${randomBytes(16).toString("hex")}`;
 }
 
@@ -191,14 +199,21 @@ app.post("/v1/startups/token", async (c) => {
 // Body: { clerk_user_id: string }
 // Returns: { startup_id, member_id, startup_name, role } or 404 not_found.
 //
-// Added in 28.5-02 to support the apps/startups CF Pages Function identity
-// resolution path. The Pages Function forwards a Clerk session JWT as
-// X-Clerk-Token, and 28.5-03 will add JWKS verification on the Fly side
-// that calls this endpoint after extracting `sub` from the verified JWT.
+// Added in 28.5-02 to support the apps/employers CF Pages Function identity
+// resolution path. JWKS/RS256 verification of the Clerk session JWT happens
+// in the apps/employers Pages Function (v1.5 Phase 33-06) — the boundary that
+// already holds the raw token — NOT on Fly. The Pages Function extracts `sub`
+// from the cryptographically-verified JWT and calls this endpoint with it,
+// still forwarding the raw JWT as X-Clerk-Token for context.
 //
 // Why a dedicated endpoint instead of overloading /v1/startups/token: the
 // MCP path is keyed on `mcp_token_hash` (the MCP install token), while the
-// web path is keyed on `clerk_user_id` set during signup (28.5-05 webhook).
+// web path is keyed on `clerk_user_id`. That id starts life as a
+// `concierge:%` placeholder (see synthClerkUserId) minted at concierge
+// onboarding, and is flipped to the founder's real `user_...` id by
+// POST /v1/startups/link-clerk-id (v1.5 Phase 33-06) on their first
+// authenticated sign-in — NOT by any webhook (the 28.5-05 user.created
+// webhook that once did this was deleted 2026-05-27).
 // Two distinct lookups, two distinct routes — explicit > clever.
 app.post("/v1/startups/identity-by-clerk-id", async (c) => {
   const pool = getPool();
@@ -230,6 +245,97 @@ app.post("/v1/startups/identity-by-clerk-id", async (c) => {
       error: err?.message,
     }));
     return c.json({ error: "query_failed" }, 500);
+  }
+});
+
+// ── POST /v1/startups/link-clerk-id ──────────────────────────────────────────
+// Body: { clerk_user_id: string, email: string }
+// Lazy-link: flips a placeholder `concierge:<hex>` clerk_user_id to the real
+// Clerk user id, for the row matching by (caller-verified) email. This
+// replaces the deleted 28.5-05 user.created webhook (removed 2026-05-27,
+// commit 67f69e0, when work-email enforcement moved to Clerk's native
+// Restrictions API — the webhook's linking half was silently dropped along
+// with the enforcement half it was replaced for).
+//
+// SECURITY — this is an account-takeover primitive if the guard below is
+// ever relaxed. The WHERE clause is load-bearing:
+//   clerk_user_id LIKE 'concierge:%'  — an already-linked member (real
+//   `user_...` id) is NEVER re-pointed, even if a different verified
+//   session later presents a matching email. Do not remove this guard, and
+//   do not add a fallback path that bypasses it.
+//
+// Caller MUST have already cryptographically verified BOTH `clerk_user_id`
+// (JWT `sub`, JWKS-verified) and `email` (Clerk Backend API, verification
+// .status === 'verified') before calling this endpoint. This endpoint does
+// no verification of its own — it trusts its caller completely, same as
+// every other /v1/* route (shared STARTUP_API_SECRET boundary).
+app.post("/v1/startups/link-clerk-id", async (c) => {
+  const pool = getPool();
+  if (!pool) return c.json({ error: "no_database" }, 503);
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: "invalid_json" }, 400); }
+  const { clerk_user_id, email } = body ?? {};
+  if (!clerk_user_id || typeof clerk_user_id !== "string") {
+    return c.json({ error: "clerk_user_id_required" }, 400);
+  }
+  if (!email || typeof email !== "string") {
+    return c.json({ error: "email_required" }, 400);
+  }
+  if (clerk_user_id.startsWith("concierge:")) {
+    // Defensive: never allow a placeholder value to be written as the "real" id.
+    return c.json({ error: "clerk_user_id_must_not_be_placeholder" }, 400);
+  }
+  try {
+    // Single deterministic target row (oldest matching placeholder wins),
+    // matching the ORDER BY created_at ASC LIMIT 1 convention used
+    // elsewhere in this file (e.g. /v1/startups/token). The subquery +
+    // outer UPDATE...WHERE id = (...) is how Postgres expresses
+    // "UPDATE at most one row chosen deterministically" (UPDATE has no
+    // native LIMIT).
+    const { rows } = await pool.query(
+      `UPDATE startup_members
+          SET clerk_user_id = $1, updated_at = now()
+        WHERE id = (
+          SELECT id FROM startup_members
+           WHERE lower(email) = lower($2)
+             AND clerk_user_id LIKE 'concierge:%'
+           ORDER BY created_at ASC
+           LIMIT 1
+        )
+        RETURNING id, startup_id, role`,
+      [clerk_user_id, email],
+    );
+    if (rows.length === 0) {
+      // Either no member with this email exists, or it's already linked
+      // (real clerk_user_id, possibly to a different account). Both cases
+      // are intentionally indistinguishable to the caller — we don't want
+      // to leak "this email exists but belongs to someone else" as a
+      // distinct signal.
+      return c.json({ error: "no_linkable_member_found" }, 404);
+    }
+    const linked = rows[0];
+    const { rows: [s] } = await pool.query(
+      `SELECT name AS startup_name FROM startups WHERE id = $1`,
+      [linked.startup_id],
+    );
+    return c.json({
+      startup_id: linked.startup_id,
+      member_id: linked.id,
+      startup_name: s?.startup_name ?? null,
+      role: linked.role,
+    });
+  } catch (err) {
+    if (err?.code === "23505") {
+      // clerk_user_id has a NOT NULL UNIQUE constraint — fires if the same
+      // real clerk_user_id is somehow linked twice concurrently.
+      return c.json({ error: "clerk_user_id_conflict", detail: err?.message }, 409);
+    }
+    console.error(JSON.stringify({
+      level: "error",
+      event: "startup_api_link_clerk_id_failed",
+      error: err?.message,
+    }));
+    return c.json({ error: "link_failed", detail: err?.message }, 500);
   }
 });
 
