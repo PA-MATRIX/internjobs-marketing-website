@@ -7,22 +7,28 @@
 //      via the `secondaryNav` prop.
 //   3. Main content: the active pane's primary surface.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type ComponentType,
+	type ReactNode,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	type LucideIcon,
+	type LucideProps,
 	LayoutDashboard,
 	Mail,
 	MessageSquare,
 	Video,
-	Phone,
 	Shield,
 	Settings,
 	Bell,
 	Loader2,
 	X,
 } from "lucide-react";
+import { ParrotIcon } from "./icons/ParrotIcon";
 import { UserMenu } from "./UserMenu";
 import { useCurrentEmployee } from "~/lib/auth";
 import { api, apiFetch, type NotificationItem } from "~/lib/api";
@@ -30,7 +36,7 @@ import { api, apiFetch, type NotificationItem } from "~/lib/api";
 interface NavItem {
 	href: string;
 	label: string;
-	Icon: LucideIcon;
+	Icon: ComponentType<LucideProps>;
 }
 
 const NAV: NavItem[] = [
@@ -41,7 +47,7 @@ const NAV: NavItem[] = [
 	// Phase 32: a SINGLE "Parrot" pane. Parrot is a separate dialer+SMS product
 	// embedded via <iframe> (see ParrotEmbedPane). The dialer AND messages both
 	// live inside Parrot, so we surface ONE nav icon — not separate Phone/SMS.
-	{ href: "/parrot", label: "Parrot", Icon: Phone },
+	{ href: "/parrot", label: "Parrot", Icon: ParrotIcon },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -243,9 +249,8 @@ export function WorkspaceShell({
 	// pattern above. ParrotEmbedPane (mounted at the app root, survives route
 	// changes) dispatches the `parrot-badge-change` CustomEvent whenever Parrot
 	// reports updated missed-call / unread-message counts via postMessage. The
-	// nav has separate Phone and SMS icons (not a single unified Parrot icon),
-	// so the ONE combined badge system is rendered per-icon: the call count on
-	// the Phone icon and the message count on the SMS icon. 0/0 clears both.
+	// nav has ONE unified Parrot icon, so calls + messages are summed into a
+	// single badge on it (see the render below). 0/0 clears the badge.
 	const [parrotBadge, setParrotBadge] = useState({ calls: 0, messages: 0 });
 	useEffect(() => {
 		if (typeof window === "undefined") return;
