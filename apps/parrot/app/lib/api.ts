@@ -157,6 +157,16 @@ export interface NotificationsResponse {
 	unread: number;
 }
 
+// Phase 32 (32-02): response shape of POST /api/embed/parrot-token, the
+// mint endpoint built in 32-01 (workers/index.ts). ParrotEmbedPane calls it
+// on sign-in and on a refresh timer.
+export interface ParrotEmbedTokenResponse {
+	token: string;
+	expires_in: number;
+	embed_url: string;
+	role: "admin" | "employee";
+}
+
 export const api = {
 	getMe: () => request<MeResponse>("/api/me"),
 	getHealth: () => request<{ ok: boolean; service: string }>("/api/health"),
@@ -407,4 +417,12 @@ export const api = {
 		request<{ suggested_prompts: string[]; error?: string }>(
 			`/api/inbox/agent/conversation/${encodeURIComponent(emailId)}`,
 		),
+	// Phase 32 (32-02): mint a short-lived embed JWT for the Parrot iframe.
+	// ParrotEmbedPane calls this once on sign-in (to set the iframe src) and
+	// again every ~90s (pushing the fresh token via postMessage, never
+	// reloading src). See workers/index.ts POST /api/embed/parrot-token (32-01).
+	mintParrotEmbedToken: () =>
+		request<ParrotEmbedTokenResponse>("/api/embed/parrot-token", {
+			method: "POST",
+		}),
 };
