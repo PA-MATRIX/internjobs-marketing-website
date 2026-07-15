@@ -137,6 +137,9 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		givenName,
 		familyName,
 		picture,
+		// Phase 32: was computed above but discarded — now surfaced so the
+		// Parrot embed token can carry a display-only phone claim.
+		phoneNumber: phoneNumber || undefined,
 		publicMetadata,
 	};
 }

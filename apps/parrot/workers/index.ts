@@ -43,6 +43,8 @@ import {
 } from "./lib/daily";
 import { pingParrotGraph } from "./lib/graph";
 import { isOperator as hasOperatorAccess } from "./lib/operator";
+// Phase 32 (32-01): short-lived RS256 embed-JWT minting for the Parrot pane.
+import { mintEmbedToken } from "./lib/embed-jwt";
 import {
 	createMmDirectChannel,
 	createMmGroupChannel,
@@ -349,6 +351,55 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		role: isOperator ? "operator" : "employee",
 	});
 });
+
+// Phase 32 (32-01): mint a short-lived (~120s) RS256 embed JWT for the
+// Parrot SMS/phone iframe. Reuses OIDC_SIGNING_KEY (same key /oidc/jwks
+// already publishes) — Parrot verifies against that same JWKS. sub/email/
+// role come ONLY from the server-side authenticated employee session
+// (c.var.employee) + the existing isOperator gate — NEVER from the request
+// body/query, so a caller can't mint a token for someone else or
+// self-escalate to role:"admin". See
+// .planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md.
+const PARROT_EMBED_ISSUER = "https://workspace.internjobs.ai";
+
+app.post(
+	"/api/embed/parrot-token",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.OIDC_SIGNING_KEY) {
+			return c.json({ error: "embed_not_configured" }, 503);
+		}
+		const employee = c.var.employee;
+		const role = (await hasOperatorAccess(c.env, employee))
+			? "admin"
+			: "employee";
+		try {
+			const { token, expiresIn } = await mintEmbedToken(
+				c.env,
+				PARROT_EMBED_ISSUER,
+				{
+					sub: employee.employeeId,
+					email: employee.email,
+					name: employee.displayName,
+					phone: employee.phoneNumber,
+					role,
+				},
+			);
+			return c.json({
+				token,
+				expires_in: expiresIn,
+				embed_url:
+					c.env.PARROT_EMBED_URL || "https://parrot.projecta.ai/embed",
+				role,
+			});
+		} catch (e) {
+			return c.json(
+				{ error: "embed_token_mint_failed", detail: (e as Error).message },
+				500,
+			);
+		}
+	},
+);
 
 // -- Inbox ----------------------------------------------------------
 
