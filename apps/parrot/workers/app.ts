@@ -180,6 +180,32 @@ function buildSignInRedirect(path: string): string {
 
 const app = new Hono<ParrotContext>();
 
+// Phase 32 (32-02): permit the browser to embed the Parrot SMS/phone iframe.
+// Scoped to frame-src ONLY — no other CSP directive is set here (this Worker
+// had NO Content-Security-Policy header before this phase; keep the change
+// minimal so we don't risk breaking Clerk / inline scripts with a
+// default-src). frame-ancestors is PARROT's own response header, not ours —
+// see .planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md §1.4.
+//
+// Registered FIRST (before the Clerk auth middleware below) so it wraps every
+// response, including early-return auth redirects and the SPA HTML document.
+// The frame origin is DERIVED from env.PARROT_EMBED_URL so the allow-list
+// stays in sync with the one embed-URL source of truth.
+app.use("*", async (c, next) => {
+	await next();
+	const embedUrl = c.env.PARROT_EMBED_URL || "https://parrot.projecta.ai/embed";
+	let frameOrigin = "https://parrot.projecta.ai";
+	try {
+		frameOrigin = new URL(embedUrl).origin;
+	} catch {
+		/* malformed config — fall back to the known-good default above */
+	}
+	c.res.headers.set(
+		"Content-Security-Policy",
+		`frame-src 'self' ${frameOrigin};`,
+	);
+});
+
 // Clerk session JWT validation middleware.
 app.use("*", async (c, next) => {
 	const path = new URL(c.req.url).pathname;
