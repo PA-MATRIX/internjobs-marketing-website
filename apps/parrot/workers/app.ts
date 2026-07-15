@@ -200,9 +200,18 @@ app.use("*", async (c, next) => {
 	} catch {
 		/* malformed config — fall back to the known-good default above */
 	}
+	// frame-src MUST also allow Clerk's own iframes, or we break sign-in on
+	// this very Worker (regression hazard of adding a CSP where none existed):
+	//   - clerk.workspace.internjobs.ai — Clerk's frontend-API domain (session
+	//     handling / component iframes for this production instance).
+	//   - challenges.cloudflare.com — Cloudflare Turnstile bot-protection, which
+	//     Clerk renders in an iframe on the phone-OTP sign-in flow used here.
+	// Omitting either silently blocks the frame and can break auth. (Verified
+	// live 2026-07: pk decodes to clerk.workspace.internjobs.ai; instance is
+	// phone-OTP.) These are Clerk's officially-required frame-src entries.
 	c.res.headers.set(
 		"Content-Security-Policy",
-		`frame-src 'self' ${frameOrigin};`,
+		`frame-src 'self' ${frameOrigin} https://clerk.workspace.internjobs.ai https://challenges.cloudflare.com;`,
 	);
 });
 

@@ -29,21 +29,21 @@ describe("Content-Security-Policy frame-src header", () => {
 		const res = await call(baseEnv);
 		expect(res.status).toBe(200);
 		expect(res.headers.get("content-security-policy")).toBe(
-			"frame-src 'self' https://parrot.projecta.ai;",
+			"frame-src 'self' https://parrot.projecta.ai https://clerk.workspace.internjobs.ai https://challenges.cloudflare.com;",
 		);
 	});
 
 	it("derives the frame origin from PARROT_EMBED_URL (single source of truth)", async () => {
 		const res = await call({ PARROT_EMBED_URL: "https://staging.parrot.dev/embed?x=1" });
 		expect(res.headers.get("content-security-policy")).toBe(
-			"frame-src 'self' https://staging.parrot.dev;",
+			"frame-src 'self' https://staging.parrot.dev https://clerk.workspace.internjobs.ai https://challenges.cloudflare.com;",
 		);
 	});
 
 	it("falls back to the known-good default when PARROT_EMBED_URL is malformed", async () => {
 		const res = await call({ PARROT_EMBED_URL: "not-a-url" });
 		expect(res.headers.get("content-security-policy")).toBe(
-			"frame-src 'self' https://parrot.projecta.ai;",
+			"frame-src 'self' https://parrot.projecta.ai https://clerk.workspace.internjobs.ai https://challenges.cloudflare.com;",
 		);
 	});
 
@@ -52,5 +52,12 @@ describe("Content-Security-Policy frame-src header", () => {
 		const csp = res.headers.get("content-security-policy") ?? "";
 		expect(csp).not.toContain("default-src");
 		expect(csp).not.toContain("script-src");
+	});
+
+	it("allows Clerk's own frame-src domains (frontend-API + Turnstile) so sign-in isn't blocked", async () => {
+		const res = await call(baseEnv);
+		const csp = res.headers.get("content-security-policy") ?? "";
+		expect(csp).toContain("https://clerk.workspace.internjobs.ai");
+		expect(csp).toContain("https://challenges.cloudflare.com");
 	});
 });
