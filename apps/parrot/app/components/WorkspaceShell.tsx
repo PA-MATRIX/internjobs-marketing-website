@@ -241,6 +241,29 @@ export function WorkspaceShell({
 			window.removeEventListener("chat-unread-change", onChatUnread);
 	}, []);
 
+	// Phase 32 (32-03): combined Phone/SMS badge, mirrors the chatUnread
+	// pattern above. ParrotEmbedPane (mounted at the app root, survives route
+	// changes) dispatches the `parrot-badge-change` CustomEvent whenever Parrot
+	// reports updated missed-call / unread-message counts via postMessage. The
+	// nav has separate Phone and SMS icons (not a single unified Parrot icon),
+	// so the ONE combined badge system is rendered per-icon: the call count on
+	// the Phone icon and the message count on the SMS icon. 0/0 clears both.
+	const [parrotBadge, setParrotBadge] = useState({ calls: 0, messages: 0 });
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		function onParrotBadge(e: Event) {
+			const detail = (e as CustomEvent<{ calls?: number; messages?: number }>)
+				.detail;
+			setParrotBadge({
+				calls: Math.max(0, detail?.calls ?? 0),
+				messages: Math.max(0, detail?.messages ?? 0),
+			});
+		}
+		window.addEventListener("parrot-badge-change", onParrotBadge);
+		return () =>
+			window.removeEventListener("parrot-badge-change", onParrotBadge);
+	}, []);
+
 	const activePane = NAV.find((item) =>
 		location.pathname.startsWith(item.href),
 	);
@@ -266,6 +289,28 @@ export function WorkspaceShell({
 							// CHAT-RT-03: unread badge on the Chat icon when not viewing it.
 							const showChatBadge =
 								item.href === "/chat" && chatUnread > 0 && !active;
+							// 32-03: same badge system for Phone (missed calls) and SMS
+							// (unread messages), gated on !active exactly like the chat badge.
+							const showPhoneBadge =
+								item.href === "/phone" && parrotBadge.calls > 0 && !active;
+							const showSmsBadge =
+								item.href === "/sms" && parrotBadge.messages > 0 && !active;
+							// One rose pill, one count — whichever badge applies to this icon.
+							const badgeCount = showChatBadge
+								? chatUnread
+								: showPhoneBadge
+									? parrotBadge.calls
+									: showSmsBadge
+										? parrotBadge.messages
+										: 0;
+							const showBadge = badgeCount > 0;
+							const badgeTitle = showChatBadge
+								? `${item.label} (${chatUnread} unread)`
+								: showPhoneBadge
+									? `${item.label} (${parrotBadge.calls} missed)`
+									: showSmsBadge
+										? `${item.label} (${parrotBadge.messages} unread)`
+										: item.label;
 							return (
 								<li key={item.href} className="relative w-full flex justify-center">
 									{/* Thin colored indicator bar on the active item */}
@@ -277,11 +322,7 @@ export function WorkspaceShell({
 									)}
 									<Link
 										to={item.href}
-										title={
-											showChatBadge
-												? `${item.label} (${chatUnread} unread)`
-												: item.label
-										}
+										title={badgeTitle}
 										className={`group relative flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all duration-150 ${
 											active
 												? "bg-white text-slate-900 shadow-lg shadow-black/20"
@@ -292,9 +333,9 @@ export function WorkspaceShell({
 										<span className="text-[10px] font-semibold leading-none mt-1">
 											{item.label}
 										</span>
-										{showChatBadge && (
+										{showBadge && (
 											<span className="absolute top-1.5 right-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-slate-900">
-												{chatUnread > 9 ? "9+" : chatUnread}
+												{badgeCount > 9 ? "9+" : badgeCount}
 											</span>
 										)}
 									</Link>
