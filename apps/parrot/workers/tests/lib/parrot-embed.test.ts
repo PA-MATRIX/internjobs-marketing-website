@@ -10,9 +10,10 @@
 // Parrot origin is ignored, never acted on." Origin gating is pure logic and
 // so is proven here without a browser.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
 	PARROT_EMBED_ORIGIN,
+	PARROT_DIAL_REQUEST_EVENT,
 	isTrustedParrotOrigin,
 	isParrotReadyMessage,
 	isParrotCallEndedMessage,
@@ -22,6 +23,7 @@ import {
 	buildParrotTokenMessage,
 	buildParrotOpenContactMessage,
 	buildEmbedSrc,
+	requestParrotDial,
 } from "../../../app/lib/parrot-embed";
 
 describe("isTrustedParrotOrigin", () => {
@@ -205,5 +207,50 @@ describe("buildEmbedSrc", () => {
 			"eyJhbGci.eyJzdWIiOiJ1c2VyLTEyMyJ9.s0me-Sig_natur3-w1th_chars";
 		const src = buildEmbedSrc("https://parrot.projecta.ai/embed", jwt);
 		expect(new URL(src).searchParams.get("token")).toBe(jwt);
+	});
+});
+
+// 32-03: the outbound Workspace→Parrot dial-request dispatcher. requestParrotDial
+// accepts an injectable `dispatchEvent` target (default `window`) so its REAL
+// CustomEvent construction is exercised here under the node-only Vitest env
+// (no DOM window) — no jsdom dependency needed. This is the other half of the
+// contract ParrotEmbedPane's (32-02) `parrot-dial-request` listener consumes.
+describe("requestParrotDial", () => {
+	it("dispatches a CustomEvent named PARROT_DIAL_REQUEST_EVENT with detail.number", () => {
+		const dispatchEvent = vi.fn<(event: Event) => boolean>(() => true);
+		requestParrotDial("+15555550100", { dispatchEvent });
+
+		expect(dispatchEvent).toHaveBeenCalledTimes(1);
+		const event = dispatchEvent.mock.calls[0][0] as CustomEvent<{
+			number: string;
+		}>;
+		expect(event.type).toBe(PARROT_DIAL_REQUEST_EVENT);
+		expect(event.type).toBe("parrot-dial-request");
+		expect(event.detail).toEqual({ number: "+15555550100" });
+	});
+
+	it("passes the number through verbatim (no normalization)", () => {
+		const dispatchEvent = vi.fn<(event: Event) => boolean>(() => true);
+		requestParrotDial("18005551234", { dispatchEvent });
+		const event = dispatchEvent.mock.calls[0][0] as CustomEvent<{
+			number: string;
+		}>;
+		expect(event.detail.number).toBe("18005551234");
+	});
+
+	it("is a no-op (never throws) when no dispatch target is available (SSR)", () => {
+		// Simulates the server / non-DOM case: window is undefined, so the default
+		// target resolves to undefined and requestParrotDial silently returns.
+		expect(() => requestParrotDial("+15555550100", undefined)).not.toThrow();
+	});
+
+	it("round-trips through a real EventTarget listener (contract end-to-end)", () => {
+		const target = new EventTarget();
+		let received: { number: string } | null = null;
+		target.addEventListener(PARROT_DIAL_REQUEST_EVENT, (e) => {
+			received = (e as CustomEvent<{ number: string }>).detail;
+		});
+		requestParrotDial("+442071234567", target);
+		expect(received).toEqual({ number: "+442071234567" });
 	});
 });

@@ -88,3 +88,38 @@ export function buildEmbedSrc(embedUrl: string, token: string): string {
 	url.searchParams.set("token", token);
 	return url.toString();
 }
+
+/**
+ * Requests that the Parrot embed pre-fill the dialer with `number` and
+ * navigate the employee to /phone. Dispatched as a window CustomEvent —
+ * ParrotEmbedPane (mounted at the app root, always alive) listens for
+ * PARROT_DIAL_REQUEST_EVENT and forwards it as a `parrot:dial` postMessage
+ * to the iframe. Per the locked contract (WORKSPACE-HANDOFF.md §2.3) this
+ * is PRE-FILL ONLY — the employee must click "Call" once inside the pane;
+ * there is no reliable cross-frame auto-dial (a parent-frame click carries
+ * no user-activation into the iframe).
+ *
+ * SCOPE (see 32-03-PLAN.md): NO caller exists yet in this codebase. Workspace
+ * has no UI surface that displays another person's raw phone number to wire a
+ * "Dial" button onto (Chat is keyed on Mattermost users by email with no phone
+ * field; the Admin directory shows capability flags, not numbers). This is
+ * therefore deliberately generic, SSR-safe infrastructure — the tested,
+ * ready-to-call other half of the Workspace→Parrot contract — not a
+ * placeholder button that dials nothing real.
+ *
+ * `target` is an injectable seam (defaults to `window`): it keeps the real
+ * CustomEvent dispatch path unit-testable under this repo's node-only Vitest
+ * env, where there is no DOM `window`.
+ */
+export function requestParrotDial(
+	number: string,
+	target: Pick<EventTarget, "dispatchEvent"> | undefined = typeof window !==
+	"undefined"
+		? window
+		: undefined,
+): void {
+	if (!target) return;
+	target.dispatchEvent(
+		new CustomEvent(PARROT_DIAL_REQUEST_EVENT, { detail: { number } }),
+	);
+}
