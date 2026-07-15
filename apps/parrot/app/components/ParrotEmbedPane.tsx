@@ -112,10 +112,9 @@ export function ParrotEmbedPane() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const pathname = location.pathname;
-	// The pane is visually shown only on the Phone/SMS routes. Everywhere else
+	// The pane is visually shown only on the Parrot route. Everywhere else
 	// the SAME iframe stays mounted (SIP session alive) but display:none.
-	const visible =
-		pathname.startsWith("/phone") || pathname.startsWith("/sms");
+	const visible = pathname.startsWith("/parrot");
 	const signedIn = !!me;
 
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -276,7 +275,7 @@ export function ParrotEmbedPane() {
 				buildParrotDialMessage(number),
 				PARROT_EMBED_ORIGIN,
 			);
-			navigateRef.current("/phone");
+			navigateRef.current("/parrot");
 		}
 		window.addEventListener(PARROT_DIAL_REQUEST_EVENT, onDial);
 		return () =>
@@ -285,7 +284,7 @@ export function ParrotEmbedPane() {
 
 	// ── Slot-position sync ────────────────────────────────────────────────
 	// While visible, measure the [data-parrot-embed-slot] marker (rendered by
-	// phone.tsx/sms.tsx) and mirror its rect onto our fixed wrapper. Re-measure
+	// parrot.tsx) and mirror its rect onto our fixed wrapper. Re-measure
 	// on route change (effect dep), window resize/scroll, and slot resize
 	// (ResizeObserver — catches secondary-nav toggles without a full resize).
 	// The route component may code-split, so poll a few frames until the slot
@@ -399,7 +398,7 @@ export function ParrotEmbedPane() {
 			{incomingCall ? (
 				<button
 					type="button"
-					onClick={() => navigate("/phone")}
+					onClick={() => navigate("/parrot")}
 					className="fixed right-4 top-4 z-50 flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-left text-white shadow-lg hover:bg-slate-800"
 				>
 					<span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/20">

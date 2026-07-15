@@ -19,8 +19,7 @@ export default [
 	// Cloudflare Agents SDK" card and document the future
 	// @cloudflare/voice + withVoice(Agent) architecture inline. Without
 	// these registrations React Router would 404 the icon-rail clicks.
-	route("phone", "routes/phone.tsx"),
-	route("sms", "routes/sms.tsx"),
+	route("parrot", "routes/parrot.tsx"),
 	// Clerk's <SignIn> uses sub-paths like /sign-in/factor-one. A
 	// splat ($) catches all of them and routes the whole tree to the
 	// embedded SignIn component.

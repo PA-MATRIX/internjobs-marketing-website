@@ -91,7 +91,7 @@ export function buildEmbedSrc(embedUrl: string, token: string): string {
 
 /**
  * Requests that the Parrot embed pre-fill the dialer with `number` and
- * navigate the employee to /phone. Dispatched as a window CustomEvent —
+ * navigate the employee to /parrot. Dispatched as a window CustomEvent —
  * ParrotEmbedPane (mounted at the app root, always alive) listens for
  * PARROT_DIAL_REQUEST_EVENT and forwards it as a `parrot:dial` postMessage
  * to the iframe. Per the locked contract (WORKSPACE-HANDOFF.md §2.3) this

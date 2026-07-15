@@ -17,7 +17,6 @@ import {
 	MessageSquare,
 	Video,
 	Phone,
-	MessageCircle,
 	Shield,
 	Settings,
 	Bell,
@@ -39,11 +38,10 @@ const NAV: NavItem[] = [
 	{ href: "/inbox", label: "Email", Icon: Mail },
 	{ href: "/chat", label: "Chat", Icon: MessageSquare },
 	{ href: "/meetings", label: "Meetings", Icon: Video },
-	// v1.2 Phase 12 Wave 1: Phone + SMS placeholders (seam, not integration).
-	// Routes render a "Coming soon — Telnyx via Cloudflare Agents SDK" card.
-	// Telephony backend lands in v1.3+ (see apps/parrot/app/routes/phone.tsx).
-	{ href: "/phone", label: "Phone", Icon: Phone },
-	{ href: "/sms", label: "SMS", Icon: MessageCircle },
+	// Phase 32: a SINGLE "Parrot" pane. Parrot is a separate dialer+SMS product
+	// embedded via <iframe> (see ParrotEmbedPane). The dialer AND messages both
+	// live inside Parrot, so we surface ONE nav icon — not separate Phone/SMS.
+	{ href: "/parrot", label: "Parrot", Icon: Phone },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -241,7 +239,7 @@ export function WorkspaceShell({
 			window.removeEventListener("chat-unread-change", onChatUnread);
 	}, []);
 
-	// Phase 32 (32-03): combined Phone/SMS badge, mirrors the chatUnread
+	// Phase 32 (32-03): combined Parrot badge, mirrors the chatUnread
 	// pattern above. ParrotEmbedPane (mounted at the app root, survives route
 	// changes) dispatches the `parrot-badge-change` CustomEvent whenever Parrot
 	// reports updated missed-call / unread-message counts via postMessage. The
@@ -289,28 +287,24 @@ export function WorkspaceShell({
 							// CHAT-RT-03: unread badge on the Chat icon when not viewing it.
 							const showChatBadge =
 								item.href === "/chat" && chatUnread > 0 && !active;
-							// 32-03: same badge system for Phone (missed calls) and SMS
-							// (unread messages), gated on !active exactly like the chat badge.
-							const showPhoneBadge =
-								item.href === "/phone" && parrotBadge.calls > 0 && !active;
-							const showSmsBadge =
-								item.href === "/sms" && parrotBadge.messages > 0 && !active;
+							// 32-03 (single icon): ONE combined badge on the Parrot icon —
+							// missed calls + unread messages summed, since both live in the
+							// same pane. Gated on !active exactly like the chat badge.
+							const parrotTotal = parrotBadge.calls + parrotBadge.messages;
+							const showParrotBadge =
+								item.href === "/parrot" && parrotTotal > 0 && !active;
 							// One rose pill, one count — whichever badge applies to this icon.
 							const badgeCount = showChatBadge
 								? chatUnread
-								: showPhoneBadge
-									? parrotBadge.calls
-									: showSmsBadge
-										? parrotBadge.messages
-										: 0;
+								: showParrotBadge
+									? parrotTotal
+									: 0;
 							const showBadge = badgeCount > 0;
 							const badgeTitle = showChatBadge
 								? `${item.label} (${chatUnread} unread)`
-								: showPhoneBadge
-									? `${item.label} (${parrotBadge.calls} missed)`
-									: showSmsBadge
-										? `${item.label} (${parrotBadge.messages} unread)`
-										: item.label;
+								: showParrotBadge
+									? `${item.label} (${parrotBadge.calls} missed, ${parrotBadge.messages} unread)`
+									: item.label;
 							return (
 								<li key={item.href} className="relative w-full flex justify-center">
 									{/* Thin colored indicator bar on the active item */}
