@@ -159,6 +159,17 @@ export function EmailPanel({
 	// copy states this explicitly — keep the two in sync if this ever changes.
 	const isSpamFolder = folder === "spam";
 	async function handleTrustSender() {
+		// Confirm first (2026-07-17 decision): trusting is a DURABLE per-employee
+		// grant with no revoke UI — every future mail from this sender skips
+		// safety screening entirely, and a misclick is not undoable from the
+		// product. The dialog is the cheap guard against that; a trusted-senders
+		// review/revoke surface is the proper fix (follow-up).
+		const senderLabel =
+			(data as InboxMessage | undefined)?.sender ?? "this sender";
+		const confirmed = window.confirm(
+			`Trust ${senderLabel}? Future mail from this sender will skip spam screening and go straight to your Inbox — you won't be warned about them again. This message moves to your Inbox now.`,
+		);
+		if (!confirmed) return;
 		await api.trustSender(emailId);
 		onActioned?.("trusted");
 	}
