@@ -5,6 +5,7 @@ import {
 	FileEdit,
 	Inbox as InboxIcon,
 	Send,
+	ShieldAlert,
 	Star,
 	Tag,
 	Trash2,
@@ -22,6 +23,9 @@ const FOLDERS = new Set([
 	"archive",
 	"trash",
 	"starred",
+	// v1.5 Phase 36: without "spam" here, ?folder=spam silently falls back to
+	// the inbox and the quarantine folder is unreachable.
+	"spam",
 ]);
 
 function normalizeFolder(value: string | null): string {
@@ -78,6 +82,15 @@ function EmailSecondaryNav({ activeFolder }: { activeFolder: string }) {
 				label="Trash"
 				icon={<Trash2 size={15} />}
 				count={counts?.trash}
+			/>
+			{/* v1.5 Phase 36: Spam sits next to Trash — both are recoverable
+			    holding areas rather than destinations you file mail into. */}
+			<SecondaryNavItem
+				href="/inbox?folder=spam"
+				active={activeFolder === "spam"}
+				label="Spam"
+				icon={<ShieldAlert size={15} />}
+				count={counts?.spam}
 			/>
 			<SecondaryNavItem
 				href="/inbox?folder=starred"
