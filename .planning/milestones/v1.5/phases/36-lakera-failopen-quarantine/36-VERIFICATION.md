@@ -2,14 +2,21 @@
 phase: 36-lakera-failopen-quarantine
 verified: 2026-07-16T19:08:49Z
 status: human_needed
-score: 8/8 automated must-haves verified; 2 items require a live boot-check / operator UAT
+score: 8/8 automated must-haves verified; live deploy + boot-check DONE 2026-07-17; 1 item (a real flagged email landing in Spam) still open
+live_progress_2026_07_17:
+  deployed: "internjobs-parrot version 3347a2c7 — deployed and boot-checked live (/api/health 200 x3, real JSON, no workerd 1101/1102 boot-error signature; the entrypoint-export trap did NOT fire). /api/inbox/messages?folder=spam returns 401 (routed, auth-gated) not 500. wrangler.jsonc cron unchanged (single */5)."
+  migration_10_applied: "CONFIRMED. Operator (Nithin) signed in and the email pane loaded normally. applyMigrations() runs synchronously in the EmployeeMailboxDO constructor, so a faulty migration 10 would have errored the mailbox instead of rendering it. This closes the migration-self-application half of human item 1."
+  spam_ui_renders: "CONFIRMED. Operator saw the Spam folder in the email sidebar — the first time this UI has rendered anywhere (npm run dev cannot boot locally). This closes the sidebar half of human item 2."
+  still_open: "No Lakera-flagged email has arrived since deploy, so the actual SQLite write with folder_id='spam', the badge increment, the quarantined-body render inside EmailIframe, the Trust sender click-path, and the toast copy remain unobserved in production. Closing these requires an end-to-end injection email from a non-member, non-trusted sender."
 human_verification:
-  - test: "Deploy the built worker (wrangler deploy, not --dry-run) and send/simulate a Lakera-flagged inbound email to a real employee mailbox"
-    expected: "Message appears in the Spam folder (not dropped), migration 10 (trusted_senders table) is created automatically on the live DO, and the Spam sidebar badge count increments"
+  - test: "Send a Lakera-flagged (prompt-injection) inbound email from a NON-member, NON-trusted external sender to a real employee mailbox"
+    expected: "Message appears in the Spam folder (not dropped) and the Spam sidebar count increments"
+    status_2026_07_17: "STILL OPEN — deploy + migration 10 + sidebar render are confirmed live, but no flagged mail has arrived yet, so the quarantine WRITE itself is still unobserved in production."
     why_human: "The DO is fully mocked in every automated test (36-01 Risk 1, 36-04 Risk 1). No test writes to a real SQLite-backed EmployeeMailboxDO, so migration 10 self-application and the actual SQLite INSERT into emails with folder_id=spam are unproven by the suite -- only by static code reading of the constructor applyMigrations() call and the createEmail() call site."
   - test: "Load /inbox?folder=spam in a real browser against a deployed Worker, click a quarantined message, click Trust sender, and read the resulting toast"
     expected: "Spam folder renders in the sidebar with a ShieldAlert icon and count badge; the quarantined email body renders safely inside the sandboxed EmailIframe; clicking Trust sender moves that one message to Inbox and shows the exact toast copy about scope"
     why_human: "npm run dev fails to boot locally (pre-existing, unrelated to this phase -- reproduced independently below), and Clerk prod keys are domain-locked, so no human or browser has ever rendered this UI. Verified by typecheck + production build + code reading only."
+    status_2026_07_17: "PARTIALLY CLOSED — the Spam sidebar item is confirmed rendering live (operator, 2026-07-17). The rest of this path (clicking a quarantined message, the EmailIframe body render, Trust sender + its confirm dialog, and the toast copy) is still unobserved because there is no quarantined mail to click yet. Blocked on the same end-to-end injection email as item 1."
 ---
 
 # Phase 36: Lakera safety quarantine + fail-open confirm -- Verification Report
