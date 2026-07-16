@@ -37,7 +37,12 @@ interface NavItem {
 	href: string;
 	label: string;
 	Icon: ComponentType<LucideProps>;
+	/** Optional px override. Defaults to NAV_ICON_SIZE; the Parrot silhouette
+	 *  needs a touch more room than the lucide line icons to stay legible. */
+	iconSize?: number;
 }
+
+const NAV_ICON_SIZE = 20;
 
 const NAV: NavItem[] = [
 	{ href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
@@ -47,7 +52,7 @@ const NAV: NavItem[] = [
 	// Phase 32: a SINGLE "Parrot" pane. Parrot is a separate dialer+SMS product
 	// embedded via <iframe> (see ParrotEmbedPane). The dialer AND messages both
 	// live inside Parrot, so we surface ONE nav icon — not separate Phone/SMS.
-	{ href: "/parrot", label: "Parrot", Icon: ParrotIcon },
+	{ href: "/parrot", label: "Parrot", Icon: ParrotIcon, iconSize: 24 },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -328,7 +333,10 @@ export function WorkspaceShell({
 												: "text-slate-400 hover:bg-white/10 hover:text-white"
 										}`}
 									>
-										<item.Icon size={20} strokeWidth={active ? 2.5 : 2} />
+										<item.Icon
+											size={item.iconSize ?? NAV_ICON_SIZE}
+											strokeWidth={active ? 2.5 : 2}
+										/>
 										<span className="text-[10px] font-semibold leading-none mt-1">
 											{item.label}
 										</span>
