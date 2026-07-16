@@ -48,7 +48,26 @@ pattern already used in `apps/app/src/safety/screen.test.mjs`.
 Purpose: prove fail-open still works and hard-block still fires, at the unit level, without
 touching production secrets or traffic.
 Output: two new vitest files + a small extension to the existing route smoke test.
+
+**CI scope note (2026-07-16 decision):** this plan does NOT touch `.github/workflows/ci.yml`.
+The new test files land under `apps/parrot/workers/tests/**`, which already runs in CI today
+via the existing parrot job's `npm test` step (the same job that CI-enforces the Phase 27
+Vitest smoke tests per the roadmap) — no CI wiring change is needed for these to run. The
+separate question of whether the pre-existing `apps/app/src/safety/screen.test.mjs` should
+also be CI-wired is explicitly out of scope here and is recorded as a documented decision in
+Plan 36-05, not this one.
 </objective>
+
+<coverage>
+Requirement coverage this plan closes (legend: ★★★ = fully addressed, ★★ = mostly, ★ = partial,
+[GAP] = not addressed):
+
+  SAFETY-VERIFY-LIVE-03 / LAKERA-VERIFY-LIVE-03   ★★★   Task 1 (safety.test.ts: missing-key /
+    5xx / network-error / timeout all fail-open; flagged-true/false classification correct) +
+    Task 2 (inbound-email.test.ts: hard-block -> Spam, fail-open -> Inbox, trusted-sender skips
+    Lakera). Test-level evidence per the locked no-destructive-prod-test decision; CI-wiring
+    status of this evidence is documented in Plan 36-05, not re-litigated here.
+</coverage>
 
 <execution_context>
 @~/.claude/rrr/workflows/execute-plan.md
@@ -79,6 +98,10 @@ cleaner coverage than the Node script's documented "endpoint captured at import 
 limitation. Import `screenMessage` from `../../lib/safety`. Build a minimal `Env` stub inline
 per test (`{ LAKERA_GUARD_API_KEY: "test-key" } as Env`, or omit the key for the missing-key
 case). Use `afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); })`.
+
+Do NOT add or edit any `.github/workflows/*.yml` file as part of this task — these tests run
+in CI automatically via the existing parrot job's `npm test` step; no separate wiring is
+needed or in scope.
 
 Required cases (LAKERA-VERIFY-LIVE-03 fail-open + hard-block-still-fires):
 1. **Missing API key** → `screenMessage(text, {} as Env)` resolves
@@ -243,7 +266,7 @@ npm test
 ```
 All existing tests plus the new ones must pass. This plan adds no production code — pure test
 authorship — so there is no build/runtime behavior change to verify beyond the test suite
-itself passing green.
+itself passing green. Confirm no `.github/workflows/*.yml` file appears in the diff.
 </verification>
 
 <success_criteria>
@@ -253,6 +276,7 @@ itself passing green.
    proving quarantine-to-Spam, fail-open-to-Inbox, and trusted-sender-skips-Lakera.
 3. The new trust-sender route and extended folder-counts route have smoke coverage.
 4. `npm run typecheck` and `npm test` pass in `apps/parrot/`.
+5. No CI workflow file is added or modified by this plan.
 </success_criteria>
 
 <output>

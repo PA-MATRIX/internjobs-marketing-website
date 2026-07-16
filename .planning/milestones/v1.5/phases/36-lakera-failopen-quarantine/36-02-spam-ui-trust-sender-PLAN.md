@@ -15,6 +15,8 @@ skills:
   - projecta.visual-proof
   - anthropic.webapp-testing
 skills_mode: normal
+coverage_diagram_not_applicable: true
+coverage_diagram_skip_reason: "Track 1 product UI scope (Spam folder + Trust sender button) has no assigned REQUIREMENTS.md IDs — the 2026-07-09 scope decision predates a requirements pass for this specific UI. Coverage is tracked via this plan's must_haves goal-backward truths instead (see below)."
 
 verification:
   surface: ui_affecting
@@ -30,6 +32,7 @@ must_haves:
     - "Employee can open the Spam folder and read a quarantined message using the same safe iframe renderer (EmailIframe/DOMPurify) as every other folder — no new rendering path"
     - "Employee can click 'Trust sender' on a spam message; the message moves to Inbox and a confirmation toast appears"
     - "The 'Trust sender' button is only shown when viewing the Spam folder — it does not appear on Inbox/Archive/etc."
+    - "The Trust-sender confirmation toast explicitly states what happened (this message moved to Inbox) and what will happen going forward (future mail from this sender skips Spam) WITHOUT implying other existing Spam from that sender also moved — trust-sender recovers only the clicked message, matching Outlook (2026-07-16 decision)"
   artifacts:
     - path: apps/parrot/app/routes/inbox.tsx
       provides: "\"spam\" added to the FOLDERS set + a Spam SecondaryNavItem wired to counts.spam"
@@ -38,7 +41,7 @@ must_haves:
     - path: apps/parrot/app/components/EmailPanel.tsx
       provides: "\"Trust sender\" action button rendered only when folder === \"spam\""
     - path: apps/parrot/app/components/InboxPane.tsx
-      provides: "folderTitle(\"spam\") -> \"Spam\"; handleActioned(\"trusted\") toast + query invalidation"
+      provides: "folderTitle(\"spam\") -> \"Spam\"; handleActioned(\"trusted\") toast (scope-accurate copy) + query invalidation"
   key_links:
     - from: apps/parrot/app/components/EmailPanel.tsx
       to: apps/parrot/app/lib/api.ts (trustSender)
@@ -53,12 +56,15 @@ must_haves:
 <objective>
 Make the Spam folder + "Trust sender" action actually visible and clickable in the Workspace
 email pane. Plan 36-01 already wired the storage/backend (quarantine-on-hard-block, per-employee
-trust table, the two HTTP routes); this plan is purely the client wiring — no new backend logic.
+trust table, the two HTTP routes — including a single-message-only scope for the trust-sender
+route, an explicit design decision, not a gap); this plan is purely the client wiring — no new
+backend logic.
 
 Purpose: turn Track 1's storage-layer work into the actual product behavior the roadmap
-promises — a visible, recoverable Spam folder with an Outlook-style Trust-sender button.
+promises — a visible, recoverable Spam folder with an Outlook-style Trust-sender button whose
+UI copy is honest about its own scope (moves the one message, doesn't imply a bulk recovery).
 Output: a "Spam" sidebar item with a live count badge, and a folder-conditional "Trust sender"
-button on the email reader.
+button on the email reader with scope-accurate confirmation copy.
 </objective>
 
 <execution_context>
@@ -90,7 +96,8 @@ button on the email reader.
 
    ```ts
    // v1.5 Phase 36 (2026-07-09 decision): "Trust sender" — records the sender as
-   // trusted for this employee only and moves the message out of Spam into Inbox.
+   // trusted for this employee only and moves THIS message out of Spam into Inbox.
+   // Scope note: single-message only, by design — see EmailPanel's toast copy.
    trustSender: (id: string) =>
      request<{ ok: boolean; id: string; sender: string; movedToInbox: boolean }>(
        `/api/inbox/messages/${encodeURIComponent(id)}/trust-sender`,
@@ -145,7 +152,7 @@ item shows a numeric badge sourced from `folder-counts.spam` and highlights as a
 </task>
 
 <task type="auto">
-  <name>Task 3: EmailPanel "Trust sender" action + InboxPane title/toast wiring</name>
+  <name>Task 3: EmailPanel "Trust sender" action + InboxPane title/toast wiring (scope-accurate copy)</name>
   <files>apps/parrot/app/components/EmailPanel.tsx, apps/parrot/app/components/InboxPane.tsx</files>
   <action>
 **EmailPanel.tsx:**
@@ -182,10 +189,19 @@ item shows a numeric badge sourced from `folder-counts.spam` and highlights as a
 5. Extend `handleActioned()` (~line 156-187) with a `"trusted"` branch. Clear selection and
    invalidate `["parrot", "inbox"]` queries the same way the other branches do, then show a
    toast with NO undo function (trusting a sender is not meant to be reversible from this
-   toast — same no-undo pattern already used for the hard-deleted case):
+   toast — same no-undo pattern already used for the hard-deleted case).
+
+   **COPY REQUIREMENT (2026-07-16 decision, checker-flagged UX trap):** the toast text MUST
+   explicitly state (a) what happened — this one message moved to Inbox — and (b) what will
+   happen going forward — future mail from this sender skips Spam. It must NOT imply that any
+   other existing Spam mail from the same sender also moved (it didn't — see the Task 3 route
+   comment in Plan 36-01). Exact wording is flexible; the following satisfies the requirement:
+
    ```ts
    } else if (action === "trusted") {
-     showToast("Sender trusted — moved to Inbox");
+     showToast(
+       "Moved to Inbox — future mail from this sender skips Spam. Other Spam from them is unaffected.",
+     );
    } else {
      // hard-deleted: no undo possible
      showToast("Deleted permanently");
@@ -197,11 +213,15 @@ item shows a numeric badge sourced from `folder-counts.spam` and highlights as a
 `cd apps/parrot && npm run typecheck` passes.
 `cd apps/parrot && npm test` passes (no existing test regresses; neither file has dedicated
 component tests today, so this is typecheck + the chrome_visual_check below).
+Re-read the toast string and confirm it does NOT say or imply anything like "all spam from
+this sender moved" / "sender's other mail recovered" — it must name only the single message
+action plus the forward-looking screening-bypass, per the copy requirement above.
   </verify>
   <done>
 Clicking "Trust sender" on a Spam-folder message calls `api.trustSender`, the inbox list
-query invalidates, the confirmation toast appears with no Undo action, and the button is
-absent when `folder !== "spam"`.
+query invalidates, a scope-accurate confirmation toast appears with no Undo action (stating
+what moved and what will happen going forward, without implying a bulk recovery), and the
+button is absent when `folder !== "spam"`.
   </done>
 </task>
 
@@ -226,8 +246,10 @@ DB insert if one is convenient). Verify what IS verifiable without seed data:
    page title/active-state highlight correctly say "Spam".
 4. If a spam-folder row CAN be produced cheaply (e.g. by hand-inserting a test row into the
    local dev DO's `emails` table with `folder_id='spam'`), additionally confirm: the message
-   opens via `EmailIframe` (sandboxed, no raw HTML in the DOM), and the "Trust sender" button
-   is visible and clickable, moving the message to Inbox with a toast.
+   opens via `EmailIframe` (sandboxed, no raw HTML in the DOM), the "Trust sender" button is
+   visible and clickable, moving the message to Inbox, AND the resulting toast text is
+   scope-accurate (states this message moved + future mail skipped, does not claim other Spam
+   from that sender moved).
 5. Full end-to-end confirmation against a REAL Lakera hard-block is deferred to operator UAT
    post-deploy (same pattern as Phase 23's attachment-download "tested in Chrome + Safari,
    deferred to operator" note) — do not block this plan's completion on producing one.
@@ -237,7 +259,8 @@ DB insert if one is convenient). Verify what IS verifiable without seed data:
 1. `/inbox?folder=spam` is reachable and renders without error, empty or populated.
 2. The Spam sidebar item shows a live count from `GET /api/inbox/folder-counts`.
 3. "Trust sender" appears only in the Spam folder's EmailPanel toolbar and, on click, moves
-   the message to Inbox and shows a toast.
+   the message to Inbox and shows a scope-accurate toast (moved-this-message +
+   future-mail-skipped, no bulk-recovery implication).
 4. `npm run typecheck`, `npm test`, and `npm run build` all pass in `apps/parrot/`.
 </success_criteria>
 

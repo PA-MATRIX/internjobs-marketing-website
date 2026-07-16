@@ -25,6 +25,7 @@ must_haves:
     - "Lakera hard-blocked inbound email is stored in the employee's Spam folder instead of being silently dropped"
     - "A sender an employee marks as trusted bypasses Lakera screening for that employee's future email only — not workspace-wide"
     - "POST /api/inbox/messages/:id/trust-sender records the sender as trusted for that employee and moves the message to Inbox"
+    - "Trust sender moves ONLY the message it was invoked on — it does NOT bulk-move any other existing Spam mail from that sender (Outlook-accurate, 2026-07-16 decision). Other quarantined mail from the same sender is deliberately left in Spam, recoverable individually the same way or via the 30-day auto-purge (Plan 36-03)."
     - "GET /api/inbox/folder-counts includes an accurate spam count"
   artifacts:
     - path: apps/parrot/workers/durableObject/migrations.ts
@@ -36,7 +37,7 @@ must_haves:
     - path: apps/parrot/workers/lib/inbound-email.ts
       provides: "hard-block branch quarantines into Folders.SPAM (no more silent return); per-employee trust check short-circuits Lakera before it's called"
     - path: apps/parrot/workers/index.ts
-      provides: "POST /api/inbox/messages/:id/trust-sender route; folder-counts response includes spam"
+      provides: "POST /api/inbox/messages/:id/trust-sender route (single-message scope only, by design); folder-counts response includes spam"
   key_links:
     - from: apps/parrot/workers/lib/inbound-email.ts
       to: apps/parrot/workers/durableObject/index.ts (EmployeeMailboxDO.createEmail)
@@ -72,6 +73,28 @@ affect any other employee).
 Output: DO schema migration 10, three new EmployeeMailboxDO methods, the rewritten
 inbound-email.ts hard-block branch, and two HTTP route changes.
 </objective>
+
+<coverage>
+Requirement coverage this plan closes/touches (legend: ★★★ = fully addressed, ★★ = mostly,
+★ = partial, [GAP] = not addressed):
+
+  SAFETY-POLICY-01..03   ★★★   Task 2 — hard-block/soft-flag/fail-open policy BRANCHING is
+                                 preserved exactly as-is; only the hard-block RESPONSE changes
+                                 (silent drop -> quarantine into Spam).
+  SAFETY-RESPONSE-02     ★★★   Task 2 — "no auto-reply on hard-block" is preserved verbatim;
+                                 only the storage destination changes.
+  SAFETY-SCOPE-01..02    ★★★   Task 1 + Task 2 — existing Mattermost-bypass and workspace-wide
+                                 KV-allowlist bypass are untouched; new per-employee trust
+                                 bypass is additive, not a replacement.
+  SAFETY-LOG-01          ★★★   Task 2 — the safety_events POST to the student app is unchanged
+                                 and still fires on every non-"passed" screen result.
+  SAFETY-VIEW-01         ★★★   unchanged — /ops/safety reads the same safety_events table,
+                                 unaffected by where the mail ends up being stored.
+
+Track 1 product scope (Spam folder + Trust sender) has no dedicated REQUIREMENTS.md IDs of
+its own yet (it's tracked via this plan's must_haves goal-backward truths instead — see
+frontmatter above).
+</coverage>
 
 <execution_context>
 @~/.claude/rrr/workflows/execute-plan.md
@@ -220,6 +243,13 @@ table exists in schema.ts; `EmployeeMailboxDO.trustSender()`, `.isSenderTrusted(
 Two changes to the Lakera screening block (~lines 187-353), both preserving every existing
 side effect (structured logging, the `safety_events` POST to the student app) unchanged:
 
+NOTE (out of scope, checker-confirmed 2026-07-16): this file has a SECOND, pre-existing,
+Lakera-unrelated silent drop at the `if (!employee) { ...; return; }` branch (~line 125-130,
+"no employee matches recipients"). This phase does NOT touch that branch — only the Lakera
+hard-block branch's silent-drop is in scope. Do not "fix" the no-employee-match branch as
+part of this task; a future reader should not assume Phase 36 eliminated every silent drop
+in this file, only the Lakera one.
+
 1. **Per-employee trust check** — add this immediately after the existing workspace-wide KV
    `safety_skip_senders` block (after line ~217, before `if (!skipScreen && emailBody.length > 0)`).
    `mailboxStub` is already resolved at line 183, so no new DO lookup is needed:
@@ -281,13 +311,14 @@ side effect (structured logging, the `safety_events` POST to the student app) un
 Read the diff and confirm: (a) no `return;` remains inside the `if (isHardBlock)` block,
 (b) exactly one `createEmail(...)` call remains in the file (the one at the bottom, now
 parameterized by `targetFolder`), (c) the trust-sender check runs strictly before
-`screenMessage(emailBody, env)` is invoked.
+`screenMessage(emailBody, env)` is invoked, (d) the `if (!employee)` branch (~line 125-130) is
+untouched.
   </verify>
   <done>
 Hard-blocked mail reaches `createEmail(Folders.SPAM, ...)` instead of being dropped.
 Trusted-sender mail skips `screenMessage()` entirely (Lakera never called). Fail-open /
 soft-flag / non-hard-block mail still reaches `createEmail(Folders.INBOX, ...)` exactly as
-before this plan.
+before this plan. The unrelated no-employee-match silent drop is left as-is.
   </done>
 </task>
 
@@ -305,6 +336,13 @@ before this plan.
    // see the PARROT_FEATURE_FLAGS `safety_skip_senders` KV for the pre-existing
    // workspace-wide mechanism, which this does NOT touch) and moves the current
    // message out of Spam into Inbox in the same call.
+   //
+   // SCOPE NOTE (checker-flagged UX trap, 2026-07-16 decision): this moves ONLY the
+   // message identified by :id. It deliberately does NOT bulk-move every other Spam
+   // message from the same sender -- those are left in Spam to either be individually
+   // recovered the same way or auto-purged after 30 days (Plan 36-03). Do NOT "fix"
+   // this into a bulk move -- it is intentional, Outlook-accurate behavior, not an
+   // oversight. (Plan 36-02's UI copy must reflect this too — see that plan.)
    app.post(
      "/api/inbox/messages/:id/trust-sender",
      requireEmployeeMailbox,
@@ -351,6 +389,8 @@ added here).
   <done>
 `POST /api/inbox/messages/:id/trust-sender` and the extended `GET /api/inbox/folder-counts`
 (now including `spam`) are mounted on the Hono app and return well-formed JSON on success.
+The trust-sender route's single-message scope is documented inline so it isn't later "fixed"
+into an unintended bulk move.
   </done>
 </task>
 
@@ -375,7 +415,8 @@ the chrome/Playwright visual verification once the feature is actually visible).
 3. `inbound-email.ts`'s hard-block branch quarantines into `Folders.SPAM` instead of returning
    early; a per-employee trusted sender's mail skips Lakera screening entirely.
 4. `POST /api/inbox/messages/:id/trust-sender` and the spam-inclusive `GET
-   /api/inbox/folder-counts` are live routes.
+   /api/inbox/folder-counts` are live routes; the trust-sender route moves only the single
+   targeted message, by design.
 5. `npm run typecheck`, `npm test`, and `npm run build` all pass in `apps/parrot/`.
 </success_criteria>
 

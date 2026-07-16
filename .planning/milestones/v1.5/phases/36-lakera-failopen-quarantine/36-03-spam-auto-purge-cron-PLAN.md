@@ -12,6 +12,8 @@ autonomous: true
 skills:
   - projecta.testing-vitest-playwright
 skills_mode: normal
+coverage_diagram_not_applicable: true
+coverage_diagram_skip_reason: "30-day spam auto-purge has no assigned REQUIREMENTS.md ID — it implements the 2026-07-09 retention decision directly. Coverage is tracked via this plan's must_haves goal-backward truths instead (see below)."
 
 verification:
   surface: backend_only
