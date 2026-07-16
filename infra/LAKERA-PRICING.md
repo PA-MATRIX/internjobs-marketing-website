@@ -68,6 +68,16 @@ not sufficient.**` line. Until then this doc captures everything that
 can be verified server-side; the user-side dashboard signal is
 "present, working, logs visible."
 
+**Status: STILL PENDING as of 2026-07-16 — handed off to Raj (Phase 36,
+plan 36-05, LAKERA-V2-03).** Not dropped, not closed. The tier/quota
+question is account-gated: no CLI or API surface exposes tier or billing
+data (re-confirmed this phase), so it cannot be answered by an agent and
+is blocked on Raj's `platform.lakera.ai` / Cisco AI Defense sign-in. The
+three items under "Action item:" above are exactly what he needs to
+capture; the `**Decision:**` line lands here once he reports back. No
+code change is required in this phase either way — LAKERA-V2-03 is a
+documentation/decision requirement, not an implementation one.
+
 ## Critical bug discovered + fixed during verification — silent-fail in hard-block gate
 
 The v2 schema drift (v1 `results[].categories.prompt_injection` numeric
