@@ -1,8 +1,19 @@
 ---
 phase: 36-lakera-failopen-quarantine
 verified: 2026-07-16T19:08:49Z
-status: human_needed
-score: 8/8 automated must-haves verified; live deploy + boot-check DONE 2026-07-17; 1 item (a real flagged email landing in Spam) still open
+status: passed
+score: 8/8 automated must-haves verified + full end-to-end production UAT PASSED 2026-07-17
+end_to_end_uat_2026_07_17:
+  result: PASSED — the phase goal is proven in production, not merely by code reading.
+  test: "Operator (Nithin) sent a prompt-injection email from a personal (non-member, non-trusted, non-skip-listed) address to a real internjobs.ai employee mailbox on live Worker version 3347a2c7."
+  observed:
+    - "The flagged email landed in the SPAM folder — it was quarantined and persisted, NOT silently dropped. This is the exact behaviour the phase exists to create; pre-Phase-36 the message would have hit `return;` and ceased to exist."
+    - "The quarantined message was visible and openable in the Spam folder."
+    - "Clicking Trust sender moved that message into the Inbox."
+  closes:
+    - "human item 1 — the real SQLite write with folder_id='spam' on a live DO is now OBSERVED (previously the DO was mocked in every test)."
+    - "human item 2 — the quarantined-message render + Trust sender click-path are now OBSERVED (previously npm run dev could not boot, so this UI had never rendered)."
+  side_effect: "The operator's test sender is now PERMANENTLY in that employee's trusted_senders table — future mail from it bypasses Lakera. There is no revoke UI (known follow-up). Clear the row if the test address matters."
 live_progress_2026_07_17:
   deployed: "internjobs-parrot version 3347a2c7 — deployed and boot-checked live (/api/health 200 x3, real JSON, no workerd 1101/1102 boot-error signature; the entrypoint-export trap did NOT fire). /api/inbox/messages?folder=spam returns 401 (routed, auth-gated) not 500. wrangler.jsonc cron unchanged (single */5)."
   migration_10_applied: "CONFIRMED. Operator (Nithin) signed in and the email pane loaded normally. applyMigrations() runs synchronously in the EmployeeMailboxDO constructor, so a faulty migration 10 would have errored the mailbox instead of rendering it. This closes the migration-self-application half of human item 1."
@@ -24,7 +35,7 @@ human_verification:
 **Phase Goal:** Replace Lakera's silent-drop of flagged inbound email with a visible, recoverable Spam/Junk folder plus an Outlook-style "Trust sender" allowlist (Track 1), plus test-level fail-open verification and a non-fabricated Lakera tier hand-off (Track 2).
 
 **Verified:** 2026-07-16
-**Status:** human_needed
+**Status:** passed (end-to-end production UAT passed 2026-07-17)
 **Re-verification:** No -- initial verification
 
 ## Architectural Context Loaded
