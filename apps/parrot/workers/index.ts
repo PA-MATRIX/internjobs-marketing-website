@@ -388,15 +388,19 @@ app.get(
 	requireEmployeeMailbox,
 	async (c: AppContext) => {
 		const stub = c.var.mailboxStub;
-		const [inbox, sent, draft, archive, trash, starred] = await Promise.all([
+		// v1.5 Phase 36: `spam` added — the Spam folder is now written to by the
+		// inbound-email Lakera hard-block quarantine path, so it needs a sidebar
+		// badge count like every other folder.
+		const [inbox, sent, draft, archive, trash, starred, spam] = await Promise.all([
 			stub.countEmails({ folder: "inbox" }),
 			stub.countEmails({ folder: "sent" }),
 			stub.countEmails({ folder: "draft" }),
 			stub.countEmails({ folder: "archive" }),
 			stub.countEmails({ folder: "trash" }),
 			stub.countEmails({ starred: true }),
+			stub.countEmails({ folder: "spam" }),
 		]);
-		return c.json({ inbox, sent, draft, archive, trash, starred });
+		return c.json({ inbox, sent, draft, archive, trash, starred, spam });
 	},
 );
 
@@ -479,6 +483,35 @@ app.delete(
 		const moved = await stub.moveEmail(id, Folders.TRASH);
 		if (!moved) return c.json({ error: "Move to trash failed" }, 500);
 		return c.json({ ok: true, id, movedToTrash: true });
+	},
+);
+
+// v1.5 Phase 36 (2026-07-09 decision): "Trust sender" — Outlook-style
+// per-employee allowlist. Records the sender as trusted for THIS employee (not
+// workspace-wide; see the PARROT_FEATURE_FLAGS `safety_skip_senders` KV for the
+// pre-existing workspace-wide mechanism, which this does NOT touch) and moves
+// the current message out of Spam into Inbox in the same call.
+//
+// SCOPE NOTE (checker-flagged UX trap, 2026-07-16 decision): this moves ONLY the
+// message identified by :id. It deliberately does NOT bulk-move every other Spam
+// message from the same sender — those are left in Spam to either be individually
+// recovered the same way or auto-purged after 30 days (Plan 36-03). Do NOT "fix"
+// this into a bulk move — it is intentional, Outlook-accurate behavior, not an
+// oversight. (Plan 36-02's UI copy must reflect this too — see that plan.)
+app.post(
+	"/api/inbox/messages/:id/trust-sender",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const id = c.req.param("id");
+		if (!id) return c.json({ error: "Missing message id" }, 400);
+		const stub = c.var.mailboxStub;
+		const email = await stub.getEmail(id);
+		if (!email) return c.json({ error: "Email not found" }, 404);
+		const sender = (email.sender || "").toLowerCase();
+		if (!sender) return c.json({ error: "Email has no sender" }, 400);
+		await stub.trustSender(sender);
+		const moved = await stub.moveEmail(id, Folders.INBOX);
+		return c.json({ ok: true, id, sender, movedToInbox: moved });
 	},
 );
 
