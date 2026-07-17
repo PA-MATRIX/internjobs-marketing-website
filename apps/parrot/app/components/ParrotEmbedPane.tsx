@@ -44,15 +44,28 @@ import {
 
 // ── Incoming-call ringtone ─────────────────────────────────────────────
 //
-// A looping two-tone "ring" built on the SAME lazy-init Web Audio pattern as
-// ChatPane's playChatChime (created on first use, after a user gesture, per
+// Incoming-call ringtone file. Currently an ORIGINAL marimba tone at
+// apps/parrot/public/ringtone.wav (a struck-bar marimba timbre playing our own
+// pentatonic pattern — deliberately NOT Apple's iPhone recording/melody, so it
+// is safe to ship to real users; a licensed/original file was chosen over the
+// copyrighted iPhone ringtone on 2026-07-17).
+//
+// To swap in a different file later: drop it in apps/parrot/public/ and point
+// this at its public path. Set to null to fall back to the synthesized tone
+// below. That single line is the ONLY change — the incoming-call wiring and
+// start/stop are unchanged either way. Keep any replacement royalty-free /
+// properly licensed (Apple's ringtone / Zedge / song clips are not).
+const RINGTONE_FILE_SRC: string | null = "/ringtone.wav";
+
+// Synthesized fallback ring — a warm, marimba-like two-note motif (D5→A5),
+// each note a fundamental plus a soft octave and a quick attack / long
+// exponential decay, so it reads as a gentle phone ring rather than a harsh
+// buzz. Lazy-init Web Audio (created on first use after a user gesture, per
 // browser autoplay policy; reused thereafter; everything try/caught so
-// unsupported browsers silently no-op). We deliberately DON'T import from
-// ChatPane (playChatChime isn't exported) and use a distinct, longer
-// alternating two-tone loop so a ringing phone is audibly different from a
-// chat ping. The loop repeats until parrot:call-ended stops it.
+// unsupported browsers silently no-op). Repeats until parrot:call-ended stops it.
 let _callAudioCtx: AudioContext | null = null;
 let _ringtoneTimer: ReturnType<typeof setInterval> | null = null;
+let _ringtoneAudio: HTMLAudioElement | null = null;
 
 function playRingtoneBurst() {
 	try {
@@ -66,21 +79,27 @@ function playRingtoneBurst() {
 		const ctx = _callAudioCtx;
 		if (ctx.state === "suspended") void ctx.resume();
 		const now = ctx.currentTime;
-		// Alternating C5/E5 "brr-brr" — four notes over ~1.2s.
-		const tones = [523.25, 659.25, 523.25, 659.25];
-		tones.forEach((freq, i) => {
-			const osc = ctx.createOscillator();
-			const gain = ctx.createGain();
-			osc.type = "sine";
-			osc.frequency.value = freq;
-			const t = now + i * 0.3;
-			gain.gain.setValueAtTime(0.0001, t);
-			gain.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
-			gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-			osc.connect(gain);
-			gain.connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.3);
+		// Two-note rising motif; each note = fundamental + soft octave for warmth.
+		const notes = [
+			{ at: 0.0, freq: 587.33 }, // D5
+			{ at: 0.19, freq: 880.0 }, // A5
+		];
+		notes.forEach(({ at, freq }) => {
+			[1, 2].forEach((mult, harmonic) => {
+				const osc = ctx.createOscillator();
+				const gain = ctx.createGain();
+				osc.type = "triangle";
+				osc.frequency.value = freq * mult;
+				const t = now + at;
+				const peak = harmonic === 0 ? 0.2 : 0.05; // octave much quieter
+				gain.gain.setValueAtTime(0.0001, t);
+				gain.gain.exponentialRampToValueAtTime(peak, t + 0.012);
+				gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+				osc.connect(gain);
+				gain.connect(ctx.destination);
+				osc.start(t);
+				osc.stop(t + 0.55);
+			});
 		});
 	} catch {
 		/* audio unavailable — ignore */
@@ -89,15 +108,39 @@ function playRingtoneBurst() {
 
 function playIncomingCallRingtone() {
 	if (typeof window === "undefined") return;
+	// File path configured → loop the file. This branch is inert until
+	// RINGTONE_FILE_SRC is set (see the swap note above).
+	if (RINGTONE_FILE_SRC) {
+		try {
+			if (!_ringtoneAudio) {
+				_ringtoneAudio = new Audio(RINGTONE_FILE_SRC);
+				_ringtoneAudio.loop = true;
+			}
+			void _ringtoneAudio.play();
+		} catch {
+			/* autoplay blocked / unsupported — ignore */
+		}
+		return;
+	}
+	// Synthesized fallback: play the motif now, then repeat every ~2s (a
+	// natural ring cadence with a short gap between rings).
 	playRingtoneBurst();
 	if (_ringtoneTimer) return; // already ringing
-	_ringtoneTimer = setInterval(playRingtoneBurst, 1600);
+	_ringtoneTimer = setInterval(playRingtoneBurst, 2000);
 }
 
 function stopIncomingCallRingtone() {
 	if (_ringtoneTimer) {
 		clearInterval(_ringtoneTimer);
 		_ringtoneTimer = null;
+	}
+	if (_ringtoneAudio) {
+		try {
+			_ringtoneAudio.pause();
+			_ringtoneAudio.currentTime = 0;
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
