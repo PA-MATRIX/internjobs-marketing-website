@@ -30,6 +30,7 @@ import { app as apiApp } from "./index";
 import type { Employee, Env } from "./types";
 import type { ParrotContext } from "./lib/mailbox";
 import { getWorkspaceStub } from "./durableObject/workspace";
+import { resolveClerkContact } from "./lib/operator";
 
 export { EmployeeMailboxDO } from "./durableObject";
 export { WorkspaceDO } from "./durableObject/workspace";
@@ -325,10 +326,33 @@ app.use("*", async (c, next) => {
 		if (isApi) return c.json({ error: "missing_required_claims" }, 401);
 		return c.redirect(buildSignInRedirect(path), 302);
 	}
-	const employee = await enrichEmployeeFromDirectory(c.env, employeeFromClaims);
+	let employee = await enrichEmployeeFromDirectory(c.env, employeeFromClaims);
 	if (!employee) {
 		if (isApi) return c.json({ error: "employee_disabled" }, 403);
 		return c.redirect(buildSignInRedirect(path), 302);
+	}
+
+	// Phase 32: guarantee employee.email is a real address for EVERY downstream
+	// route. Phone-OTP sessions carry no email claim, and a bootstrap operator
+	// (admin via Clerk metadata, no directory row) skips the workspace_email
+	// override above — so deriveEmployeeFromClaims left email as the phone/
+	// user-id fallback. That breaks Mattermost provisioning ("chat account still
+	// being set up"), the outbound email From address, and the Parrot embed
+	// token, all of which read employee.email. Resolve the canonical email +
+	// name from Clerk's Backend API when we don't already have a real one
+	// (cached; only fires for the rare email-less account, so normal sign-ins
+	// pay nothing).
+	if (!employee.email.includes("@")) {
+		const contact = await resolveClerkContact(c.env, employee.employeeId);
+		if (contact.email) {
+			employee = {
+				...employee,
+				email: contact.email,
+				displayName: employee.displayName?.trim()
+					? employee.displayName
+					: contact.name || employee.displayName,
+			};
+		}
 	}
 
 	// No org-membership gate. The employee Clerk app
