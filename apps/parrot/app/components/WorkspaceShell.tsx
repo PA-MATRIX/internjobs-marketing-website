@@ -122,6 +122,11 @@ export function WorkspaceShell({
 	const searchMode: "email" | "chat" = location.pathname.startsWith("/inbox")
 		? "email"
 		: "chat";
+	// Phase 32: the Parrot pane embeds a third-party dialer with its own search;
+	// our context-aware header search can't reach into it and searching Workspace
+	// chat/email from the phone pane is meaningless, so hide it there. The
+	// notification bell stays on every pane.
+	const onParrotPane = location.pathname.startsWith("/parrot");
 
 	useEffect(() => {
 		const term = headerSearch.trim();
@@ -412,6 +417,7 @@ export function WorkspaceShell({
 				<header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
 					<h1 className="text-base font-semibold truncate">{activeLabel}</h1>
 					<div className="flex items-center gap-3">
+						{!onParrotPane && (
 						<div className="relative hidden md:block">
 							<input
 								type="search"
@@ -507,6 +513,7 @@ export function WorkspaceShell({
 								</>
 							)}
 						</div>
+						)}
 						{/* Phase 13 Wave 1: notification bell. Red dot when unread > 0. */}
 						<button
 							type="button"

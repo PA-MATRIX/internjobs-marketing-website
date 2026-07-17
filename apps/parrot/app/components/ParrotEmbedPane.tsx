@@ -24,6 +24,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Loader2, PhoneIncoming, RefreshCw } from "lucide-react";
 import { api } from "~/lib/api";
 import { useCurrentEmployee } from "~/lib/auth";
+import { playChatChime } from "~/lib/chat-chime";
 import {
 	buildEmbedSrc,
 	buildParrotDialMessage,
@@ -124,6 +125,10 @@ export function ParrotEmbedPane() {
 	const mintStartedRef = useRef(false);
 	const readyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const readyRef = useRef(false);
+	// Last inbound-SMS (unread-message) count seen via parrot:badge. Starts null
+	// so the first badge (which reports pre-existing unread on load) primes the
+	// baseline WITHOUT chiming; only a later increase means a genuinely new SMS.
+	const prevSmsCountRef = useRef<number | null>(null);
 	// useNavigate is stable, but mirror it into a ref so the []-deps dial
 	// listener never reads a stale closure.
 	const navigateRef = useRef(navigate);
@@ -243,6 +248,17 @@ export function ParrotEmbedPane() {
 				window.dispatchEvent(
 					new CustomEvent(PARROT_BADGE_CHANGE_EVENT, { detail: badge }),
 				);
+				// A new inbound SMS = the unread-message count went UP. Play the
+				// SAME chime the Chat pane uses (2026-07-17 request). Skip the first
+				// badge (baseline) so we don't chime for messages already unread on
+				// load, and only fire on an increase (not on a decrement/read).
+				if (
+					prevSmsCountRef.current !== null &&
+					badge.messages > prevSmsCountRef.current
+				) {
+					playChatChime(false);
+				}
+				prevSmsCountRef.current = badge.messages;
 				return;
 			}
 			const incoming = parseParrotIncomingCall(data);
