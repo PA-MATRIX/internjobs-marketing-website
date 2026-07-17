@@ -42,7 +42,10 @@ import {
 	getRoom,
 } from "./lib/daily";
 import { pingParrotGraph } from "./lib/graph";
-import { isOperator as hasOperatorAccess } from "./lib/operator";
+import {
+	isOperator as hasOperatorAccess,
+	resolveClerkContact,
+} from "./lib/operator";
 // Phase 32 (32-01): short-lived RS256 embed-JWT minting for the Parrot pane.
 import { mintEmbedToken } from "./lib/embed-jwt";
 import {
@@ -373,14 +376,34 @@ app.post(
 		const role = (await hasOperatorAccess(c.env, employee))
 			? "admin"
 			: "employee";
+
+		// Parrot links a user by the `email` claim on first sight
+		// (WORKSPACE-EMBED-REPLY §7.2), so the token MUST carry a real address.
+		// employee.email degrades to the phone number or Clerk user id for
+		// phone-OTP accounts with no directory row (see app.ts:135 fallback), so
+		// when it isn't an address, resolve the canonical email + name from
+		// Clerk's Backend API. Refuse to mint rather than hand Parrot a bogus
+		// identifier it can never match (which would strand the user on the
+		// "ask your admin" panel with no clue why).
+		let email = employee.email;
+		let name = employee.displayName;
+		if (!email.includes("@")) {
+			const contact = await resolveClerkContact(c.env, employee.employeeId);
+			if (contact.email) email = contact.email;
+			if ((!name || !name.trim()) && contact.name) name = contact.name;
+		}
+		if (!email.includes("@")) {
+			return c.json({ error: "embed_email_unavailable" }, 422);
+		}
+
 		try {
 			const { token, expiresIn } = await mintEmbedToken(
 				c.env,
 				PARROT_EMBED_ISSUER,
 				{
 					sub: employee.employeeId,
-					email: employee.email,
-					name: employee.displayName,
+					email,
+					name,
 					phone: employee.phoneNumber,
 					role,
 				},
