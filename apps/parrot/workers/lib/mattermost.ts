@@ -206,7 +206,12 @@ export async function createMmUser(
 			body: JSON.stringify({
 				email: profile.email,
 				username: deriveMmUsername(profile.email),
-				password: `Aa1!${crypto.randomUUID()}${crypto.randomUUID()}`,
+				// A single UUID (36 chars) + the complexity prefix is ample entropy
+			// for a shadow account the user never types (login is SSO/token). Two
+			// UUIDs pushed this to 76 chars and tripped Mattermost's 72-char
+			// password cap, so every fresh on-demand provision returned 400
+			// ("password must contain no more than 72 characters") → user_not_found.
+			password: `Aa1!${crypto.randomUUID()}`,
 				first_name: profile.givenName ?? "",
 				last_name: profile.familyName ?? "",
 				nickname: profile.displayName ?? "",
@@ -214,6 +219,16 @@ export async function createMmUser(
 		},
 	);
 	if (created.ok) return created.data;
+	// Surface the Mattermost error instead of swallowing it — a silent failure
+	// here is what made "chat account still being set up" undiagnosable. Common
+	// causes: 401/403 (admin token missing/invalid — the bot can't create
+	// users), 400 invalid email, or username/email already taken.
+	console.warn("mm_create_user_failed", {
+		status: created.status,
+		mm_error: created.data,
+		email: profile.email,
+		username: deriveMmUsername(profile.email),
+	});
 	// Lost a create race (email/username already taken) — re-resolve by email.
 	return await getMmUserByEmail(mattermostUrl, botToken, profile.email);
 }

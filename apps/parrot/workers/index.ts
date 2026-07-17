@@ -1065,6 +1065,10 @@ async function loadChatContext(c: AppContext):
 		c.env.MATTERMOST_ADMIN_TOKEN,
 	);
 	if (!membership.ok) {
+		console.warn("chat_bootstrap_failed", {
+			email: employee.email,
+			reason: membership.reason,
+		});
 		return {
 			ok: false,
 			status: membership.reason === "user_not_found" ? 404 : 502,
