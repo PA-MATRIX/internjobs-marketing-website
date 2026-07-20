@@ -111,6 +111,28 @@ export function buildEmbedSrc(embedUrl: string, token: string): string {
  * CustomEvent dispatch path unit-testable under this repo's node-only Vitest
  * env, where there is no DOM `window`.
  */
+/**
+ * Phase 32 click-to-dial: matcher for phone numbers pasted into chat.
+ *
+ * Deliberately conservative — a candidate must normalise to 10-15 digits, so
+ * dates (`2026-07-18` → 8 digits) and short ids never turn into dial buttons.
+ * Exported (with normaliseDialNumber) so the detection rules are unit-tested
+ * rather than buried in a component.
+ */
+export const PHONE_CANDIDATE_RE = /\+?\d[\d\s().-]{7,}\d/g;
+
+/**
+ * Normalise a matched candidate to something worth handing the dialer.
+ * Returns null when it isn't phone-shaped. An explicit `+` country code is
+ * preserved; otherwise the bare digits are returned and the employee can
+ * adjust in the dialer (the pre-fill is editable).
+ */
+export function normalizeDialNumber(raw: string): string | null {
+	const digits = raw.replace(/\D/g, "");
+	if (digits.length < 10 || digits.length > 15) return null;
+	return raw.trim().startsWith("+") ? `+${digits}` : digits;
+}
+
 export function requestParrotDial(
 	number: string,
 	target: Pick<EventTarget, "dispatchEvent"> | undefined = typeof window !==

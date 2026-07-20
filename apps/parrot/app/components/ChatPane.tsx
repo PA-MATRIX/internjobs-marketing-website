@@ -36,6 +36,7 @@ import {
 	MessageSquare,
 	Paperclip,
 	Pencil,
+	Phone,
 	Pin,
 	Plus,
 	RefreshCw,
@@ -55,6 +56,11 @@ import { StartMeeting } from "./crosspane/StartMeeting";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { apiFetch } from "~/lib/api";
 import { playChatChime } from "~/lib/chat-chime";
+import {
+	PHONE_CANDIDATE_RE,
+	normalizeDialNumber,
+	requestParrotDial,
+} from "~/lib/parrot-embed";
 
 interface MmUser {
 	id: string;
@@ -443,6 +449,44 @@ function isImageFile(file: MmFileInfo): boolean {
 	return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
 }
 
+// Phase 32: click-to-dial. A phone number pasted into chat becomes a button
+// that pre-fills the Parrot dialer (requestParrotDial → parrot:dial). Per the
+// locked embed contract §2.3 this is PRE-FILL ONLY — the user still clicks Call
+// inside the Parrot pane, because a click in the parent frame carries no user
+// activation into the iframe and browsers would block the mic/media otherwise.
+//
+// The matcher + normaliser live in ~/lib/parrot-embed so they're unit-tested.
+/** Split a plain-text run into text + Dial buttons for any phone numbers. */
+function linkifyPhones(text: string, keyPrefix: string): ReactNode[] {
+	const out: ReactNode[] = [];
+	let last = 0;
+	let k = 0;
+	PHONE_CANDIDATE_RE.lastIndex = 0;
+	let m: RegExpExecArray | null;
+	// biome-ignore lint/suspicious/noAssignInExpressions: standard regex walk
+	while ((m = PHONE_CANDIDATE_RE.exec(text)) !== null) {
+		const raw = m[0];
+		const normalized = normalizeDialNumber(raw);
+		if (!normalized) continue; // not phone-shaped — leave it as plain text
+		if (m.index > last) out.push(text.slice(last, m.index));
+		out.push(
+			<button
+				key={`${keyPrefix}p${k++}`}
+				type="button"
+				onClick={() => requestParrotDial(normalized)}
+				title={`Dial ${normalized} in Parrot`}
+				className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1 font-medium text-emerald-700 underline decoration-dotted underline-offset-2 hover:bg-emerald-100"
+			>
+				<Phone size={11} strokeWidth={2.5} className="shrink-0" />
+				{raw.trim()}
+			</button>,
+		);
+		last = m.index + raw.length;
+	}
+	if (last < text.length) out.push(text.slice(last));
+	return out.length ? out : [text];
+}
+
 // Render message text with @mentions highlighted. The current employee's own
 // username gets a yellow background (directed-at-you); other mentions are sky
 // blue. Returns a ReactNode array so we keep the rest of the text as-is.
@@ -488,7 +532,12 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 		lastIndex = mentionStart + mention.length;
 	}
 	if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-	return parts.length ? parts : text;
+	if (!parts.length) return linkifyPhones(text, "t");
+	// Phase 32: turn phone numbers into Dial buttons, but ONLY inside the plain
+	// text runs — the @mention spans above are left exactly as they were.
+	return parts.flatMap((part, i) =>
+		typeof part === "string" ? linkifyPhones(part, `s${i}-`) : part,
+	);
 }
 
 // ── Wave 4 (31-05): real-time WebSocket hook ──────────────────────────

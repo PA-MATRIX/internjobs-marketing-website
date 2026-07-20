@@ -24,6 +24,8 @@ import {
 	buildParrotOpenContactMessage,
 	buildEmbedSrc,
 	requestParrotDial,
+	PHONE_CANDIDATE_RE,
+	normalizeDialNumber,
 } from "../../../app/lib/parrot-embed";
 
 describe("isTrustedParrotOrigin", () => {
@@ -252,5 +254,43 @@ describe("requestParrotDial", () => {
 		});
 		requestParrotDial("+442071234567", target);
 		expect(received).toEqual({ number: "+442071234567" });
+	});
+});
+
+// Phase 32 click-to-dial: the detection rules that decide whether a run of
+// text in a chat message becomes a Dial button. The false-positive cases
+// matter most — a date or an order id turning into a "call this" button would
+// be worse than missing a number.
+describe("click-to-dial number detection", () => {
+	function firstMatch(text: string): string | null {
+		PHONE_CANDIDATE_RE.lastIndex = 0;
+		const m = PHONE_CANDIDATE_RE.exec(text);
+		return m ? normalizeDialNumber(m[0]) : null;
+	}
+
+	it("keeps an explicit country code and strips formatting", () => {
+		expect(normalizeDialNumber("+1 (555) 123-4567")).toBe("+15551234567");
+		expect(normalizeDialNumber("+44 20 7123 4567")).toBe("+442071234567");
+		expect(normalizeDialNumber("+91 98765 43210")).toBe("+919876543210");
+	});
+
+	it("returns bare digits when there is no country code", () => {
+		expect(normalizeDialNumber("555-123-4567")).toBe("5551234567");
+	});
+
+	it("rejects anything that isn't 10-15 digits", () => {
+		expect(normalizeDialNumber("12345")).toBeNull(); // too short
+		expect(normalizeDialNumber("1234567890123456")).toBeNull(); // too long
+	});
+
+	it("does NOT turn dates into dial buttons (the key false positive)", () => {
+		expect(firstMatch("shipped on 2026-07-18 as planned")).toBeNull();
+		expect(firstMatch("meeting 12/05/2026")).toBeNull();
+	});
+
+	it("finds a number embedded in a sentence", () => {
+		expect(firstMatch("call me on +1 555 123 4567 tomorrow")).toBe(
+			"+15551234567",
+		);
 	});
 });
