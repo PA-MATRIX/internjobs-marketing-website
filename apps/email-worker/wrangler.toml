@@ -4,24 +4,50 @@ compatibility_date = "2026-05-16"
 
 [vars]
 FLY_INGEST_URL = "https://app.internjobs.ai/webhooks/email"
+# v1.5 Phase 33: apps/startup Worker's internal inbound-email endpoint. Mail to
+# *@employers.internjobs.ai is handed off here (raw MIME POST) instead of being
+# forwarded to the operator inbox.
+STARTUP_EMAIL_HANDOFF_URL = "https://mcp.internjobs.ai/internal/email/inbound"
 
 # EMAIL_WORKER_SECRET is set as an encrypted secret via:
 #   cd apps/email-worker && npx wrangler secret put EMAIL_WORKER_SECRET
 # Never put it in this file — wrangler.toml is committed to git.
+#
+# EMAIL_HANDOFF_SECRET (v1.5 Phase 33) is set as an encrypted secret via:
+#   cd apps/email-worker && npx wrangler secret put EMAIL_HANDOFF_SECRET
+# It must be the SAME VALUE as the apps/startup Worker's secret of the same
+# name (the two are provisioned together in Plan 33-04). Infisical key:
+# EMAIL_HANDOFF_SECRET. Never put it in this file — wrangler.toml is in git.
 
 # Cloudflare Email Routing rules (configured in CF Dashboard, not here):
 #
-#   1. Subdomain `agent.internjobs.ai` catch-all:
-#        *@agent.internjobs.ai → Send to Worker → internjobs-email-ingest
-#      This is the ONLY routing target for the Worker (2026-05-16 subdomain
-#      isolation update). Per-conversation aliases
-#      `conv-{conversation_id}@agent.internjobs.ai` land here.
+#   ACTUAL LIVE TOPOLOGY (verified via CF API during Phase 33, 2026-07):
+#   Cloudflare Email Routing has exactly ONE zone-wide catch-all rule for the
+#   internjobs.ai zone (matchers:[{type:"all"}]), bound to THIS Worker
+#   (internjobs-email-ingest). There is no way to scope a second, independent
+#   catch-all to a single subdomain — the CF dashboard's per-subdomain dropdown
+#   is only a filtered VIEW of this one rule, not a separate rule. (The
+#   comment this replaced incorrectly described two independent catch-alls —
+#   one for agent.internjobs.ai and a separate one for the apex — as fact.
+#   That was never actually configurable that way; do not reintroduce the
+#   assumption.)
 #
-#   2. Apex `internjobs.ai` (human/employee email — NOT this Worker):
-#        - Custom address: raj@internjobs.ai → rentalaraj@gmail.com (forward)
-#        - Catch-all: *@internjobs.ai → rentalaraj@gmail.com (forward)
-#      Apex mail NEVER reaches this Worker. A startup that strips the
-#      subdomain in their reply lands in the human inbox, not the agent.
+#   This single catch-all Worker dispatches on the recipient address into
+#   three branches (see src/index.js email()):
+#     1. conv-{uuid}@agent.internjobs.ai  -> HMAC-signed POST to FLY_INGEST_URL
+#        (student conversation ingestion, pre-Phase-33 behavior, unchanged)
+#     2. *@employers.internjobs.ai        -> HTTP handoff to
+#        STARTUP_EMAIL_HANDOFF_URL (Phase 33 — apps/startup's
+#        POST /internal/email/inbound), falling back to (3) on any failure
+#     3. everything else (agent.internjobs.ai non-conv addresses, apex
+#        addresses like raj@internjobs.ai that don't have their own
+#        CF "specific address" rule, and employers.internjobs.ai handoff
+#        failures) -> message.forward(OPERATOR_FALLBACK)
+#
+#   Specific-address CF rules (e.g. raj@internjobs.ai -> a personal inbox)
+#   still take precedence over the catch-all where configured, per normal
+#   CF Email Routing rule-matching order — those bypass this Worker entirely
+#   and are unaffected by anything in this file.
 #
 # No `[[zone]]` block needed here — CF Email Routing → Worker binding is
 # configured entirely in the dashboard. The Worker's `name` (above) is what

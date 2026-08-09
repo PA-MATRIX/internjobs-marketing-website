@@ -25,13 +25,13 @@
       "branch": "rrr/v1.5/team-cms",
       "sprite": "rrr-internjobs-marketing-website-v1-5-team-cms",
       "phases": [],
-      "status": "assigned"
+      "status": "idle"
     },
     "team-workspace": {
       "github_team": "@PA-MATRIX/team-workspace",
       "branch": "rrr/v1.5/team-workspace",
       "sprite": "rrr-internjobs-marketing-website-v1-5-team-workspace",
-      "phases": [],
+      "phases": ["32", "33", "34", "35", "36"],
       "status": "assigned"
     }
   }
