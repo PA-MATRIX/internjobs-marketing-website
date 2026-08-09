@@ -52,6 +52,8 @@ function folderTitle(folder: string): string {
 			return "Trash";
 		case "starred":
 			return "Starred";
+		case "spam":
+			return "Spam";
 		default:
 			return "Inbox";
 	}
@@ -154,7 +156,12 @@ export function InboxPane({
 	// caches), and show the matching toast. Archive / move-to-trash get an
 	// Undo that re-moves the message back to the folder we were viewing.
 	async function handleActioned(
-		action: "archived" | "unarchived" | "deleted" | "moved-to-trash",
+		action:
+			| "archived"
+			| "unarchived"
+			| "deleted"
+			| "moved-to-trash"
+			| "trusted",
 	) {
 		const previousFolder = folder;
 		const previousId = selectedId;
@@ -180,6 +187,22 @@ export function InboxPane({
 				}
 				setToast(null);
 			});
+		} else if (action === "trusted") {
+			// v1.5 Phase 36. No Undo (same no-undo pattern as hard-delete):
+			// trusting a sender writes a persistent per-employee allowlist row,
+			// so it is not something a 4-second toast should silently reverse.
+			//
+			// COPY IS LOAD-BEARING (2026-07-16 decision): trust-sender recovers
+			// ONLY the clicked message — the sender's other quarantined mail
+			// stays in Spam and auto-purges at 30 days. This wording therefore
+			// names exactly what moved (this one message), what changes going
+			// forward (future mail skips screening), and what did NOT happen
+			// (their other Spam is untouched). Do not shorten it to something
+			// like "Sender trusted" — that would imply a bulk recovery that
+			// never occurred and leave the user hunting for mail still in Spam.
+			showToast(
+				"Moved to Inbox — future mail from this sender skips Spam. Other Spam from them is unaffected.",
+			);
 		} else {
 			// hard-deleted: no undo possible
 			showToast("Deleted permanently");

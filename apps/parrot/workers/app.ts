@@ -319,6 +319,7 @@ app.all("*", (c) => {
 
 import { receiveEmail } from "./lib/inbound-email";
 import { runAutoClear } from "./lib/auto-clear";
+import { runSpamPurge } from "./lib/spam-purge";
 
 export default {
 	fetch: app.fetch,
@@ -362,5 +363,11 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<void> {
 		ctx.waitUntil(runAutoClear(env));
+		// v1.5 Phase 36 Plan 03: 30-day spam auto-purge, riding this same
+		// */5 * * * * trigger (2026-07-09 decision: no new wrangler.jsonc cron
+		// trigger). Internally throttled to ~once/day via KV — see
+		// lib/spam-purge.ts. Also fail-soft, so no try/catch needed here, and
+		// independently waitUntil'd so neither sweep can starve the other.
+		ctx.waitUntil(runSpamPurge(env));
 	},
 };

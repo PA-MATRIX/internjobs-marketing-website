@@ -68,6 +68,16 @@ not sufficient.**` line. Until then this doc captures everything that
 can be verified server-side; the user-side dashboard signal is
 "present, working, logs visible."
 
+**Status: STILL PENDING as of 2026-07-16 — handed off to Raj (Phase 36,
+plan 36-05, LAKERA-V2-03).** Not dropped, not closed. The tier/quota
+question is account-gated: no CLI or API surface exposes tier or billing
+data (re-confirmed this phase), so it cannot be answered by an agent and
+is blocked on Raj's `platform.lakera.ai` / Cisco AI Defense sign-in. The
+three items under "Action item:" above are exactly what he needs to
+capture; the `**Decision:**` line lands here once he reports back. No
+code change is required in this phase either way — LAKERA-V2-03 is a
+documentation/decision requirement, not an implementation one.
+
 ## Critical bug discovered + fixed during verification — silent-fail in hard-block gate
 
 The v2 schema drift (v1 `results[].categories.prompt_injection` numeric
@@ -111,3 +121,70 @@ This was a Rule 2 (critical-correctness) deviation from the original
   similar (today, `api.lakera.ai/v2/guard` still works post-rebrand).
 - Revisit at 10k MAU or if pilot volume exceeds the current 30k/month
   estimate.
+
+## CI wiring decision (SAFETY-VERIFY-LIVE-03 / LAKERA-VERIFY-LIVE-03)
+
+**Decided:** 2026-07-16 (Nithin) · **Phase:** 36 (plan 36-05)
+
+### Status: satisfied at test level, with one accepted gap
+
+`SAFETY-VERIFY-LIVE-03` / `LAKERA-VERIFY-LIVE-03` is satisfied at test
+level by the Worker-side tests added in Plan 36-04:
+
+- `apps/parrot/workers/tests/lib/safety.test.ts` (7 tests)
+- `apps/parrot/workers/tests/lib/inbound-email.test.ts`
+
+These **do run in CI today** via the existing `parrot` job's `npm test`
+step (`.github/workflows/ci.yml`, the same job that already CI-enforces
+the Phase 27 Vitest smoke tests). **No new CI wiring was needed for
+them.** The `apps/parrot` suite grew 77 → 93 → 106 tests as 36-03/36-04
+landed; verified locally at **106 passed / 19 files**.
+
+Those tests were mutation-verified in 36-04 rather than assumed green:
+
+| Mutation | Tests turned red |
+|---|---|
+| Revert quarantine to the old `return` drop | 3 |
+| Invert the trust check | 1 |
+| Make a 5xx return `flagged: true` (i.e. break fail-open) | 1 |
+
+### Why the Worker-side suite is accepted as closing evidence for both surfaces
+
+Both runtimes implement an **identical fail-open contract**:
+
+- `apps/app/src/safety/screen.mjs` — Node/Fly, student SMS path
+- `apps/parrot/workers/lib/safety.ts` — Worker, Workspace email path
+
+Both fail open on missing key, non-2xx, unparseable body, and
+timeout-or-network error (shared 1s timeout), and **neither ever
+throws**. The two files are near-identical line-for-line. On that basis
+the Worker-side suite is accepted as the closing evidence for the
+requirement across both surfaces.
+
+**Caveat worth naming:** the two files are *deliberate separate copies*
+(both file headers state "NOT shared" — different runtimes, different
+env injection), so they can drift independently. Today they agree; that
+agreement is a convention, not something a test enforces. This is the
+substantive reason the gap below is worth tracking.
+
+### Known, accepted gap: `screen.test.mjs` is not in CI
+
+`apps/app/src/safety/screen.test.mjs` exists and passes — **5/5 in
+~0.8s**, with the live-API cases self-skipping when
+`LAKERA_GUARD_API_KEY` is unset — but it is **NOT wired into any CI
+workflow**. Confirmed: no step in `.github/workflows/*.yml` runs
+`node --test apps/app/src/safety/screen.test.mjs`; the `workspaces` job
+only runs `npm run build:app`, which builds but never executes it.
+
+Practical effect: the Node/Fly copy of the fail-open contract is
+covered by a suite that only runs when someone runs it by hand. A
+regression in `screen.mjs` alone would not turn CI red.
+
+**Decision (Nithin, 2026-07-16): leave the shared CI workflow unchanged
+this phase. Do not add it.** The shared `ci.yml` is touched by both
+teams, and this phase declined to take that on.
+
+Recorded here as a **candidate follow-up, not a silent omission**. The
+likely shape when picked up: add a `node --test` step covering
+`apps/app/src/safety/screen.test.mjs` to the `workspaces` job. Not
+scheduled; no owner assigned.

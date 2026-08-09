@@ -17,7 +17,16 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 - [ ] **Phase 33: Startups web app go-live** — *team-workspace* — execute `PHASE-28.5-DEFERRED-OPS.md` (DNS, Email Routing domain verification, `STARTUPS_CLERK_*` → Infisical, Clerk webhook) to bring `startups.internjobs.ai` + per-startup agent email live.
 - [ ] **Phase 34: Telnyx SMS + Voice AI go-live** — *team-workspace* — execute `PHASE-29-DEFERRED-OPS.md` (Telnyx signup + toll-free number + BRN + API key + Voice AI portal + R2 + KV + cron) to bring startup SMS + voice-intake onboarding live.
 - [ ] **Phase 35: First live pilot install** — *team-workspace* — STARTUP-PILOT-LIVE-01; depends on 33/34; evidence in `PILOT-EVIDENCE.md`.
-- [ ] **Phase 36: Lakera fail-open + tier confirm** — *team-workspace* — LAKERA-VERIFY-LIVE-03 + tier/quota confirmation (`infra/LAKERA-PRICING.md`).
+- [ ] **Phase 36: Lakera safety quarantine + fail-open confirm** — *team-workspace* — **Track 1 (product, the bulk):** Lakera-flagged mail is currently **silently dropped** — the recipient never learns it existed and it is unrecoverable. Replace that with a visible **Spam/Junk folder** in the Workspace email pane plus an Outlook-style **"Trust sender"** allowlist action, so flagged mail is quarantined-and-recoverable rather than lost (scope decided 2026-07-09). **Track 2 (v1.4 carry-overs):** LAKERA-VERIFY-LIVE-03 fail-open verification at test level (Lakera 5xx / timeout / missing key ⇒ message passes; hard-block still fires on `flagged:true`) + Lakera tier/quota confirmation (`infra/LAKERA-PRICING.md` — Raj dashboard step).
+
+  **Plans:** 5 plans, 2 waves (created 2026-07-16)
+
+  Plans:
+  - [ ] 36-01-quarantine-backend-PLAN.md — DO migration 10 (trusted_senders) + trustSender/isSenderTrusted/purgeExpiredSpam DO methods + hard-block quarantines into Spam + trust-sender/folder-counts routes (Wave 1)
+  - [ ] 36-02-spam-ui-trust-sender-PLAN.md — Spam sidebar nav item + Trust sender button in EmailPanel (Wave 2, depends on 36-01)
+  - [ ] 36-03-spam-auto-purge-cron-PLAN.md — 30-day spam auto-purge wired into the existing scheduled() cron (Wave 2, depends on 36-01)
+  - [ ] 36-04-safety-test-coverage-PLAN.md — vitest coverage for safety.ts fail-open + inbound-email.ts hard-block/quarantine branch + route smoke (Wave 2, depends on 36-01)
+  - [ ] 36-05-lakera-tier-handoff-PLAN.md — LAKERA-V2-03 Raj dashboard tier/quota hand-off (Wave 1, checkpoint:human-action)
 
 **Account-gated ops caveat:** S1–S4 (phases 33–36) include steps that need Raj's accounts (Cloudflare DNS/Email, Telnyx signup + number, Clerk secrets, Infisical writes). Nithin does the code/config; credential-gated steps are handed to Raj or done with granted access. Secrets → Infisical only.
 

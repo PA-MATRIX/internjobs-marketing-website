@@ -35,6 +35,7 @@ import {
 	Forward,
 	PaperclipIcon,
 	Reply,
+	ShieldCheck,
 	Sparkles,
 	Star,
 	Trash2,
@@ -63,7 +64,12 @@ interface EmailPanelProps {
 	 * move-to-trash).
 	 */
 	onActioned?: (
-		action: "archived" | "unarchived" | "deleted" | "moved-to-trash",
+		action:
+			| "archived"
+			| "unarchived"
+			| "deleted"
+			| "moved-to-trash"
+			| "trusted",
 	) => void;
 }
 
@@ -141,6 +147,31 @@ export function EmailPanel({
 			await api.moveMessage(emailId, "archive");
 			onActioned?.("archived");
 		}
+	}
+
+	// v1.5 Phase 36: "Trust sender" — only offered while reading a quarantined
+	// message. Records the sender as trusted for THIS employee and moves THIS
+	// message to the Inbox.
+	//
+	// SCOPE NOTE (2026-07-16 decision): recovering only the clicked message is
+	// deliberate, matching Outlook. The sender's other quarantined mail stays in
+	// Spam (individually recoverable, auto-purged at 30 days). InboxPane's toast
+	// copy states this explicitly — keep the two in sync if this ever changes.
+	const isSpamFolder = folder === "spam";
+	async function handleTrustSender() {
+		// Confirm first (2026-07-17 decision): trusting is a DURABLE per-employee
+		// grant with no revoke UI — every future mail from this sender skips
+		// safety screening entirely, and a misclick is not undoable from the
+		// product. The dialog is the cheap guard against that; a trusted-senders
+		// review/revoke surface is the proper fix (follow-up).
+		const senderLabel =
+			(data as InboxMessage | undefined)?.sender ?? "this sender";
+		const confirmed = window.confirm(
+			`Trust ${senderLabel}? Future mail from this sender will skip spam screening and go straight to your Inbox — you won't be warned about them again. This message moves to your Inbox now.`,
+		);
+		if (!confirmed) return;
+		await api.trustSender(emailId);
+		onActioned?.("trusted");
 	}
 
 	// PARROT-FOLDER-ACTIONS-01: two-stage delete. The server moves a
@@ -266,6 +297,21 @@ export function EmailPanel({
 							<Archive size={15} />
 						)}
 					</button>
+					{/* v1.5 Phase 36: Spam-only recovery action. Rendered
+					    conditionally (same pattern as the Archive/Unarchive
+					    icon swap above) so it never appears on Inbox,
+					    Archive, Sent, etc. */}
+					{isSpamFolder && (
+						<button
+							type="button"
+							onClick={handleTrustSender}
+							title="Trust sender"
+							aria-label="Trust sender"
+							className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-white p-2 text-emerald-700 hover:bg-emerald-50"
+						>
+							<ShieldCheck size={15} />
+						</button>
+					)}
 					<button
 						type="button"
 						onClick={handleDelete}
