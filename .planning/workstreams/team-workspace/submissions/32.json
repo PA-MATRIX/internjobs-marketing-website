@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "workstream": "team-workspace",
+  "github_team": "@PA-MATRIX/team-workspace",
+  "milestone": "v1.5",
+  "phase": "32",
+  "branch": "rrr/v1.5/team-workspace-32",
+  "expected_branch": "rrr/v1.5/team-workspace",
+  "base_branch": "main",
+  "base_sha": "13b0a5eec10ba5c724455fb62af1c0105e50503c",
+  "head_sha": "7e4cba0057feb674453ded5debd11362690b7bb4",
+  "phases_assigned": [
+    "32",
+    "33",
+    "34",
+    "35",
+    "36"
+  ],
+  "phases_completed": [
+    "32"
+  ],
+  "ready_for_integration": true,
+  "files_touched": [
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-01-PLAN.md",
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-01-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-02-PLAN.md",
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-02-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-03-PLAN.md",
+    ".planning/milestones/v1.5/phases/32-parrot-embed-pane/32-03-SUMMARY.md",
+    ".planning/workstreams/team-workspace/PARROT-EMBED-CONTRACT.md",
+    ".planning/workstreams/team-workspace/WORKSPACE-EMBED-REPLY-2.md",
+    ".planning/workstreams/team-workspace/WORKSPACE-EMBED-REPLY.md",
+    ".planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md",
+    "apps/parrot/app/components/ChatPane.tsx",
+    "apps/parrot/app/components/ParrotEmbedPane.tsx",
+    "apps/parrot/app/components/WorkspaceShell.tsx",
+    "apps/parrot/app/components/icons/ParrotIcon.tsx",
+    "apps/parrot/app/lib/api.ts",
+    "apps/parrot/app/lib/chat-chime.ts",
+    "apps/parrot/app/lib/parrot-embed.ts",
+    "apps/parrot/app/root.tsx",
+    "apps/parrot/app/routes.ts",
+    "apps/parrot/app/routes/parrot.tsx",
+    "apps/parrot/app/routes/phone.tsx",
+    "apps/parrot/app/routes/sms.tsx",
+    "apps/parrot/public/parrot-icon.png",
+    "apps/parrot/public/ringtone.wav",
+    "apps/parrot/workers/app.ts",
+    "apps/parrot/workers/index.ts",
+    "apps/parrot/workers/lib/embed-jwt.ts",
+    "apps/parrot/workers/lib/mattermost.ts",
+    "apps/parrot/workers/lib/operator.ts",
+    "apps/parrot/workers/tests/csp-header.test.ts",
+    "apps/parrot/workers/tests/lib/embed-jwt.test.ts",
+    "apps/parrot/workers/tests/lib/operator-contact.test.ts",
+    "apps/parrot/workers/tests/lib/parrot-embed.test.ts",
+    "apps/parrot/workers/tests/routes/embed-token.test.ts",
+    "apps/parrot/workers/types.ts",
+    "apps/parrot/wrangler.jsonc"
+  ],
+  "tests_run": [
+    "typecheck",
+    "vitest",
+    "uat"
+  ],
+  "uat_artifacts": [
+    "EMBED VERIFIED LIVE 2026-07-17 (Worker 0db09158+; latest 69c90a82): the Parrot admin interface loads inside Workspace at workspace.internjobs.ai/parrot — silent auth (signed RS256 embed-JWT), role:admin -> admin nav, footer shows correct identity 'Potti Nitin / nithin@internjobs.ai', 'Not connected' dialer = expected Telnyx-not-set-up state. All three gate conditions met: /embed live, admin loads admin UI, user loads pane.",
+    "Contract-conformance re-verified live before Parrot flipped EMBED_* on: our /oidc/jwks kid == the kid Parrot verifies against (9f7a11ef37f802eb); iss is exactly https://workspace.internjobs.ai (no trailing slash — jose exact match); jti is a fresh randomUUID per mint (Parrot enforces single-use).",
+    "CHAT provisioning verified live (admin + a separate employee account both load Chat) after two bug fixes below.",
+    "CLICK-TO-DIAL verified: a phone number in a chat message renders a Dial button that pre-fills the Parrot dialer (pre-fill only per contract §2.3). Detection unit-tested (dates like 2026-07-18 must NOT become dial buttons).",
+    "typecheck + build clean; 132 vitest tests pass; boot-checked live after each deploy (/api/health 200, no workerd boot-error signature)."
+  ],
+  "risks": [
+    "SCOPE: this branch also carries THREE fixes that are not strictly 'Parrot embed', surfaced during live testing and needed to ship: (1) fix(32) chat Mattermost shadow-account password exceeded MM's 72-char cap -> every FRESH on-demand chat provision failed ('chat account still being set up'); (2) fix(32) auth middleware now resolves the real email+name from Clerk when employee.email lacks '@' (phone-OTP bootstrap operators had employee.email = Clerk user id, breaking chat provisioning + email From + the embed token); (3) createMmUser now logs the MM error instead of swallowing it. All are apps/parrot. Flagging so the diff isn't a surprise.",
+    "UNVERIFIED-LIVE (code-correct, never exercised): the incoming-call RINGTONE (original marimba at public/ringtone.wav) and the inbound-SMS CHIME (= Chat pane chime) are built, deployed, and unit/build-tested, but have NEVER made a sound because they only fire on a real inbound call / SMS, which needs Telnyx (not yet provisioned). Treat as pending live validation, not verified.",
+    "TELNYX is BYO on Parrot's side and is OURS to supply (account + numbers + API key), pasted into the Parrot admin. Not provisioned yet, so employee dialers show 'Not connected' by design. Independent of this PR.",
+    "DEPLOY CONFLICT (not a code issue): this branch and rrr/v1.5/team-workspace-36 were each cut off integration/v1.5 and neither contains the other; a Worker deploy is a full replace, so production currently runs Phase 32 and Phase 36's spam quarantine is OFF prod. Merging BOTH into integration/v1.5 and deploying that branch restores both features together — that is the intended resolution.",
+    "STOCK-LICENSE FLAG (Nithin's call): the Parrot nav icon (public/parrot-icon.png) came from a supplied image that looked like a Shutterstock preview (ID 2708431457) — confirm licensed before real users. The ringtone is deliberately an ORIGINAL marimba, chosen over Apple's copyrighted iPhone ringtone."
+  ],
+  "updated_at": "2026-08-11T19:41:29.711Z"
+}
