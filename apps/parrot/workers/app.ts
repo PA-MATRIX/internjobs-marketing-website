@@ -30,6 +30,7 @@ import { app as apiApp } from "./index";
 import type { Employee, Env } from "./types";
 import type { ParrotContext } from "./lib/mailbox";
 import { getWorkspaceStub } from "./durableObject/workspace";
+import { resolveClerkContact } from "./lib/operator";
 
 export { EmployeeMailboxDO } from "./durableObject";
 export { WorkspaceDO } from "./durableObject/workspace";
@@ -137,6 +138,9 @@ function deriveEmployeeFromClaims(claims: JWTPayload): Employee | null {
 		givenName,
 		familyName,
 		picture,
+		// Phase 32: was computed above but discarded — now surfaced so the
+		// Parrot embed token can carry a display-only phone claim.
+		phoneNumber: phoneNumber || undefined,
 		publicMetadata,
 	};
 }
@@ -176,6 +180,41 @@ function buildSignInRedirect(path: string): string {
 }
 
 const app = new Hono<ParrotContext>();
+
+// Phase 32 (32-02): permit the browser to embed the Parrot SMS/phone iframe.
+// Scoped to frame-src ONLY — no other CSP directive is set here (this Worker
+// had NO Content-Security-Policy header before this phase; keep the change
+// minimal so we don't risk breaking Clerk / inline scripts with a
+// default-src). frame-ancestors is PARROT's own response header, not ours —
+// see .planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md §1.4.
+//
+// Registered FIRST (before the Clerk auth middleware below) so it wraps every
+// response, including early-return auth redirects and the SPA HTML document.
+// The frame origin is DERIVED from env.PARROT_EMBED_URL so the allow-list
+// stays in sync with the one embed-URL source of truth.
+app.use("*", async (c, next) => {
+	await next();
+	const embedUrl = c.env.PARROT_EMBED_URL || "https://parrot.projecta.ai/embed";
+	let frameOrigin = "https://parrot.projecta.ai";
+	try {
+		frameOrigin = new URL(embedUrl).origin;
+	} catch {
+		/* malformed config — fall back to the known-good default above */
+	}
+	// frame-src MUST also allow Clerk's own iframes, or we break sign-in on
+	// this very Worker (regression hazard of adding a CSP where none existed):
+	//   - clerk.workspace.internjobs.ai — Clerk's frontend-API domain (session
+	//     handling / component iframes for this production instance).
+	//   - challenges.cloudflare.com — Cloudflare Turnstile bot-protection, which
+	//     Clerk renders in an iframe on the phone-OTP sign-in flow used here.
+	// Omitting either silently blocks the frame and can break auth. (Verified
+	// live 2026-07: pk decodes to clerk.workspace.internjobs.ai; instance is
+	// phone-OTP.) These are Clerk's officially-required frame-src entries.
+	c.res.headers.set(
+		"Content-Security-Policy",
+		`frame-src 'self' ${frameOrigin} https://clerk.workspace.internjobs.ai https://challenges.cloudflare.com;`,
+	);
+});
 
 // Clerk session JWT validation middleware.
 app.use("*", async (c, next) => {
@@ -287,10 +326,33 @@ app.use("*", async (c, next) => {
 		if (isApi) return c.json({ error: "missing_required_claims" }, 401);
 		return c.redirect(buildSignInRedirect(path), 302);
 	}
-	const employee = await enrichEmployeeFromDirectory(c.env, employeeFromClaims);
+	let employee = await enrichEmployeeFromDirectory(c.env, employeeFromClaims);
 	if (!employee) {
 		if (isApi) return c.json({ error: "employee_disabled" }, 403);
 		return c.redirect(buildSignInRedirect(path), 302);
+	}
+
+	// Phase 32: guarantee employee.email is a real address for EVERY downstream
+	// route. Phone-OTP sessions carry no email claim, and a bootstrap operator
+	// (admin via Clerk metadata, no directory row) skips the workspace_email
+	// override above — so deriveEmployeeFromClaims left email as the phone/
+	// user-id fallback. That breaks Mattermost provisioning ("chat account still
+	// being set up"), the outbound email From address, and the Parrot embed
+	// token, all of which read employee.email. Resolve the canonical email +
+	// name from Clerk's Backend API when we don't already have a real one
+	// (cached; only fires for the rare email-less account, so normal sign-ins
+	// pay nothing).
+	if (!employee.email.includes("@")) {
+		const contact = await resolveClerkContact(c.env, employee.employeeId);
+		if (contact.email) {
+			employee = {
+				...employee,
+				email: contact.email,
+				displayName: employee.displayName?.trim()
+					? employee.displayName
+					: contact.name || employee.displayName,
+			};
+		}
 	}
 
 	// No org-membership gate. The employee Clerk app

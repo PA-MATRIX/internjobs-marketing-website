@@ -76,6 +76,10 @@
 		// Parrot mounts this as an app frame while the deeper one-boundary
 		// migration is planned.
 		"AGENTIC_INBOX_URL": "https://internjobs-agentic-inbox.rentalaraj.workers.dev",
+		// Phase 32: Parrot's authenticated embed route (WORKSPACE-EMBED-REPLY.md
+		// §"Final embed URL"). Not secret — combined with a short-lived signed
+		// token at mint time (the token in the query string is what's sensitive).
+		"PARROT_EMBED_URL": "https://parrot.projecta.ai/embed",
 		// v1.2 Phase 12 Wave 1: Workers AI model for the Dashboard
 		// Mothership Agent (todo extraction). Routed through Cloudflare
 		// AI Gateway in workers/lib/ai.ts so per-employee daily caps +

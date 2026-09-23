@@ -42,7 +42,12 @@ import {
 	getRoom,
 } from "./lib/daily";
 import { pingParrotGraph } from "./lib/graph";
-import { isOperator as hasOperatorAccess } from "./lib/operator";
+import {
+	isOperator as hasOperatorAccess,
+	resolveClerkContact,
+} from "./lib/operator";
+// Phase 32 (32-01): short-lived RS256 embed-JWT minting for the Parrot pane.
+import { mintEmbedToken } from "./lib/embed-jwt";
 import {
 	createMmDirectChannel,
 	createMmGroupChannel,
@@ -349,6 +354,75 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 		role: isOperator ? "operator" : "employee",
 	});
 });
+
+// Phase 32 (32-01): mint a short-lived (~120s) RS256 embed JWT for the
+// Parrot SMS/phone iframe. Reuses OIDC_SIGNING_KEY (same key /oidc/jwks
+// already publishes) — Parrot verifies against that same JWKS. sub/email/
+// role come ONLY from the server-side authenticated employee session
+// (c.var.employee) + the existing isOperator gate — NEVER from the request
+// body/query, so a caller can't mint a token for someone else or
+// self-escalate to role:"admin". See
+// .planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md.
+const PARROT_EMBED_ISSUER = "https://workspace.internjobs.ai";
+
+app.post(
+	"/api/embed/parrot-token",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.OIDC_SIGNING_KEY) {
+			return c.json({ error: "embed_not_configured" }, 503);
+		}
+		const employee = c.var.employee;
+		const role = (await hasOperatorAccess(c.env, employee))
+			? "admin"
+			: "employee";
+
+		// Parrot links a user by the `email` claim on first sight
+		// (WORKSPACE-EMBED-REPLY §7.2), so the token MUST carry a real address.
+		// employee.email degrades to the phone number or Clerk user id for
+		// phone-OTP accounts with no directory row (see app.ts:135 fallback), so
+		// when it isn't an address, resolve the canonical email + name from
+		// Clerk's Backend API. Refuse to mint rather than hand Parrot a bogus
+		// identifier it can never match (which would strand the user on the
+		// "ask your admin" panel with no clue why).
+		let email = employee.email;
+		let name = employee.displayName;
+		if (!email.includes("@")) {
+			const contact = await resolveClerkContact(c.env, employee.employeeId);
+			if (contact.email) email = contact.email;
+			if ((!name || !name.trim()) && contact.name) name = contact.name;
+		}
+		if (!email.includes("@")) {
+			return c.json({ error: "embed_email_unavailable" }, 422);
+		}
+
+		try {
+			const { token, expiresIn } = await mintEmbedToken(
+				c.env,
+				PARROT_EMBED_ISSUER,
+				{
+					sub: employee.employeeId,
+					email,
+					name,
+					phone: employee.phoneNumber,
+					role,
+				},
+			);
+			return c.json({
+				token,
+				expires_in: expiresIn,
+				embed_url:
+					c.env.PARROT_EMBED_URL || "https://parrot.projecta.ai/embed",
+				role,
+			});
+		} catch (e) {
+			return c.json(
+				{ error: "embed_token_mint_failed", detail: (e as Error).message },
+				500,
+			);
+		}
+	},
+);
 
 // -- Inbox ----------------------------------------------------------
 
@@ -1024,6 +1098,10 @@ async function loadChatContext(c: AppContext):
 		c.env.MATTERMOST_ADMIN_TOKEN,
 	);
 	if (!membership.ok) {
+		console.warn("chat_bootstrap_failed", {
+			email: employee.email,
+			reason: membership.reason,
+		});
 		return {
 			ok: false,
 			status: membership.reason === "user_not_found" ? 404 : 502,
