@@ -43,7 +43,12 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
   2. `main` contains Phases 32, 33 and 36 after a PR with the 4 required CI checks and the submission gate green
   3. The v1.5 audit result is recorded and v1.5 is marked closed in PROJECT/ROADMAP/MILESTONES
   4. No v1.6 change lands on `main` until this phase is verified
-**Plans**: TBD
+**Plans**: 3 plans (planned 2026-10-08, plan-checker PASSED on iteration 3)
+
+Plans:
+- [ ] 37-01: verifier script + v1.5 audit + Nithin 34/35 status record (MERGE-01, MERGE-02)
+- [ ] 37-02: approval-gated promotion integration/v1.5 -> main, merge commit only (MERGE-03)
+- [ ] 37-03: close v1.5 in docs + freeze + position records; flip to Complete only after verifier (MERGE-04)
 
 ### Phase 38: Map the three codebases + coupling inventory
 **Goal**: Map the three codebases + coupling inventory
