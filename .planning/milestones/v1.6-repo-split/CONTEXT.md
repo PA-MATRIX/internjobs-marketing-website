@@ -22,9 +22,11 @@ State checked 2026-10-08: `integration/v1.5` is 86 commits / 101 files (+14,238/
 - **D4 — Registered as v1.6.** Research skipped; code mapping is the research.
 - **D5 — Nithin's v1.5 merge is combined into this milestone as Phase 0.** (Raj, 2026-10-08)
 
+## Decisions confirmed 2026-10-08 (Raj: "proceed with your recommendations")
+- **D6 — New cms repo = fresh start (no history)**, safest for a public repo.
+- **D7 — Do NOT flip the current public repo to private yet.** PA-MATRIX is on GitHub's FREE plan: private repos there do not enforce branch protection/rulesets, so going private could silently drop the `main` protection + `integration/**` submission gate. Requirement: verify plan/feature limits (upgrade org to Team, or keep protected repos public-but-sanitised) BEFORE any visibility change; platform repo must be private AND protected, so the plan question gates its creation.
+
 ## Open decisions (need Raj before the plan is final)
-- Make the public repo private immediately (before the split)?
-- New cms repo: full history vs fresh start (fresh start safer for a public repo).
 - Repo names (`internjobs-cms` / `internjobs-platform`) and local layout (`~/internjobs/{cms,platform,parrot}`).
 - Whether `apps/parrot` (monorepo Workspace) vs `PA-Ai-Team/Parrot` relationship needs any change (map first).
 
