@@ -8,7 +8,7 @@
 //   [--context <path>] [--audit <path>] [--ci <path>] [--expect-head <sha>] [--repo <dir>]
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,10 +70,137 @@ function parseArgs(argv) {
   return a;
 }
 
+const REPO_SLUG = "PA-MATRIX/internjobs-marketing-website";
+const DEFAULT_PHASE_DIR = ".planning/milestones/v1.6-repo-split/phases/37-merge-v1.5";
+
+function reporter() {
+  const st = { failed: false };
+  return {
+    st,
+    ok: (m) => console.log(`OK ${m}`),
+    info: (m) => console.log(`INFO ${m}`),
+    fail: (m) => { st.failed = true; console.log(`FAIL ${m}`); console.error(`FAIL ${m}`); },
+  };
+}
+
+function ghJson(...a) {
+  return JSON.parse(execFileSync("gh", a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+}
+
+/** --gate-prev <NN-MM>: SUMMARY exists and VERIFICATION front matter status: passed. */
+function gatePrev(args) {
+  const { ok, fail, st } = reporter();
+  const plan = String(args["gate-prev"]);
+  const dir = args["phase-dir"] || path.join(args.repo || process.cwd(), DEFAULT_PHASE_DIR);
+  const sum = path.join(dir, `${plan}-SUMMARY.md`);
+  const ver = path.join(dir, `${plan}-VERIFICATION.md`);
+  if (existsSync(sum)) ok(`${plan}-SUMMARY.md exists`); else fail(`${plan}-SUMMARY.md missing`);
+  if (!existsSync(ver)) fail(`${plan}-VERIFICATION.md missing (rrr-verifier has not run)`);
+  else {
+    const fm = /^---\n([\s\S]*?)\n---/.exec(readFileSync(ver, "utf8"));
+    const status = fm && (/^status:\s*(\S+)\s*$/m.exec(fm[1]) || [])[1];
+    if (status === "passed") ok(`${plan}-VERIFICATION.md status passed`);
+    else fail(`${plan}-VERIFICATION.md status is '${status ?? "absent"}', not passed`);
+  }
+  process.exit(st.failed ? 1 : 0);
+}
+
+const sortedEq = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+
+/** protection contexts == REQUIRED_CHECKS AND REQUIRED_CHECKS subset of ref job names; extras reported. */
+function preflightChecks(args) {
+  const { ok, info, fail, st } = reporter();
+  const repo = args.repo || process.cwd();
+  const ref = args.ref || "origin/integration/v1.5";
+  let prot, jobs, rulesets = null;
+  try {
+    prot = args["protection-json"] ? JSON.parse(readFileSync(args["protection-json"], "utf8"))
+      : ghJson("api", `repos/${REPO_SLUG}/branches/main/protection`);
+    if (args["ci-ref-json"]) {
+      const j = JSON.parse(readFileSync(args["ci-ref-json"], "utf8"));
+      jobs = Array.isArray(j) ? j : j.jobs;
+    } else {
+      jobs = parseJobNames(execFileSync("git", ["-C", repo, "show", `${ref}:.github/workflows/ci.yml`], { encoding: "utf8" }));
+    }
+    if (args["rulesets-json"]) rulesets = JSON.parse(readFileSync(args["rulesets-json"], "utf8"));
+    else if (!args["protection-json"]) {
+      rulesets = ghJson("api", `repos/${REPO_SLUG}/rulesets`).map((r) => ghJson("api", `repos/${REPO_SLUG}/rulesets/${r.id}`));
+    }
+  } catch (e) {
+    fail(`could not read inputs: ${String(e.message).split("\n")[0]}`);
+    process.exit(1);
+  }
+  const rsc = prot?.required_status_checks || {};
+  const ctxs = [...new Set([...(rsc.contexts || []), ...(rsc.checks || []).map((c) => c.context)])];
+  if (sortedEq(ctxs, REQUIRED_CHECKS)) ok("protection contexts == REQUIRED_CHECKS");
+  else fail(`protection contexts [${ctxs.join("; ")}] != REQUIRED_CHECKS [${REQUIRED_CHECKS.join("; ")}]`);
+  const missing = REQUIRED_CHECKS.filter((c) => !jobs.includes(c));
+  if (missing.length) fail(`ref ci.yml lacks required job(s): ${missing.join("; ")}`);
+  else ok("REQUIRED_CHECKS subset of ref job names");
+  const extra = jobs.filter((j) => !REQUIRED_CHECKS.includes(j));
+  info(`extra ref jobs (not required): ${extra.join("; ") || "(none)"}`);
+  const rulesetCtxs = new Set();
+  for (const r of rulesets || []) for (const rule of r.rules || [])
+    if (rule.type === "required_status_checks") for (const c of rule.parameters?.required_status_checks || []) rulesetCtxs.add(c.context);
+  for (const e of extra) info(`blocking: ${ctxs.includes(e) || rulesetCtxs.has(e) ? "yes" : "no"} (${e})`);
+  if (rulesets === null && extra.length) info("rulesets not read (fixture protection only)");
+  process.exit(st.failed ? 1 : 0);
+}
+
+/** --post [--pr <n>|--pr-json <file>]: tip is ancestor of main, markers on main, PR evidence. */
+function postMode(args) {
+  const { ok, info, fail, st } = reporter();
+  const repo = args.repo || process.cwd();
+  const ref = args.ref || "origin/integration/v1.5";
+  const mainRef = args["main-ref"] || "origin/main";
+  const ctxPath = args.context || path.join(repo, ".planning/milestones/v1.6-repo-split/CONTEXT.md");
+  const git = (...a) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  let tip = null;
+  try { tip = git("rev-parse", "--verify", `${ref}^{commit}`).trim(); } catch { fail(`ref ${ref} does not resolve`); }
+  let anc = false;
+  if (tip) {
+    try { git("merge-base", "--is-ancestor", tip, mainRef); anc = true; } catch { /* exit 1 = not ancestor */ }
+    if (anc) ok(`${ref} (${tip}) is an ancestor of ${mainRef}`);
+    else fail(`${ref} (${tip}) is not an ancestor of ${mainRef}`);
+  }
+  const mainMarker = (p) => {
+    try {
+      const m = JSON.parse(git("show", `${mainRef}:${SUB_DIR}/${p}.json`));
+      return m.ready_for_integration === true && m.milestone === "v1.5" && Array.isArray(m.phases_completed) && m.phases_completed.map(String).includes(p);
+    } catch { return false; }
+  };
+  const status = existsSync(ctxPath) ? parseStatus(readFileSync(ctxPath, "utf8")) : { 34: null, 35: null };
+  const need = [...REQUIRED_MARKERS, ...["34", "35"].filter((p) => status[p]?.word === "done")];
+  for (const p of need) {
+    if (mainMarker(p)) ok(`marker ${p} present on ${mainRef}`);
+    else fail(`marker ${p} absent/invalid on ${mainRef}`);
+  }
+  if (args.pr !== undefined || args["pr-json"] !== undefined) {
+    let pr;
+    try {
+      pr = args["pr-json"] ? JSON.parse(readFileSync(args["pr-json"], "utf8"))
+        : ghJson("pr", "view", String(args.pr), "--repo", REPO_SLUG, "--json", "number,state,mergedAt,baseRefName,headRefName,statusCheckRollup");
+    } catch (e) { fail(`could not read PR evidence: ${String(e.message).split("\n")[0]}`); process.exit(1); }
+    if (pr.baseRefName === "main") ok("PR base is main"); else fail(`PR base is '${pr.baseRefName}', not main`);
+    if (pr.headRefName === "integration/v1.5") ok("PR head is integration/v1.5"); else fail(`PR head is '${pr.headRefName}'`);
+    if (pr.state === "MERGED" && pr.mergedAt) ok("PR is merged"); else fail(`PR not merged (state ${pr.state})`);
+    const roll = new Map((pr.statusCheckRollup || []).map((c) => [c.name || c.context, c.conclusion || c.state || c.status]));
+    for (const c of REQUIRED_CHECKS) {
+      if (roll.get(c) === "SUCCESS") ok(`check '${c}' SUCCESS`);
+      else fail(`check '${c}' is ${roll.has(c) ? roll.get(c) : "absent"}, not SUCCESS`);
+    }
+    for (const e of ["email timeout invariant (cross-package)", "email worker (tests)"]) info(`extra check ${e}: ${roll.has(e) ? roll.get(e) : "absent"}`);
+  }
+  process.exit(st.failed ? 1 : 0);
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args["gate-prev"]) return gatePrev(args);
+  if (args["preflight-checks"]) return preflightChecks(args);
+  if (args.post) return postMode(args);
   if (!args.pre) {
-    console.error("usage: verify-v15-promotion.mjs --pre [options]");
+    console.error("usage: verify-v15-promotion.mjs --pre|--post|--preflight-checks|--gate-prev <plan> [options]");
     process.exit(2);
   }
   const repo = args.repo || process.cwd();
@@ -140,4 +267,4 @@ function main() {
   process.exit(failed ? 1 : 0);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();

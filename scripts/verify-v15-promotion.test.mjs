@@ -205,9 +205,8 @@ test("p8 extra-jobs report: ruleset requiring an extra job -> blocking: yes; non
   const yes = pf(protection(REQ), [...REQ, ...EXTRA], rs([...REQ, EXTRA[1]]));
   assert.equal(yes.status, 0, out(yes));
   assert.match(yes.stdout, /INFO extra ref jobs \(not required\):.*email worker \(tests\)/);
-  assert.match(yes.stdout, /INFO blocking: yes.*email worker \(tests\)|email worker \(tests\).*INFO blocking: yes|INFO blocking: yes/);
-  assert.match(yes.stdout, /email worker \(tests\)[^\n]*blocking: yes/);
-  assert.match(yes.stdout, /email timeout invariant \(cross-package\)[^\n]*blocking: no/);
+  assert.match(yes.stdout, /INFO blocking: yes \(email worker \(tests\)\)/);
+  assert.match(yes.stdout, /INFO blocking: no \(email timeout invariant \(cross-package\)\)/);
   const no = pf(protection(REQ), [...REQ, ...EXTRA], rs(REQ));
   assert.equal(no.status, 0, out(no));
   assert.doesNotMatch(no.stdout, /blocking: yes/);
