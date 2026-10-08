@@ -20,6 +20,7 @@ State checked 2026-10-08: `integration/v1.5` is 86 commits / 101 files (+14,238/
 - **D2 — Two repos/folders:** public website-only repo + private platform repo, both under PA-MATRIX. (Raj: "clean two folder split")
 - **D3 — Legacy:** `growthpods/Internjobs` (`~/MayaOS/internjobs-ai`) archived after its 4 uncommitted files are resolved.
 - **D4 — Registered as v1.6.** Research skipped; code mapping is the research.
+- **D8 — v1.5 Phases 34 (Telnyx go-live) and 35 (first pilot install) recorded as DEFERRED (Raj, 2026-10-08: "leave that alone and lets move on").** Checked 2026-10-08: no branch, PR or submission marker for 34/35; Nithin has no open PRs; latest work is Phases 32/33/36 (last push 2026-08-12, PR #26 merged 2026-09-23). v1.5 closes as PARTIAL: delivered 32, 33, 36; deferred 34, 35 (carry to a later milestone). No further chasing of Nithin in this milestone. MERGE-01 satisfied by this record.
 - **D5 — Nithin's v1.5 merge is combined into this milestone as Phase 0.** (Raj, 2026-10-08)
 
 ## Decisions confirmed 2026-10-08 (Raj: "proceed with your recommendations")
