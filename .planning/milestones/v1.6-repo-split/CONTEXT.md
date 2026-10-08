@@ -53,3 +53,8 @@ State checked 2026-10-08: `integration/v1.5` is 86 commits / 101 files (+14,238/
 - Before moving anything, grep every repo for every place the layout/paths are enforced (CI, wrangler, deploy, STATE, `packages/shared` imports) and list each with its disposition.
 - Live GitHub actions (rename/transfer/visibility/archive) run as executor tasks with Raj's approval recorded first.
 - Run `/rrr:audit-milestone` before calling it done.
+
+## v1.5 Phase 34/35 status (MERGE-01)
+
+- Phase 34: deferred — confirmed by Raj on 2026-10-08: D8; no branch, PR or submission marker on integration/v1.5
+- Phase 35: deferred — confirmed by Raj on 2026-10-08: D8; no branch, PR or submission marker on integration/v1.5
