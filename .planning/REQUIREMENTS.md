@@ -532,3 +532,37 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 ---
 *Requirements defined: 2026-05-19 (v1.3)*
 *Last updated: 2026-05-24 — v1.4 milestone defined. v1.3 moved to Validated with carryover refs (SAFETY-LAKERA-01 → LAKERA-V2-*, SAFETY-VERIFY-01..03 → SAFETY-VERIFY-LIVE-*, AUTO-CLEAR-VERIFY-02 → CLOSETODO-03). Neon-exit + agent-lift un-roadmapped items added to Validated. v1.4 Active = 39 requirements across Groups A (5 closeouts), B (3 Neon-exit closeout), C (4 carryovers + Workspace upgrades), D (3 polish), E (1 test floor) — pre-assigned to team-cms / team-workspace. SEC-ROTATE deferred to v1.5 Candidates. First milestone under RRR team mode.*
+
+### v1.6 Traceability (populated by /rrr:create-roadmap 2026-10-08)
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| MERGE-01 | Phase 37 | Pending |
+| MERGE-02 | Phase 37 | Pending |
+| MERGE-03 | Phase 37 | Pending |
+| MERGE-04 | Phase 37 | Pending |
+| MAP-01 | Phase 38 | Pending |
+| MAP-02 | Phase 38 | Pending |
+| MAP-03 | Phase 38 | Pending |
+| MAP-04 | Phase 38 | Pending |
+| MAP-05 | Phase 38 | Pending |
+| MAP-06 | Phase 38 | Pending |
+| SEC-01 | Phase 39 | Pending |
+| SEC-02 | Phase 39 | Pending |
+| SEC-03 | Phase 39 | Pending |
+| SEC-04 | Phase 40 | Pending |
+| SPLIT-01 | Phase 40 | Pending |
+| SPLIT-02 | Phase 40 | Pending |
+| SPLIT-03 | Phase 40 | Pending |
+| SPLIT-04 | Phase 41 | Pending |
+| SPLIT-05 | Phase 41 | Pending |
+| GH-01 | Phase 41 | Pending |
+| GH-02 | Phase 41 | Pending |
+| GH-03 | Phase 41 | Pending |
+| GH-04 | Phase 41 | Pending |
+| GH-05 | Phase 41 | Pending |
+| LOCAL-01 | Phase 42 | Pending |
+| LOCAL-02 | Phase 42 | Pending |
+| LOCAL-03 | Phase 42 | Pending |
+
+**Coverage (v1.6):** 27 total, 27 mapped, 0 unmapped ✓

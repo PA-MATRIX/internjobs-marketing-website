@@ -22,6 +22,89 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 
 **Account-gated ops caveat:** S1–S4 (phases 33–36) include steps that need Raj's accounts (Cloudflare DNS/Email, Telnyx signup + number, Clerk secrets, Infisical writes). Nithin does the code/config; credential-gated steps are handed to Raj or done with granted access. Secrets → Infisical only.
 
+## v1.6 Phases (Repo Split + Code Mapping) — opened 2026-10-08
+
+**Milestone Goal:** one repo per concern, mapped to local folders: public website-only `internjobs-cms`, private `internjobs-platform`, `PA-Ai-Team/Parrot` unchanged, legacy archived. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`. Every phase is TDD-first (failing test/readback recorded RED before the change), plan-checked before execution, verified after; live GitHub/prod steps run as executor tasks with Raj's approval recorded first.
+
+- [ ] **Phase 37: Merge Nithin's v1.5 work into main**
+- [ ] **Phase 38: Map the three codebases + coupling inventory**
+- [ ] **Phase 39: Security gate + GitHub plan limits**
+- [ ] **Phase 40: Build and prove the two repos locally (no live GitHub)**
+- [ ] **Phase 41: GitHub repos + production re-pointing (live, approval-gated)**
+- [ ] **Phase 42: Local folder layout + final audit**
+
+### Phase 37: Merge Nithin's v1.5 work into main
+**Goal**: Merge Nithin's v1.5 work into main
+**Depends on**: Phase 0 — nothing else (blocks everything)
+**Requirements**: MERGE-01, MERGE-02, MERGE-03, MERGE-04
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. Nithin has confirmed (recorded in CONTEXT.md) whether Phases 34 and 35 are done, deferred or dropped
+  2. `main` contains Phases 32, 33 and 36 after a PR with the 4 required CI checks and the submission gate green
+  3. The v1.5 audit result is recorded and v1.5 is marked closed in PROJECT/ROADMAP/MILESTONES
+  4. No v1.6 change lands on `main` until this phase is verified
+**Plans**: TBD
+
+### Phase 38: Map the three codebases + coupling inventory
+**Goal**: Map the three codebases + coupling inventory
+**Depends on**: Phase 37
+**Requirements**: MAP-01, MAP-02, MAP-03, MAP-04, MAP-05, MAP-06
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. Fresh 7-document code maps exist for `internjobs-cms` (post-merge) and `~/Documents/Parrot` (fast-forwarded to origin/main), and a scratch map for the legacy repo with its 4 uncommitted files untouched
+  2. A coupling inventory lists every place the layout is enforced, each with a keep/move/rewrite/delete disposition
+  3. The `apps/parrot` vs `PA-Ai-Team/Parrot` relationship is written down
+  4. `REPO-MAP.md` shows every repo with owner, visibility, purpose, local folder, deploy target and team
+**Plans**: TBD
+
+### Phase 39: Security gate + GitHub plan limits
+**Goal**: Security gate + GitHub plan limits
+**Depends on**: Phase 38
+**Requirements**: SEC-01, SEC-02, SEC-03
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. `PA-Ai-Team/Parrot` tree and history are scanned and findings recorded (any real secret rotated)
+  2. Secret scanning and push protection are on wherever the PA-MATRIX plan allows, with limits recorded
+  3. It is known whether branch protection survives going private on the current plan, and Raj has decided (upgrade vs alternative) before any visibility change
+**Plans**: TBD
+
+### Phase 40: Build and prove the two repos locally (no live GitHub)
+**Goal**: Build and prove the two repos locally (no live GitHub)
+**Depends on**: Phases 38, 39
+**Requirements**: SEC-04, SPLIT-01, SPLIT-02, SPLIT-03
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. A clean clone of the website tree builds and passes `verify:dist` with no reference to any other app or package
+  2. A clean clone of the platform tree passes its 3 non-marketing CI checks and the submission gate
+  3. The cross-references from employers styles, app views and StartupAccessSection are resolved without a runtime dependency either way
+  4. The website tree has no `.planning/`, runbooks, Infisical paths or infra docs, in tree or history
+**Plans**: TBD
+
+### Phase 41: GitHub repos + production re-pointing (live, approval-gated)
+**Goal**: GitHub repos + production re-pointing (live, approval-gated)
+**Depends on**: Phase 40
+**Requirements**: SPLIT-04, SPLIT-05, GH-01, GH-02, GH-03, GH-04, GH-05
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. `PA-MATRIX/internjobs-cms` is the public website-only repo with protected `main`; the old repo is the private `internjobs-platform` with protections and `integration/**` ruleset re-verified
+  2. `https://internjobs.ai` deploys from the new website repo and `verify:production` passes; Workers and Fly apps deploy from the platform repo; no downtime
+  3. Collaborator access matches today and CODEOWNERS exist
+  4. Stale branches are dispositioned and `growthpods/Internjobs` is archived, each only after Raj's recorded approval
+  5. `PA-Ai-Team/Parrot` is unchanged (negative control)
+**Plans**: TBD
+
+### Phase 42: Local folder layout + final audit
+**Goal**: Local folder layout + final audit
+**Depends on**: Phase 41
+**Requirements**: LOCAL-01, LOCAL-02, LOCAL-03
+**Research**: Unlikely (code mapping is the research)
+**Success Criteria** (what must be TRUE):
+  1. `~/internjobs/{cms,platform,parrot}` exist with folder name = repo name and every `origin` verified by a script
+  2. The legacy folder is archived only after its secrets are confirmed in Infisical, then removed
+  3. Worktrees, Claude/RRR paths, hooks and position records point at the new paths
+  4. `/rrr:audit-milestone` passes for v1.6
+**Plans**: TBD
+
 ## Overview
 
 v1.4 closes v1.3's dangling work (closeTodoFact writer, Lakera live verification, attachment download, agent-lift UAT), the un-roadmapped initiatives that landed after v1.3 ship-ready (Neon-exit verification + doc refresh), the Workspace upgrades from the v1.3 backlog memo (Mattermost SSO, knowledge-graph reuse, admin invite UX, GenZ chat polish), and a Worker-side test floor. **Then it opens the startup pilot channel:** Phase 28 builds the MCP server foundation (reaches every founder using Claude/Cursor/ChatGPT — all MCP-native by 2026); Phase 29 adds Telnyx SMS + Voice AI with voice-based onboarding for non-tech founders + a weekly text touchbase. Ridhi handles white-glove concierge onboarding for the first 5–10 pilots in parallel. Slack/Discord/Teams adapters are deferred to v1.5 (Slack marketplace timeline is real, and Claude/ChatGPT MCP bridges Slack already). Email-initiated channels also v1.5. The milestone is split across two GitHub teams: `team-cms` (Marketing CMS + Student app + Startup MCP/Telnyx) and `team-workspace` (Workspace + Mattermost + graph-api). Phase order serializes cross-team dependencies (Phase 23 needs Phase 22's Lakera schema verification; Phase 29 builds on Phase 28); otherwise teams run in parallel on their own branches.
