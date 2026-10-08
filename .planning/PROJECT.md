@@ -28,9 +28,9 @@ InternJobs.ai helps students and startups meet through natural messages, not res
 - SEC-ROTATE-ALL — reopen when the first pilot user makes rotation concrete (near, but not gating go-live)
 - Daily.co vanity domain, A2P 10DLC number migration, multi-member — scale/volume-gated
 
-## Next Milestone (queued): v1.6 — Repo Split + Code Mapping
+## Next Milestone: v1.6 — Repo Split + Code Mapping
 
-**Goal:** One clear repo per concern, mapped to local folders. `internjobs-cms` becomes JUST the public marketing website (protected); everything else (student/employer/startup apps, Workspace, mac-bridge, workers, shared) moves to a private platform repo, both under PA-MATRIX. `PA-Ai-Team/Parrot` stays where it is; legacy `growthpods/Internjobs` is archived. Starts only after v1.5; code mapping of all three repos comes first. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`.
+**Goal:** One clear repo per concern, mapped to local folders. `internjobs-cms` becomes JUST the public marketing website (protected); everything else (student/employer/startup apps, Workspace, mac-bridge, workers, shared) moves to a private platform repo, both under PA-MATRIX. `PA-Ai-Team/Parrot` stays where it is; legacy `growthpods/Internjobs` is archived. Phase 0 merges Nithin's finished `integration/v1.5` work into `main` first; code mapping of all three repos comes first. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`.
 
 ## Previous Milestone: v1.4 Pilot Readiness (shipped 2026-06-24)
 

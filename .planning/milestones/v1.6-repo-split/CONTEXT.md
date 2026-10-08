@@ -1,7 +1,7 @@
 # v1.6 Repo Split + Code Mapping — Context
 
-**Status:** Queued after v1.5 (opened 2026-10-08). Planning + read-only mapping may start now; no repo/GitHub changes until the plan is checker-approved and Raj approves each live action.
-**Does not touch:** v1.5, `integration/v1.5`, team-workspace/Nithin's phases 32–36.
+**Status:** Opened 2026-10-08. Planning + read-only mapping may start now; no repo/GitHub changes until the plan is checker-approved and Raj approves each live action.
+**Includes Nithin's v1.5 merge (Raj, 2026-10-08):** promoting `integration/v1.5` -> `main` is Phase 0 of this milestone, so the split runs on top of his finished work and never conflicts with it. Split work must not edit v1.5 phase code before that merge lands.
 
 ## Intent (Raj, 2026-10-08)
 1. Map all three Intern Jobs codebases with RRR code mapping BEFORE any split.
@@ -9,11 +9,18 @@
 3. Everything else (student `apps/app`, `apps/employers`, `apps/startup`, Workspace `apps/parrot`, `apps/mac-bridge`, workers, `packages/shared`) goes to a separate private platform repo/folder.
 4. Map GitHub repos <-> local folders so there is no confusion.
 
+## Phase 0 — merge Nithin's v1.5 work into main (prerequisite to the split)
+State checked 2026-10-08: `integration/v1.5` is 86 commits / 101 files (+14,238/-423) ahead of `main`; main is 0 ahead (clean fast promote). Merged into integration via PRs #24 (Phase 33 Startups web app go-live), #25 (Phase 36 Lakera quarantine + fail-open), #26 (Phase 32 Parrot dialer embed), each with `submissions/<phase>.json` markers (32, 33, 36).
+- **Phases 34 (Telnyx go-live) and 35 (first pilot install) have NO submission marker** — not done as far as the repo shows. Raj believes Nithin is finished; confirm with Nithin whether 34/35 are done, deferred, or dropped before promoting.
+- Promote via `/rrr:coordinate-merge` / PR `integration/v1.5` -> `main` (ruleset: PR + CI + submission gate). Run `/rrr:audit-milestone` for v1.5 first, then close v1.5.
+- Only after this lands: freeze `main`, then start the split.
+
 ## Decisions
 - **D1 — Parrot stays where it is:** `PA-Ai-Team/Parrot` (local `~/Documents/Parrot`) is NOT moved to PA-MATRIX. (Raj, 2026-10-08)
 - **D2 — Two repos/folders:** public website-only repo + private platform repo, both under PA-MATRIX. (Raj: "clean two folder split")
 - **D3 — Legacy:** `growthpods/Internjobs` (`~/MayaOS/internjobs-ai`) archived after its 4 uncommitted files are resolved.
-- **D4 — Registered as v1.6, queued after v1.5.** Research skipped; code mapping is the research.
+- **D4 — Registered as v1.6.** Research skipped; code mapping is the research.
+- **D5 — Nithin's v1.5 merge is combined into this milestone as Phase 0.** (Raj, 2026-10-08)
 
 ## Open decisions (need Raj before the plan is final)
 - Make the public repo private immediately (before the split)?

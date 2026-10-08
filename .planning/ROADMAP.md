@@ -8,7 +8,7 @@
 - ✅ **v1.3 Pilot Hardening** — Phases 18–20 shipped; Phase 21 skipped (sole-user deferral). Plus un-roadmapped Neon-exit shipped 2026-05-21.
 - ✅ **v1.4 Pilot Readiness** — Phases 22–31 (first team-mode milestone: `team-cms` + `team-workspace`; core shipped 2026-06-16, tail phases 30–31 + CH-01 shipped through 2026-06-24)
 - 🚧 **v1.5 Workspace Integration Finish + Startup Pilot Go-Live** — Phases 32–36 (**whole milestone assigned to team-workspace / Nithin**; started 2026-06-30, on `integration/v1.5`)
-- 📋 **v1.6 Repo Split + Code Mapping** — queued after v1.5 (opened 2026-10-08; map 3 repos, cms = website only, private platform repo; see `.planning/milestones/v1.6-repo-split/CONTEXT.md`)
+- 📋 **v1.6 Repo Split + Code Mapping** — Phase 0 = merge Nithin's `integration/v1.5` -> main, then map 3 repos + split (opened 2026-10-08; map 3 repos, cms = website only, private platform repo; see `.planning/milestones/v1.6-repo-split/CONTEXT.md`)
 
 ## v1.5 Phases (assigned to team-workspace — Nithin owns the whole milestone)
 
