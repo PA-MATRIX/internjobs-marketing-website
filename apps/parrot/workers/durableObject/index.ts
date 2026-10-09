@@ -528,6 +528,60 @@ export class EmployeeMailboxDO extends DurableObject<Env> {
 	}
 
 	/**
+	 * v1.5 Phase 36: record a sender as trusted for THIS employee only
+	 * (per-employee scope, 2026-07-09 decision). Idempotent — trusting an
+	 * already-trusted sender no-ops via INSERT OR IGNORE.
+	 */
+	async trustSender(sender: string): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`INSERT OR IGNORE INTO trusted_senders (sender) VALUES (?)`,
+			sender.toLowerCase(),
+		);
+	}
+
+	/**
+	 * v1.5 Phase 36: checked from inbound-email.ts BEFORE screenMessage() is
+	 * called, mirroring the existing PARROT_FEATURE_FLAGS `safety_skip_senders`
+	 * short-circuit's intent — a trusted sender's future mail should never hit
+	 * the Lakera quota.
+	 */
+	async isSenderTrusted(sender: string): Promise<boolean> {
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT 1 FROM trusted_senders WHERE sender = ? LIMIT 1`,
+				sender.toLowerCase(),
+			),
+		];
+		return rows.length > 0;
+	}
+
+	/**
+	 * v1.5 Phase 36: 30-day spam auto-purge (locked decision 2026-07-09). Called
+	 * from the Worker's scheduled() cron via workers/lib/spam-purge.ts (Plan
+	 * 36-03). Reuses the existing deleteEmail() method per-row rather than a bulk
+	 * DELETE, so the same cleanupTodosForEmail() bookkeeping deleteEmail()
+	 * already does runs consistently (a safe no-op for spam mail, since
+	 * createEmail() only extracts todos when folder === Folders.INBOX).
+	 *
+	 * NOTE: like the existing Trash hard-delete path (workers/index.ts DELETE
+	 * route), this does NOT clean up the email's R2 attachment blobs. That is a
+	 * pre-existing limitation shared with Trash hard-delete, not a new gap
+	 * introduced here — see 36-RESEARCH.md Risk 1.
+	 */
+	async purgeExpiredSpam(cutoffIso: string): Promise<{ purged: number }> {
+		const rows = [
+			...this.ctx.storage.sql.exec(
+				`SELECT id FROM emails WHERE folder_id = 'spam' AND date < ?`,
+				cutoffIso,
+			),
+		] as Array<{ id: string }>;
+		for (const row of rows) {
+			await this.deleteEmail(row.id);
+		}
+		return { purged: rows.length };
+	}
+
+	/**
 	 * v1.3.1 Agent Lift: search emails by query against subject / sender /
 	 * body. Uses SQL LIKE — no FTS5 yet, but the row count per employee is
 	 * usually small enough that this is fine. Returns metadata only (same

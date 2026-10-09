@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "workstream": "team-workspace",
+  "github_team": "@PA-MATRIX/team-workspace",
+  "milestone": "v1.5",
+  "phase": "36",
+  "branch": "rrr/v1.5/team-workspace-36",
+  "expected_branch": "rrr/v1.5/team-workspace",
+  "base_branch": "main",
+  "base_sha": "13b0a5eec10ba5c724455fb62af1c0105e50503c",
+  "head_sha": "e557be800c53e56d37494d9b13ec37bd608c0ac8",
+  "phases_assigned": [
+    "32",
+    "33",
+    "34",
+    "35",
+    "36"
+  ],
+  "phases_completed": [
+    "36"
+  ],
+  "ready_for_integration": true,
+  "files_touched": [
+    ".planning/ROADMAP.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-01-quarantine-backend-PLAN.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-01-quarantine-backend-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-02-spam-ui-trust-sender-PLAN.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-02-spam-ui-trust-sender-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-03-spam-auto-purge-cron-PLAN.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-03-spam-auto-purge-cron-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-04-safety-test-coverage-PLAN.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-04-safety-test-coverage-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-05-lakera-tier-handoff-PLAN.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-05-lakera-tier-handoff-SUMMARY.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-RESEARCH.md",
+    ".planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-VERIFICATION.md",
+    "apps/parrot/app/components/EmailPanel.tsx",
+    "apps/parrot/app/components/InboxPane.tsx",
+    "apps/parrot/app/lib/api.ts",
+    "apps/parrot/app/routes/inbox.tsx",
+    "apps/parrot/workers/app.ts",
+    "apps/parrot/workers/db/schema.ts",
+    "apps/parrot/workers/durableObject/index.ts",
+    "apps/parrot/workers/durableObject/migrations.ts",
+    "apps/parrot/workers/index.ts",
+    "apps/parrot/workers/lib/inbound-email.ts",
+    "apps/parrot/workers/lib/spam-purge.ts",
+    "apps/parrot/workers/tests/lib/inbound-email.test.ts",
+    "apps/parrot/workers/tests/lib/safety.test.ts",
+    "apps/parrot/workers/tests/lib/spam-purge.test.ts",
+    "apps/parrot/workers/tests/routes/inbox-actions.test.ts",
+    "infra/LAKERA-PRICING.md"
+  ],
+  "tests_run": [
+    "typecheck",
+    "vitest",
+    "uat"
+  ],
+  "uat_artifacts": [
+    "Live end-to-end production UAT PASSED 2026-07-17 on Worker version 3347a2c7 (workspace.internjobs.ai). Operator sent a prompt-injection email from a personal (non-member, non-trusted, non-skip-listed) address to a real internjobs.ai employee mailbox: it landed in the SPAM folder (quarantined + persisted, NOT silently dropped), was visible and openable, and 'Trust sender' moved it back to the Inbox.",
+    "Boot-check: /api/health returned 200 x3 with real JSON and no workerd 1101/1102 boot-error signature (the entrypoint non-function-export trap did not fire); /api/inbox/messages?folder=spam returns 401 (routed, auth-gated) not 500; wrangler.jsonc cron unchanged (single */5).",
+    "Migration 10 (trusted_senders) self-application confirmed live: the operator signed in and the email pane rendered normally — applyMigrations() runs in the EmployeeMailboxDO constructor, so a faulty migration would have errored the mailbox instead.",
+    "Full report: .planning/milestones/v1.5/phases/36-lakera-failopen-quarantine/36-VERIFICATION.md (status: passed, 8/8 automated must-haves verified against source + production UAT)."
+  ],
+  "risks": [
+    "NO REVOKE UI for trusted senders. 'Trust sender' is a durable per-employee grant — the sender permanently bypasses Lakera screening for that mailbox — and nothing in the product lists or revokes it. A confirm dialog was added (558dfd6) to guard the misclick, but a trusted-senders review/revoke surface is an accepted FOLLOW-UP, not shipped here. (Decision: Nithin, 2026-07-17.)",
+    "30-day purge uses the email's own `date` header, not a quarantined-at timestamp. Since senders control that header, backdated spam is purge-eligible on its first sweep. Inherited from 36-01 as shipped; flagged, not fixed.",
+    "Auto-purge turns the pre-existing R2 attachment-orphan gap (shared with Trash hard-delete) from occasional into recurring. Pre-existing behaviour, not introduced here.",
+    "Tests mock the Durable Object, so the storage layer is covered by production UAT rather than by the suite. Mitigated: 36-04's assertions were mutation-verified (reverting the quarantine to the old `return` drop turns 3 tests red; inverting the trust check turns 1 red; breaking fail-open turns 1 red).",
+    "Track 2 partially open by design: LAKERA-V2-03 (Lakera tier/quota confirmation) is dashboard-only and account-gated to Raj — recorded as a pending hand-off in infra/LAKERA-PRICING.md, deliberately NOT fabricated.",
+    "Accepted CI gap (Decision: Nithin, 2026-07-16): apps/app/src/safety/screen.test.mjs passes (5/5) but is not wired into CI — the `workspaces` job only runs build:app. The shared CI workflow was intentionally left untouched; the Worker-side fail-open tests added in 36-04 DO run via the parrot job's `npm test` and are accepted as the closing evidence for SAFETY-VERIFY-LIVE-03. Documented in infra/LAKERA-PRICING.md."
+  ],
+  "updated_at": "2026-07-16T19:57:23.191Z"
+}

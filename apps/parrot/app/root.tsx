@@ -25,6 +25,7 @@ import {
 } from "react-router";
 import "./index.css";
 import { OnboardingWizard } from "~/components/OnboardingWizard";
+import { ParrotEmbedPane } from "~/components/ParrotEmbedPane";
 import { useCurrentEmployee } from "~/lib/auth";
 
 const parrotClerkAppearance = {
@@ -186,6 +187,12 @@ function AppShell({ vapidPublicKey }: { vapidPublicKey: string }) {
 	return (
 		<>
 			<Outlet />
+			{/* Phase 32 (32-02): the Parrot SMS/phone embed. Mounted HERE — a
+			    sibling of <Outlet/> inside AppShell, the one node that survives
+			    client-side route navigation — so its iframe (and Parrot's Telnyx
+			    SIP registration) is never unmounted, only hidden via display:none
+			    when the employee is on another pane. */}
+			<ParrotEmbedPane />
 			{showWizard && me ? (
 				<OnboardingWizard
 					initialDisplayName={me.display_name ?? ""}

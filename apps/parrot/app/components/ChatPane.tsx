@@ -36,6 +36,7 @@ import {
 	MessageSquare,
 	Paperclip,
 	Pencil,
+	Phone,
 	Pin,
 	Plus,
 	RefreshCw,
@@ -54,6 +55,12 @@ import { ChatToEmail } from "./crosspane/ChatToEmail";
 import { StartMeeting } from "./crosspane/StartMeeting";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { apiFetch } from "~/lib/api";
+import { playChatChime } from "~/lib/chat-chime";
+import {
+	PHONE_CANDIDATE_RE,
+	normalizeDialNumber,
+	requestParrotDial,
+} from "~/lib/parrot-embed";
 
 interface MmUser {
 	id: string;
@@ -266,43 +273,10 @@ function presenceDotClass(status: string | null | undefined): string {
 }
 
 // Notification feedback: a short Web-Audio chime + device vibration on an
-// incoming chat message. A two-tone chime for @mentions, a single tone
-// otherwise. The AudioContext is created lazily (first message after the user
-// has interacted with the page, which browser autoplay policy allows) and
-// reused. Everything is wrapped in try/catch and feature-checks so unsupported
-// browsers (e.g. iOS has no Vibration API) silently no-op.
-let _chatAudioCtx: AudioContext | null = null;
-function playChatChime(strong: boolean) {
-	try {
-		if (typeof window === "undefined") return;
-		const Ctx =
-			window.AudioContext ||
-			(window as unknown as { webkitAudioContext?: typeof AudioContext })
-				.webkitAudioContext;
-		if (!Ctx) return;
-		if (!_chatAudioCtx) _chatAudioCtx = new Ctx();
-		const ctx = _chatAudioCtx;
-		if (ctx.state === "suspended") void ctx.resume();
-		const now = ctx.currentTime;
-		const tones = strong ? [880, 1320] : [760];
-		tones.forEach((freq, i) => {
-			const osc = ctx.createOscillator();
-			const gain = ctx.createGain();
-			osc.type = "sine";
-			osc.frequency.value = freq;
-			const t = now + i * 0.13;
-			gain.gain.setValueAtTime(0.0001, t);
-			gain.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
-			gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-			osc.connect(gain);
-			gain.connect(ctx.destination);
-			osc.start(t);
-			osc.stop(t + 0.22);
-		});
-	} catch {
-		/* audio unavailable — ignore */
-	}
-}
+// incoming chat message. The chime itself now lives in ~/lib/chat-chime so the
+// Parrot pane can reuse the identical sound for inbound SMS. Vibration stays
+// here (chat-only). Everything is wrapped in try/catch and feature-checks so
+// unsupported browsers (e.g. iOS has no Vibration API) silently no-op.
 function vibrateDevice(strong: boolean) {
 	try {
 		navigator.vibrate?.(strong ? [55, 35, 55] : 35);
@@ -475,6 +449,44 @@ function isImageFile(file: MmFileInfo): boolean {
 	return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext);
 }
 
+// Phase 32: click-to-dial. A phone number pasted into chat becomes a button
+// that pre-fills the Parrot dialer (requestParrotDial → parrot:dial). Per the
+// locked embed contract §2.3 this is PRE-FILL ONLY — the user still clicks Call
+// inside the Parrot pane, because a click in the parent frame carries no user
+// activation into the iframe and browsers would block the mic/media otherwise.
+//
+// The matcher + normaliser live in ~/lib/parrot-embed so they're unit-tested.
+/** Split a plain-text run into text + Dial buttons for any phone numbers. */
+function linkifyPhones(text: string, keyPrefix: string): ReactNode[] {
+	const out: ReactNode[] = [];
+	let last = 0;
+	let k = 0;
+	PHONE_CANDIDATE_RE.lastIndex = 0;
+	let m: RegExpExecArray | null;
+	// biome-ignore lint/suspicious/noAssignInExpressions: standard regex walk
+	while ((m = PHONE_CANDIDATE_RE.exec(text)) !== null) {
+		const raw = m[0];
+		const normalized = normalizeDialNumber(raw);
+		if (!normalized) continue; // not phone-shaped — leave it as plain text
+		if (m.index > last) out.push(text.slice(last, m.index));
+		out.push(
+			<button
+				key={`${keyPrefix}p${k++}`}
+				type="button"
+				onClick={() => requestParrotDial(normalized)}
+				title={`Dial ${normalized} in Parrot`}
+				className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1 font-medium text-emerald-700 underline decoration-dotted underline-offset-2 hover:bg-emerald-100"
+			>
+				<Phone size={11} strokeWidth={2.5} className="shrink-0" />
+				{raw.trim()}
+			</button>,
+		);
+		last = m.index + raw.length;
+	}
+	if (last < text.length) out.push(text.slice(last));
+	return out.length ? out : [text];
+}
+
 // Render message text with @mentions highlighted. The current employee's own
 // username gets a yellow background (directed-at-you); other mentions are sky
 // blue. Returns a ReactNode array so we keep the rest of the text as-is.
@@ -520,7 +532,12 @@ function renderMessageText(text: string, myUsername?: string): ReactNode {
 		lastIndex = mentionStart + mention.length;
 	}
 	if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-	return parts.length ? parts : text;
+	if (!parts.length) return linkifyPhones(text, "t");
+	// Phase 32: turn phone numbers into Dial buttons, but ONLY inside the plain
+	// text runs — the @mention spans above are left exactly as they were.
+	return parts.flatMap((part, i) =>
+		typeof part === "string" ? linkifyPhones(part, `s${i}-`) : part,
+	);
 }
 
 // ── Wave 4 (31-05): real-time WebSocket hook ──────────────────────────

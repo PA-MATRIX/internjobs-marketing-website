@@ -50,4 +50,30 @@ describe("inbox-actions route smoke", () => {
 		expect(res.status).not.toBe(404);
 		expect(res.status).not.toBe(500);
 	});
+
+	// v1.5 Phase 36 (plan 36-04): smoke coverage for the routes plan 36-01 added.
+	it("POST /api/inbox/messages/:id/trust-sender with dev headers returns not-404", async () => {
+		const req = new Request(
+			"https://parrot.example.com/api/inbox/messages/test-id/trust-sender",
+			{
+				method: "POST",
+				headers: devHeaders,
+			},
+		);
+		const res = await app.fetch(req, minimalEnv as any, mockCtx);
+		// Auth gate → 401 is expected (not 404, not 500).
+		expect(res.status).not.toBe(404);
+		expect(res.status).not.toBe(500);
+	});
+
+	it("GET /api/inbox/folder-counts with dev headers returns not-404 and not-500", async () => {
+		const req = new Request("https://parrot.example.com/api/inbox/folder-counts", {
+			method: "GET",
+			headers: devHeaders,
+		});
+		const res = await app.fetch(req, minimalEnv as any, mockCtx);
+		// Auth gate → 401 is expected (not 404, not 500).
+		expect(res.status).not.toBe(404);
+		expect(res.status).not.toBe(500);
+	});
 });

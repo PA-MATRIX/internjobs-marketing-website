@@ -109,3 +109,45 @@ jobs:
         if: github.event_name == 'push'
         continue-on-error: true
         run: npx wrangler deploy --dry-run --outdir /tmp/startup-dry
+
+  # ---- Cross-package inbound-email latency invariant -----------------------
+  # The ONLY check in this pipeline that reads BOTH apps/startup's and
+  # apps/email-worker's real timeout constants and compares them against each
+  # other. Each package's own unit tests can only assert its OWN constants
+  # against hardcoded numbers — self-referential, and structurally incapable of
+  # failing when the other package's numbers move (they also run as separate
+  # jobs and share no import path across the TS/plain-JS boundary). Without this
+  # job, two PRs could each stay green while jointly breaking the invariant
+  #   RESOLVE + INSERT + OVERHEAD <= EMPLOYERS_HANDOFF_TIMEOUT_MS
+  # whose violation causes a slow-but-successful insert to be misclassified as a
+  # failure and the mail to be BOTH stored and operator-forwarded (duplicate).
+  # Zero deps, no npm ci, sub-second — so it always runs, ungated by paths.
+  email-timeout-invariant:
+    name: email timeout invariant (cross-package)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-email-timeout-invariant.mjs
+
+  # ---- Email Worker (apps/email-worker) — the zone-wide CF Email Routing ----
+  # catch-all. Carries ALL live inbound mail for internjobs.ai, and until v1.5
+  # Phase 33 it had ZERO test coverage in the pipeline. Plain ESM JS with no
+  # runtime dependencies, so there is nothing to `npm ci` — node:test runs the
+  # .test.js files natively.
+  email-worker:
+    name: email worker (tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/email-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      - name: unit tests (node:test)
+        run: npm test

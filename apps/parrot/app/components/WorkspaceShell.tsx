@@ -7,23 +7,28 @@
 //      via the `secondaryNav` prop.
 //   3. Main content: the active pane's primary surface.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type ComponentType,
+	type ReactNode,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	type LucideIcon,
+	type LucideProps,
 	LayoutDashboard,
 	Mail,
 	MessageSquare,
 	Video,
-	Phone,
-	MessageCircle,
 	Shield,
 	Settings,
 	Bell,
 	Loader2,
 	X,
 } from "lucide-react";
+import { ParrotIcon } from "./icons/ParrotIcon";
 import { UserMenu } from "./UserMenu";
 import { useCurrentEmployee } from "~/lib/auth";
 import { api, apiFetch, type NotificationItem } from "~/lib/api";
@@ -31,19 +36,23 @@ import { api, apiFetch, type NotificationItem } from "~/lib/api";
 interface NavItem {
 	href: string;
 	label: string;
-	Icon: LucideIcon;
+	Icon: ComponentType<LucideProps>;
+	/** Optional px override. Defaults to NAV_ICON_SIZE; the Parrot silhouette
+	 *  needs a touch more room than the lucide line icons to stay legible. */
+	iconSize?: number;
 }
+
+const NAV_ICON_SIZE = 20;
 
 const NAV: NavItem[] = [
 	{ href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
 	{ href: "/inbox", label: "Email", Icon: Mail },
 	{ href: "/chat", label: "Chat", Icon: MessageSquare },
 	{ href: "/meetings", label: "Meetings", Icon: Video },
-	// v1.2 Phase 12 Wave 1: Phone + SMS placeholders (seam, not integration).
-	// Routes render a "Coming soon — Telnyx via Cloudflare Agents SDK" card.
-	// Telephony backend lands in v1.3+ (see apps/parrot/app/routes/phone.tsx).
-	{ href: "/phone", label: "Phone", Icon: Phone },
-	{ href: "/sms", label: "SMS", Icon: MessageCircle },
+	// Phase 32: a SINGLE "Parrot" pane. Parrot is a separate dialer+SMS product
+	// embedded via <iframe> (see ParrotEmbedPane). The dialer AND messages both
+	// live inside Parrot, so we surface ONE nav icon — not separate Phone/SMS.
+	{ href: "/parrot", label: "Parrot", Icon: ParrotIcon, iconSize: 24 },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -113,6 +122,11 @@ export function WorkspaceShell({
 	const searchMode: "email" | "chat" = location.pathname.startsWith("/inbox")
 		? "email"
 		: "chat";
+	// Phase 32: the Parrot pane embeds a third-party dialer with its own search;
+	// our context-aware header search can't reach into it and searching Workspace
+	// chat/email from the phone pane is meaningless, so hide it there. The
+	// notification bell stays on every pane.
+	const onParrotPane = location.pathname.startsWith("/parrot");
 
 	useEffect(() => {
 		const term = headerSearch.trim();
@@ -241,6 +255,28 @@ export function WorkspaceShell({
 			window.removeEventListener("chat-unread-change", onChatUnread);
 	}, []);
 
+	// Phase 32 (32-03): combined Parrot badge, mirrors the chatUnread
+	// pattern above. ParrotEmbedPane (mounted at the app root, survives route
+	// changes) dispatches the `parrot-badge-change` CustomEvent whenever Parrot
+	// reports updated missed-call / unread-message counts via postMessage. The
+	// nav has ONE unified Parrot icon, so calls + messages are summed into a
+	// single badge on it (see the render below). 0/0 clears the badge.
+	const [parrotBadge, setParrotBadge] = useState({ calls: 0, messages: 0 });
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		function onParrotBadge(e: Event) {
+			const detail = (e as CustomEvent<{ calls?: number; messages?: number }>)
+				.detail;
+			setParrotBadge({
+				calls: Math.max(0, detail?.calls ?? 0),
+				messages: Math.max(0, detail?.messages ?? 0),
+			});
+		}
+		window.addEventListener("parrot-badge-change", onParrotBadge);
+		return () =>
+			window.removeEventListener("parrot-badge-change", onParrotBadge);
+	}, []);
+
 	const activePane = NAV.find((item) =>
 		location.pathname.startsWith(item.href),
 	);
@@ -266,6 +302,24 @@ export function WorkspaceShell({
 							// CHAT-RT-03: unread badge on the Chat icon when not viewing it.
 							const showChatBadge =
 								item.href === "/chat" && chatUnread > 0 && !active;
+							// 32-03 (single icon): ONE combined badge on the Parrot icon —
+							// missed calls + unread messages summed, since both live in the
+							// same pane. Gated on !active exactly like the chat badge.
+							const parrotTotal = parrotBadge.calls + parrotBadge.messages;
+							const showParrotBadge =
+								item.href === "/parrot" && parrotTotal > 0 && !active;
+							// One rose pill, one count — whichever badge applies to this icon.
+							const badgeCount = showChatBadge
+								? chatUnread
+								: showParrotBadge
+									? parrotTotal
+									: 0;
+							const showBadge = badgeCount > 0;
+							const badgeTitle = showChatBadge
+								? `${item.label} (${chatUnread} unread)`
+								: showParrotBadge
+									? `${item.label} (${parrotBadge.calls} missed, ${parrotBadge.messages} unread)`
+									: item.label;
 							return (
 								<li key={item.href} className="relative w-full flex justify-center">
 									{/* Thin colored indicator bar on the active item */}
@@ -277,24 +331,23 @@ export function WorkspaceShell({
 									)}
 									<Link
 										to={item.href}
-										title={
-											showChatBadge
-												? `${item.label} (${chatUnread} unread)`
-												: item.label
-										}
+										title={badgeTitle}
 										className={`group relative flex flex-col items-center justify-center gap-0.5 w-[60px] h-[60px] rounded-xl no-underline transition-all duration-150 ${
 											active
 												? "bg-white text-slate-900 shadow-lg shadow-black/20"
 												: "text-slate-400 hover:bg-white/10 hover:text-white"
 										}`}
 									>
-										<item.Icon size={20} strokeWidth={active ? 2.5 : 2} />
+										<item.Icon
+											size={item.iconSize ?? NAV_ICON_SIZE}
+											strokeWidth={active ? 2.5 : 2}
+										/>
 										<span className="text-[10px] font-semibold leading-none mt-1">
 											{item.label}
 										</span>
-										{showChatBadge && (
+										{showBadge && (
 											<span className="absolute top-1.5 right-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-slate-900">
-												{chatUnread > 9 ? "9+" : chatUnread}
+												{badgeCount > 9 ? "9+" : badgeCount}
 											</span>
 										)}
 									</Link>
@@ -364,6 +417,7 @@ export function WorkspaceShell({
 				<header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
 					<h1 className="text-base font-semibold truncate">{activeLabel}</h1>
 					<div className="flex items-center gap-3">
+						{!onParrotPane && (
 						<div className="relative hidden md:block">
 							<input
 								type="search"
@@ -459,6 +513,7 @@ export function WorkspaceShell({
 								</>
 							)}
 						</div>
+						)}
 						{/* Phase 13 Wave 1: notification bell. Red dot when unread > 0. */}
 						<button
 							type="button"

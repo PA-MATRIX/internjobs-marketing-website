@@ -42,7 +42,12 @@ import {
 	getRoom,
 } from "./lib/daily";
 import { pingParrotGraph } from "./lib/graph";
-import { isOperator as hasOperatorAccess } from "./lib/operator";
+import {
+	isOperator as hasOperatorAccess,
+	resolveClerkContact,
+} from "./lib/operator";
+// Phase 32 (32-01): short-lived RS256 embed-JWT minting for the Parrot pane.
+import { mintEmbedToken } from "./lib/embed-jwt";
 import {
 	createMmDirectChannel,
 	createMmGroupChannel,
@@ -350,6 +355,75 @@ app.get("/api/me", requireEmployeeMailbox, async (c: AppContext) => {
 	});
 });
 
+// Phase 32 (32-01): mint a short-lived (~120s) RS256 embed JWT for the
+// Parrot SMS/phone iframe. Reuses OIDC_SIGNING_KEY (same key /oidc/jwks
+// already publishes) — Parrot verifies against that same JWKS. sub/email/
+// role come ONLY from the server-side authenticated employee session
+// (c.var.employee) + the existing isOperator gate — NEVER from the request
+// body/query, so a caller can't mint a token for someone else or
+// self-escalate to role:"admin". See
+// .planning/workstreams/team-workspace/WORKSPACE-HANDOFF.md.
+const PARROT_EMBED_ISSUER = "https://workspace.internjobs.ai";
+
+app.post(
+	"/api/embed/parrot-token",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		if (!c.env.OIDC_SIGNING_KEY) {
+			return c.json({ error: "embed_not_configured" }, 503);
+		}
+		const employee = c.var.employee;
+		const role = (await hasOperatorAccess(c.env, employee))
+			? "admin"
+			: "employee";
+
+		// Parrot links a user by the `email` claim on first sight
+		// (WORKSPACE-EMBED-REPLY §7.2), so the token MUST carry a real address.
+		// employee.email degrades to the phone number or Clerk user id for
+		// phone-OTP accounts with no directory row (see app.ts:135 fallback), so
+		// when it isn't an address, resolve the canonical email + name from
+		// Clerk's Backend API. Refuse to mint rather than hand Parrot a bogus
+		// identifier it can never match (which would strand the user on the
+		// "ask your admin" panel with no clue why).
+		let email = employee.email;
+		let name = employee.displayName;
+		if (!email.includes("@")) {
+			const contact = await resolveClerkContact(c.env, employee.employeeId);
+			if (contact.email) email = contact.email;
+			if ((!name || !name.trim()) && contact.name) name = contact.name;
+		}
+		if (!email.includes("@")) {
+			return c.json({ error: "embed_email_unavailable" }, 422);
+		}
+
+		try {
+			const { token, expiresIn } = await mintEmbedToken(
+				c.env,
+				PARROT_EMBED_ISSUER,
+				{
+					sub: employee.employeeId,
+					email,
+					name,
+					phone: employee.phoneNumber,
+					role,
+				},
+			);
+			return c.json({
+				token,
+				expires_in: expiresIn,
+				embed_url:
+					c.env.PARROT_EMBED_URL || "https://parrot.projecta.ai/embed",
+				role,
+			});
+		} catch (e) {
+			return c.json(
+				{ error: "embed_token_mint_failed", detail: (e as Error).message },
+				500,
+			);
+		}
+	},
+);
+
 // -- Inbox ----------------------------------------------------------
 
 app.get("/api/inbox/messages", requireEmployeeMailbox, async (c: AppContext) => {
@@ -388,15 +462,19 @@ app.get(
 	requireEmployeeMailbox,
 	async (c: AppContext) => {
 		const stub = c.var.mailboxStub;
-		const [inbox, sent, draft, archive, trash, starred] = await Promise.all([
+		// v1.5 Phase 36: `spam` added — the Spam folder is now written to by the
+		// inbound-email Lakera hard-block quarantine path, so it needs a sidebar
+		// badge count like every other folder.
+		const [inbox, sent, draft, archive, trash, starred, spam] = await Promise.all([
 			stub.countEmails({ folder: "inbox" }),
 			stub.countEmails({ folder: "sent" }),
 			stub.countEmails({ folder: "draft" }),
 			stub.countEmails({ folder: "archive" }),
 			stub.countEmails({ folder: "trash" }),
 			stub.countEmails({ starred: true }),
+			stub.countEmails({ folder: "spam" }),
 		]);
-		return c.json({ inbox, sent, draft, archive, trash, starred });
+		return c.json({ inbox, sent, draft, archive, trash, starred, spam });
 	},
 );
 
@@ -479,6 +557,35 @@ app.delete(
 		const moved = await stub.moveEmail(id, Folders.TRASH);
 		if (!moved) return c.json({ error: "Move to trash failed" }, 500);
 		return c.json({ ok: true, id, movedToTrash: true });
+	},
+);
+
+// v1.5 Phase 36 (2026-07-09 decision): "Trust sender" — Outlook-style
+// per-employee allowlist. Records the sender as trusted for THIS employee (not
+// workspace-wide; see the PARROT_FEATURE_FLAGS `safety_skip_senders` KV for the
+// pre-existing workspace-wide mechanism, which this does NOT touch) and moves
+// the current message out of Spam into Inbox in the same call.
+//
+// SCOPE NOTE (checker-flagged UX trap, 2026-07-16 decision): this moves ONLY the
+// message identified by :id. It deliberately does NOT bulk-move every other Spam
+// message from the same sender — those are left in Spam to either be individually
+// recovered the same way or auto-purged after 30 days (Plan 36-03). Do NOT "fix"
+// this into a bulk move — it is intentional, Outlook-accurate behavior, not an
+// oversight. (Plan 36-02's UI copy must reflect this too — see that plan.)
+app.post(
+	"/api/inbox/messages/:id/trust-sender",
+	requireEmployeeMailbox,
+	async (c: AppContext) => {
+		const id = c.req.param("id");
+		if (!id) return c.json({ error: "Missing message id" }, 400);
+		const stub = c.var.mailboxStub;
+		const email = await stub.getEmail(id);
+		if (!email) return c.json({ error: "Email not found" }, 404);
+		const sender = (email.sender || "").toLowerCase();
+		if (!sender) return c.json({ error: "Email has no sender" }, 400);
+		await stub.trustSender(sender);
+		const moved = await stub.moveEmail(id, Folders.INBOX);
+		return c.json({ ok: true, id, sender, movedToInbox: moved });
 	},
 );
 
@@ -991,6 +1098,10 @@ async function loadChatContext(c: AppContext):
 		c.env.MATTERMOST_ADMIN_TOKEN,
 	);
 	if (!membership.ok) {
+		console.warn("chat_bootstrap_failed", {
+			email: employee.email,
+			reason: membership.reason,
+		});
 		return {
 			ok: false,
 			status: membership.reason === "user_not_found" ? 404 : 502,
