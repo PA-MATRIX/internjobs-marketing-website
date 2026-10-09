@@ -216,6 +216,24 @@ export async function receiveEmail(
 		}
 	}
 
+	// v1.5 Phase 36: per-employee Trust-sender check (2026-07-09 decision). Runs
+	// AFTER the workspace-wide KV skip-list (either one can short-circuit) and
+	// BEFORE screenMessage() — a trusted sender's mail should never spend Lakera
+	// quota, matching the existing skip-list's intent.
+	if (!skipScreen && senderEmail) {
+		const isTrusted = await (
+			mailboxStub as unknown as {
+				isSenderTrusted(sender: string): Promise<boolean>;
+			}
+		).isSenderTrusted(senderEmail);
+		if (isTrusted) skipScreen = true;
+	}
+
+	// v1.5 Phase 36: destination folder for this message. Stays Folders.INBOX for
+	// every path that existed before this phase (trusted-sender skip, soft-flag,
+	// fail-open); only a Lakera hard-block reassigns it to Folders.SPAM below.
+	let targetFolder: string = Folders.INBOX;
+
 	if (!skipScreen && emailBody.length > 0) {
 		const _screenStart = Date.now();
 		const screenResult = await screenMessage(emailBody, env);
@@ -292,6 +310,11 @@ export async function receiveEmail(
 			// loop risk: if blocked email is from an automated sender, an
 			// auto-reply triggers their auto-responder → infinite loop.
 			// Operator reviews /ops/safety and replies manually.
+			//
+			// v1.5 Phase 36 (2026-07-09 decision): mail is now quarantined into the
+			// Spam folder instead of dropped — recoverable via the "Trust sender"
+			// action or a manual move, no longer unrecoverable. The /ops/safety
+			// audit trail (safety_events POST above) is unchanged.
 			console.warn(
 				JSON.stringify({
 					level: "warn",
@@ -301,14 +324,19 @@ export async function receiveEmail(
 					preview: emailBody.slice(0, 80),
 				}),
 			);
-			return; // Drop silently — no createEmail(), no todo extraction, no auto-reply
+			targetFolder = Folders.SPAM;
 		}
-		// Soft-flag or fail-open: proceed to createEmail() normally.
+		// Soft-flag, fail-open, or trusted-sender skip: targetFolder stays Folders.INBOX.
 	}
 
 	// This call triggers EmployeeMailboxDO.createEmail() → which fires
 	// the Phase 12 fire-and-forget extractTodosFromEmail() hook when
 	// folder=Inbox. That's the whole point of this handler.
+	//
+	// v1.5 Phase 36: targetFolder is Folders.SPAM for Lakera hard-blocks,
+	// Folders.INBOX otherwise. createEmail() already gates todo-extraction on
+	// folderId === Folders.INBOX, so quarantined mail automatically skips the
+	// LLM todo-extraction pipeline with no further change here.
 	await (
 		mailboxStub as unknown as {
 			createEmail(
@@ -332,7 +360,7 @@ export async function receiveEmail(
 			): Promise<unknown>;
 		}
 	).createEmail(
-		Folders.INBOX,
+		targetFolder,
 		{
 			id: messageId,
 			subject: parsed.subject || "",

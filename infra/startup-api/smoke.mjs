@@ -91,14 +91,15 @@ try {
 } catch (err) { fail("token_lookup_404_on_unknown", err); }
 
 // ─── [3/9] POST /v1/startups → create + issue token ──────────────────────────
-let createdStartupId, createdMemberId, createdToken;
+let createdStartupId, createdMemberId, createdToken, createdFounderEmail;
 console.log("\n[3/9] POST /v1/startups → { startup_id, member_id, token }");
 try {
   const ts = Date.now();
+  createdFounderEmail = `smoke-${ts}@example.com`;
   const { json } = await req("POST", "/v1/startups", {
     body: {
       company: `smoke-${ts}-founders-co`,
-      founder_email: `smoke-${ts}@example.com`,
+      founder_email: createdFounderEmail,
       founder_name: "Smoke Test Founder",
     },
     expectStatus: 200,
@@ -296,6 +297,56 @@ try {
   if (json.ok !== true) throw new Error(`expected ok:true, got ${JSON.stringify(json)}`);
   pass(`thread_mark (updated=${json.updated})`);
 } catch (err) { fail("thread_mark", err); }
+
+// ─── [10] POST /v1/startups/link-clerk-id → flip concierge placeholder ───────
+// The founder row created in [3] carries a `concierge:%` placeholder
+// clerk_user_id. Flip it to a real id keyed on the founder email.
+let linkedRealClerkId;
+console.log("\n[10] POST /v1/startups/link-clerk-id → flips placeholder to real id");
+try {
+  linkedRealClerkId = `user_smoketest_${Date.now()}`;
+  const { json } = await req("POST", "/v1/startups/link-clerk-id", {
+    body: { clerk_user_id: linkedRealClerkId, email: createdFounderEmail },
+    expectStatus: 200,
+  });
+  if (json.startup_id !== createdStartupId) {
+    throw new Error(`link resolved to wrong startup: expected ${createdStartupId}, got ${json.startup_id}`);
+  }
+  pass("link_clerk_id_happy_path");
+} catch (err) { fail("link_clerk_id_happy_path", err); }
+
+// ─── [10b] identity-by-clerk-id with the just-linked real id → resolves ──────
+// Proves the flip actually took — the row now resolves by the real id.
+console.log("\n[10b] POST /v1/startups/identity-by-clerk-id with the just-linked real id → matches created startup");
+try {
+  const { json } = await req("POST", "/v1/startups/identity-by-clerk-id", {
+    body: { clerk_user_id: linkedRealClerkId },
+    expectStatus: 200,
+  });
+  if (json.startup_id !== createdStartupId) {
+    throw new Error(`identity resolved to wrong startup: expected ${createdStartupId}, got ${json.startup_id}`);
+  }
+  pass("link_clerk_id_flip_took");
+} catch (err) { fail("link_clerk_id_flip_took", err); }
+
+// ─── [10c] link-clerk-id AGAIN, same email, DIFFERENT id → 404 (takeover guard) ─
+// The row is no longer a concierge:% placeholder, so the guarded UPDATE must
+// unconditionally refuse to re-point it, even though the email still matches.
+// This is the live account-takeover-guard proof.
+console.log("\n[10c] POST /v1/startups/link-clerk-id again (same email, new id) → 404 no_linkable_member_found (takeover guard)");
+try {
+  const { json } = await req("POST", "/v1/startups/link-clerk-id", {
+    body: {
+      clerk_user_id: `user_smoketest_takeover_${Date.now()}`,
+      email: createdFounderEmail,
+    },
+    expectStatus: 404,
+  });
+  if (json.error !== "no_linkable_member_found") {
+    throw new Error(`expected no_linkable_member_found, got ${JSON.stringify(json)}`);
+  }
+  pass("link_clerk_id_takeover_guard_enforced");
+} catch (err) { fail("link_clerk_id_takeover_guard_enforced", err); }
 
 // ─── Results ─────────────────────────────────────────────────────────────────
 const total = passed + failed;

@@ -332,4 +332,31 @@ export const employeeMailboxMigrations: Migration[] = [
 		name: "9_last_seen",
 		sql: `ALTER TABLE profile ADD COLUMN last_seen_at TEXT;`,
 	},
+	{
+		// v1.5 Phase 36: per-employee Trust-sender allowlist.
+		//
+		// Locked decision (2026-07-09): trust-sender scope is PER-EMPLOYEE (true
+		// Outlook semantics), NOT workspace-wide. This is a NEW table, separate
+		// from the existing workspace-wide PARROT_FEATURE_FLAGS KV
+		// `safety_skip_senders` mechanism (which is untouched by this migration) —
+		// one employee trusting a sender must not unblock that sender for every
+		// other employee's mailbox.
+		//
+		// sender is the primary key (lowercased email) — INSERT OR IGNORE makes
+		// trustSender() idempotent (re-trusting an already-trusted sender is a
+		// no-op, not an error).
+		//
+		// Migration 10 — incremented from 9, NO collision: existing migrations are
+		// 1 through 9 (see entries above). DO migration runner rejects duplicate
+		// names via the d1_migrations (name) UNIQUE constraint, and applyMigrations()
+		// dedupes with `SELECT 1 FROM d1_migrations WHERE name = ?` before running,
+		// so this is idempotent on redeploy exactly like 1–9.
+		name: "10_trusted_senders",
+		sql: `
+			CREATE TABLE trusted_senders (
+				sender TEXT PRIMARY KEY,
+				trusted_at TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+		`,
+	},
 ];

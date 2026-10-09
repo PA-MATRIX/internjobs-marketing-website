@@ -53,6 +53,7 @@ type CfEnvBase = Omit<
 	| "GRAPH_API_URL"
 	| "GRAPH_API_SECRET"
 	| "STUDENT_API_URL"
+	| "PARROT_EMBED_URL"
 >;
 
 export interface Env extends CfEnvBase {
@@ -185,6 +186,16 @@ export interface Env extends CfEnvBase {
 	 *  INTERNAL_API_SECRET on the Fly student app. Mirrors GRAPH_API_SECRET. */
 	STUDENT_API_SECRET?: string;
 
+	// — Phase 32: Parrot embed pane.
+	/** Parrot's authenticated embed URL (WORKSPACE-EMBED-REPLY.md §"Final
+	 *  embed URL"). Not secret — the short-lived signed token appended to the
+	 *  query string is what's sensitive, not the base URL. Default baked into
+	 *  wrangler.jsonc `vars`; override only if Parrot changes their embed
+	 *  route. Because it's a `vars` string (not a secret) it must ALSO be
+	 *  Omitted from CfEnvBase above, or `wrangler types` emits a narrow
+	 *  string-literal type that collides with this wider `string`. */
+	PARROT_EMBED_URL?: string;
+
 	// — Bindings (typed via the DO classes themselves so callers get
 	//   intellisense for the RPC surface).
 	EMPLOYEE_MAILBOX: DurableObjectNamespace<EmployeeMailboxDO>;
@@ -206,6 +217,11 @@ export interface Employee {
 	displayName: string;
 	/** Optional avatar URL from Clerk. */
 	picture?: string | null;
+	/** Phase 32: display-only phone claim for the Parrot embed token.
+	 *  Populated from Clerk's phone_number claim in
+	 *  workers/app.ts::deriveEmployeeFromClaims — was previously computed
+	 *  there but discarded. */
+	phoneNumber?: string;
 	/** First name (best-effort split from displayName/Clerk claims). */
 	givenName?: string;
 	/** Last name (best-effort split from displayName/Clerk claims). */

@@ -139,6 +139,9 @@ export interface FolderCounts {
 	archive: number;
 	trash: number;
 	starred: number;
+	// v1.5 Phase 36: Lakera hard-blocked mail is quarantined here instead of
+	// being dropped, so Spam needs a sidebar badge like every other folder.
+	spam: number;
 }
 
 // — Phase 13 Wave 1: notifications + push.
@@ -155,6 +158,16 @@ export interface NotificationItem {
 export interface NotificationsResponse {
 	notifications: NotificationItem[];
 	unread: number;
+}
+
+// Phase 32 (32-02): response shape of POST /api/embed/parrot-token, the
+// mint endpoint built in 32-01 (workers/index.ts). ParrotEmbedPane calls it
+// on sign-in and on a refresh timer.
+export interface ParrotEmbedTokenResponse {
+	token: string;
+	expires_in: number;
+	embed_url: string;
+	role: "admin" | "employee";
 }
 
 export const api = {
@@ -188,6 +201,17 @@ export const api = {
 		request<{ ok: boolean; id: string; folder: string }>(
 			`/api/inbox/messages/${encodeURIComponent(id)}/move`,
 			{ method: "POST", body: JSON.stringify({ folder }) },
+		),
+	// v1.5 Phase 36 (2026-07-09 decision): "Trust sender" — records the sender as
+	// trusted for this employee only and moves THIS message out of Spam into Inbox.
+	// SCOPE NOTE: single-message only, by design (matches Outlook). It deliberately
+	// does NOT bulk-move that sender's other quarantined mail, which stays in Spam
+	// and auto-purges at 30 days. Do not "fix" this into a bulk move — the
+	// confirmation copy in InboxPane depends on this scope being exactly this.
+	trustSender: (id: string) =>
+		request<{ ok: boolean; id: string; sender: string; movedToInbox: boolean }>(
+			`/api/inbox/messages/${encodeURIComponent(id)}/trust-sender`,
+			{ method: "POST" },
 		),
 	// PARROT-FOLDER-ACTIONS-01: two-stage delete.
 	// Server returns { movedToTrash: true } or { hardDeleted: true }.
@@ -407,4 +431,12 @@ export const api = {
 		request<{ suggested_prompts: string[]; error?: string }>(
 			`/api/inbox/agent/conversation/${encodeURIComponent(emailId)}`,
 		),
+	// Phase 32 (32-02): mint a short-lived embed JWT for the Parrot iframe.
+	// ParrotEmbedPane calls this once on sign-in (to set the iframe src) and
+	// again every ~90s (pushing the fresh token via postMessage, never
+	// reloading src). See workers/index.ts POST /api/embed/parrot-token (32-01).
+	mintParrotEmbedToken: () =>
+		request<ParrotEmbedTokenResponse>("/api/embed/parrot-token", {
+			method: "POST",
+		}),
 };

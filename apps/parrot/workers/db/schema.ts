@@ -62,3 +62,14 @@ export const todos = sqliteTable("todos", {
 	created_at: text("created_at"),
 	resolved_at: text("resolved_at"),
 });
+
+// v1.5 Phase 36: per-employee Trust-sender allowlist.
+// Drizzle mirror of migration 10_trusted_senders. Per-employee by construction —
+// the table lives inside each EmployeeMailboxDO, so one employee trusting a
+// sender cannot affect another's mailbox (2026-07-09 locked decision). This is
+// NOT the workspace-wide PARROT_FEATURE_FLAGS KV `safety_skip_senders` list,
+// which remains a separate, untouched mechanism.
+export const trustedSenders = sqliteTable("trusted_senders", {
+	sender: text("sender").primaryKey(),
+	trusted_at: text("trusted_at"),
+});

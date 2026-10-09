@@ -26,7 +26,7 @@ import { buildMcpHandler } from "./server";
 import { validateBearerToken } from "./lib/auth";
 import { adminRouter } from "./routes/admin";
 import { apiRouter } from "./routes/api";
-import { handleInboundEmail } from "./routes/email";
+import { emailInternalRouter, handleInboundEmail } from "./routes/email";
 // Clerk webhook removed 2026-05-27: work-email enforcement now happens via
 // Clerk's native Restrictions blocklist (configured via PATCH /v1/instance/
 // restrictions + 26 personal-domain entries in /v1/blocklist_identifiers).
@@ -121,6 +121,15 @@ app.route("/admin", adminRouter);
 // internjobs.ai. NO auth — public marketing endpoint.
 app.route("/api", apiRouter);
 
+// ── Internal router (v1.5 Phase 33-01 — inbound-email HTTP handoff) ──────────
+// POST /internal/email/inbound — apps/email-worker (`internjobs-email-ingest`)
+// hands us the raw MIME of any @employers.internjobs.ai message it receives on
+// the zone's single Email Routing catch-all. Auth: Authorization: Bearer
+// EMAIL_HANDOFF_SECRET (shared secret, mirrored in the email-worker). This is
+// the PRIMARY inbound-email path — see routes/email.ts for the full contract
+// and the catch-all constraint that forces the HTTP hop.
+app.route("/internal", emailInternalRouter);
+
 // ── Telnyx SMS inbound webhook (Phase 29-01 STARTUP-TELNYX-01..06) ───────────
 // POST /webhooks/telnyx/sms — Telnyx messaging profile (DEFER-29-01-D)
 // delivers inbound message events here. Handler ordering (load-bearing):
@@ -155,12 +164,23 @@ app.get("/", (c) =>
 	}),
 );
 
-// v1.4 Phase 28.5 Plan 04 STARTUP-AGENT-EMAIL-02 — add `email()` export so
-// Cloudflare Email Routing (catch-all on employers.internjobs.ai) delivers
-// inbound mail into the Worker. The catch-all rule is configured in the
-// CF dashboard separately (see DEFER-28.5-01-E). Routing is independent
-// of the Worker's `fetch` HTTP surface, so the existing /mcp + /admin +
-// /api routes are unaffected.
+// v1.4 Phase 28.5 Plan 04 STARTUP-AGENT-EMAIL-02 — `email()` export, wired so
+// Cloudflare Email Routing could deliver inbound mail straight into this Worker.
+//
+// v1.5 Phase 33-01 UPDATE — this is NO LONGER the primary inbound path.
+// Cloudflare Email Routing supports exactly ONE zone-wide catch-all per zone
+// (verified against the CF API during Phase 33), and internjobs.ai's is already
+// bound to the `internjobs-email-ingest` Worker (apps/email-worker) for
+// agent.internjobs.ai conversation aliases. CF therefore never invokes this
+// export. The PRIMARY inbound path is now the HTTP handoff:
+//   apps/email-worker  --POST /internal/email/inbound-->  this Worker
+// (raw MIME body + Bearer EMAIL_HANDOFF_SECRET; see routes/email.ts for the
+// full contract, and apps/email-worker/src/index.js for the authoritative
+// explanation of the catch-all constraint).
+//
+// The `email()` export is retained as a DEFENSIVE / future-proof direct-routing
+// path — same behavior as before, same shared core as the HTTP route — so that
+// if the catch-all is ever repointed here it keeps working.
 //
 // v1.4 Phase 29-03 STARTUP-TOUCHBASE-01..02 — add `scheduled()` export so
 // the weekly touchbase cron dispatches via the wrangler.jsonc `triggers.crons`
