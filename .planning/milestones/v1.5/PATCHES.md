@@ -4,7 +4,7 @@ Small work that belongs to v1.5 but ships after the milestone closed. Each patch
 
 ## v1.5.1 - Workspace deploy: restore Phase 36 quarantine
 
-**Status:** PLANNED (2026-10-08)
+**Status:** SHIPPED (2026-10-08; automated readback GREEN, functional UAT human_needed)
 **Plan:** `patches/v1.5.1-01-PLAN.md`
 **Why:** Production `workspace.internjobs.ai` serves Phase 32 (Parrot embed) but not Phase 36 (Lakera Spam folder + "Trust sender"). Worker deploys are a full replace and Phase 32 was deployed from a branch without Phase 36 (see `.planning/workstreams/team-workspace/submissions/32.json`, "DEPLOY CONFLICT"). `main` at d1658aa contains both (PR #28).
 **Scope:** build `main` d1658aa and `wrangler deploy` it to Worker `internjobs-parrot`. No route, DNS, secret, binding or Durable Object change beyond what the repo config already declares. Outside v1.6 repo-split scope; no v1.6 files are touched.
@@ -34,4 +34,5 @@ Mail Lakera-flagged since the Phase 32 deploy was most likely dropped (pre-Phase
 
 ### Outcome
 
-_(filled on completion: deployed version id, readback GREEN, boot-check, UAT status `human_needed` until Raj/Nithin confirm)_
+Deployed d1658aa as version `77f32645-e61e-438b-9868-6b44580c3b8d` (prior `69c90a82-0ece-41ef-899f-1a8be6049a47`, no rollback). Boot-check 3/3 HTTP 200 JSON. Live readback RED -> GREEN (`patches/v1.5.1-01-GREEN-live.txt`). Summary: `patches/v1.5.1-01-SUMMARY.md`.
+**UAT: human_needed** - Raj/Nithin to open /inbox?folder=spam as an employee and confirm "Trust sender" moves a message to Inbox.
