@@ -10,7 +10,13 @@ The product feels lightweight and natural: students join with LinkedIn, choose t
 
 InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
 
-## Current Milestone: v1.5 — Workspace Integration Finish + Startup Pilot Go-Live
+## Current Milestone: v1.6 — Repo Split + Code Mapping
+
+**Goal:** One clear repo per concern, mapped to local folders. `internjobs-cms` becomes JUST the public marketing website (protected); everything else (student/employer/startup apps, Workspace, mac-bridge, workers, shared) moves to a private platform repo, both under PA-MATRIX. `PA-Ai-Team/Parrot` stays where it is; legacy `growthpods/Internjobs` is archived. Phase 0 merges Nithin's finished `integration/v1.5` work into `main` first; code mapping of all three repos comes first. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`.
+
+## Previous Milestone: v1.5 — Workspace Integration Finish + Startup Pilot Go-Live (closed PARTIAL 2026-10-08)
+
+**Closed PARTIAL (2026-10-08):** Phases 32 (Parrot embed pane), 33 (Startups web app go-live) and 36 (Lakera quarantine) delivered and promoted to `main` via PR #28 (merge commit `4c182d3`). Phases 34 (Telnyx go-live) and 35 (first pilot install) DEFERRED by Raj (D8) and carry to a later milestone. Archive: `.planning/milestones/v1.5/`. The scope below is the original v1.5 plan, kept for the record.
 
 **Goal:** Finish the last WORKSPACE-TRUE-INTEGRATION pane (SMS/phone → Parrot) and take the startup pilot LIVE — execute the deferred-ops runbooks for the Startups web app (phase 28.5) and Telnyx SMS/Voice (phase 29), land the first real pilot install, and close the deferred Lakera fail-open + tier confirmation. Second milestone under RRR **team mode**; first to run on CH-01 per-phase submission markers + the `integration/**` ruleset, on `integration/v1.5` cut off `main`.
 

@@ -1,0 +1,26 @@
+{
+  "milestone_id": "v1.6 Repo Split + Code Mapping",
+  "phase_id": "37 Merge Nithin's v1.5 work into main",
+  "plan_id": "37-03 closed; Phase 37 complete (2026-10-08)",
+  "intent": "Phase 37 complete (MERGE-01..04 Complete, D11). Next: plan Phase 38 (map the three codebases + coupling inventory) via /rrr:plan-phase 38. main stays frozen to non-v1.6 changes (D10) until Phase 41.",
+  "allowed_paths": [
+    ".planning/"
+  ],
+  "constraints": [
+    "No pushes to main beyond the approved PR #27 merge",
+    "Nothing on integration/v1.5 / PA-Ai-Team/Parrot",
+    "No branch deletion, force-push, or GitHub settings change without Raj approval",
+    "Phase 38 must be planned and plan-checked before execution (TDD-first)"
+  ],
+  "start_time": "2026-10-09T01:23:33.950089+00:00",
+  "saved_at": "2026-10-09T01:55:38.489Z",
+  "updated_at": "2026-10-09T01:55:38.489Z",
+  "active_plan": "Phase 38 planning: run /rrr:plan-phase 38 (not yet planned)",
+  "next": [
+    "/rrr:plan-phase 38",
+    "plan-checker on Phase 38",
+    "execute Phase 38 with rrr-verifier after",
+    "Phase 41 live GitHub/prod steps (approval-gated)"
+  ],
+  "handoff": ".planning/ROADMAP.md (Phase 38)"
+}

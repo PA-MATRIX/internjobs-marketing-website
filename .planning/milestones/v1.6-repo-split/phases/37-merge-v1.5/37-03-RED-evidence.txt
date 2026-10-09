@@ -1,0 +1,14 @@
+not ok 35 - c1 closure pre-verification GREEN -> exit 0; --final -> exit 1
+not ok 36 - c2a NEG PROJECT says Current Milestone v1.5
+not ok 37 - c2b NEG PROJECT says v1.5 in flight
+not ok 38 - c2c NEG ROADMAP v1.5 still in progress
+not ok 39 - c2d NEG MILESTONES has no v1.5 entry
+not ok 40 - c2e NEG a MERGE-0x lacks the pending marker
+not ok 41 - c2f NEG ROADMAP Phase 37 ticked early / unmarked
+not ok 42 - c2g NEG STATE not 37 3/3 pending
+not ok 43 - c3 NEG conflict marker in any of the five files
+not ok 44 - c5 --final: flipped without passed VERIFICATION -> 1; with it -> 0
+not ok 45 - c6 archive path: cited but absent -> 1; present -> 0
+not ok 46 - c7 current-intent.json: missing / invalid / lacking phase_id / wrong milestone -> 1
+not ok 47 - f1 freeze: only v1.6 docs/split heads -> 0
+not ok 48 - f2 NEG freeze: rrr/v1.5 or feature head -> 1; empty list -> 0

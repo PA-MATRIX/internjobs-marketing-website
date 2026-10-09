@@ -2,7 +2,7 @@
 
 **Defined:** 2026-05-19 (v1.3); rewritten 2026-05-24 (v1.4)
 **Core Value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current Milestone:** v1.4 Pilot Readiness
+**Current Milestone:** v1.6 Repo Split + Code Mapping (v1.5 closed PARTIAL 2026-10-08; MERGE-01..04 complete 2026-10-08)
 
 ## Validated
 
@@ -346,6 +346,63 @@ Apply the v1.0 brand system (lavender anchor + ink text + lime/tangerine/cobalt 
 - [ ] **BRAND-VERIFY-02**: Visual QA on production deploy — every section has exactly one accent; no two accents next to each other; no white background regressed in
 - [ ] **BRAND-VERIFY-03**: Punctuation accents implemented as inline spans (`<span class="accent-dot">.</span>`), not background images; verified by view-source spot-check
 
+## v1.6 — Repo Split + Code Mapping (Active)
+
+Defined 2026-10-08. Spec for plans: `.planning/milestones/v1.6-repo-split/CONTEXT.md`. Phase 0 is Nithin's v1.5 merge; mapping precedes any move; every live GitHub action is an executor task with Raj's approval recorded first. Traceability filled by `/rrr:create-roadmap`.
+
+### Merge (Phase 0 — Nithin's v1.5 work)
+
+- [x] **MERGE-01**: Status of v1.5 Phases 34 (Telnyx go-live) and 35 (first pilot install) is confirmed with Nithin as done / deferred / dropped and recorded in CONTEXT.md.
+- [x] **MERGE-02**: `/rrr:audit-milestone` passes (or lists accepted gaps) for v1.5 before promotion.
+- [x] **MERGE-03**: `integration/v1.5` is promoted to `main` through a PR with the 4 required CI checks and the submission gate green; `main` then contains Phases 32, 33, 36 (and 34/35 if done).
+- [x] **MERGE-04**: v1.5 is closed in PROJECT.md / ROADMAP.md / MILESTONES.md, and `main` is frozen to non-v1.6 changes until the split lands.
+
+### Code mapping
+
+- [ ] **MAP-01**: `.planning/codebase/` for `internjobs-cms` is regenerated from `main` after MERGE-03 (7 documents, all dated after the merge).
+- [ ] **MAP-02**: The local `~/Documents/Parrot` clone is fast-forwarded to `origin/main` (currently 664 commits behind), its two extra worktrees are dispositioned, and `.planning/codebase/` is regenerated from it.
+- [ ] **MAP-03**: `growthpods/Internjobs` (legacy) is mapped to a scratch location without modifying that repo or its 4 uncommitted files.
+- [ ] **MAP-04**: A coupling inventory lists every place the current layout is enforced or referenced (`ci.yml`, root `package.json` scripts, `wrangler.toml`, `package-lock.json`, README, `apps/employers` tailwind/styles, `apps/app/src/views.mjs`, `StartupAccessSection.tsx`, `packages/shared`) with a disposition for each (keep / move / rewrite / delete).
+- [ ] **MAP-05**: The relationship between `apps/parrot` (monorepo Workspace) and `PA-Ai-Team/Parrot` is documented (what each is, what they share, what must not change).
+- [ ] **MAP-06**: A single `REPO-MAP.md` lists every Intern Jobs GitHub repo with owner, visibility, purpose, local folder, deploy target and owning team.
+
+### Security (before anything is made or kept public)
+
+- [ ] **SEC-01**: `PA-Ai-Team/Parrot` is secret-scanned (current tree and full history) with findings recorded; any real secret found is rotated.
+- [ ] **SEC-02**: GitHub secret scanning and push protection are enabled on every repo where the plan allows, and the plan limits for PA-MATRIX (free) are recorded.
+- [ ] **SEC-03**: Before any visibility change, it is verified whether branch protection / rulesets stay enforced on a private repo under the PA-MATRIX plan, and Raj decides: upgrade the org, or an alternative that keeps `main` protected.
+- [ ] **SEC-04**: The public website repo contains no `.planning/`, runbooks, Infisical project paths, infra docs or team-workflow files, at tree and history level.
+
+### Split
+
+- [ ] **SPLIT-01**: The website repo contains only `apps/marketing` (plus its own CI, README, lockfile) and `npm ci && npm run build && verify:dist` succeeds in a clean clone with no reference to any other app or package.
+- [ ] **SPLIT-02**: The platform repo contains every other app, `packages/shared`, `infra/`, `scripts/`, `.planning/` and team-mode config, and all 3 non-marketing CI checks plus the submission gate pass on it.
+- [ ] **SPLIT-03**: Cross-references between marketing and the platform apps (employers styles, app views, StartupAccessSection) are resolved without a runtime dependency from either repo on the other's source.
+- [ ] **SPLIT-04**: Production is unchanged: `https://internjobs.ai` deploys from the website repo to Cloudflare Pages and `verify:production` passes; Workers and Fly apps deploy from the platform repo with identical outputs; no downtime.
+- [ ] **SPLIT-05**: Each repo has working CI, the same collaborators/access as today (Nithin write, Vamshi read, admins unchanged), and a CODEOWNERS or equivalent.
+
+### GitHub repos
+
+- [ ] **GH-01**: The public website repo is `PA-MATRIX/internjobs-cms` (fresh start, no history) with protected `main` (PR + review + CI), subject to SEC-03.
+- [ ] **GH-02**: The existing repo with full history becomes the private `PA-MATRIX/internjobs-platform` (rename, so PRs, branches and issues survive; GitHub redirects the old URL), with `main` protection and the `integration/**` ruleset re-verified.
+- [ ] **GH-03**: Stale branches (`phase-07b`, `phase-09`, `phase-10`, `rrr/v1.4/*`, worktree-agent branches) are listed with a disposition each; deletions happen only after Raj's approval.
+- [ ] **GH-04**: `growthpods/Internjobs` is archived on GitHub after its 4 uncommitted local files are committed to a branch or discarded with Raj's approval.
+- [ ] **GH-05**: `PA-Ai-Team/Parrot` is not moved, renamed or modified by this milestone (negative control).
+
+### Local folders
+
+- [ ] **LOCAL-01**: Local layout is one parent folder `~/internjobs/` with `cms/`, `platform/` and `parrot/`, each folder name equal to its repo name, and every clone's `origin` points at the right repo (checked by a script).
+- [ ] **LOCAL-02**: `~/MayaOS/internjobs-ai` is archived to `~/Archives` (tarball, no `node_modules`) only after its `.env.local` secrets are confirmed saved in Infisical, then removed.
+- [ ] **LOCAL-03**: `git worktree` links, the Claude/RRR project paths and hooks are repaired after any local move, and the RRR position records (STATE, current-intent, HUD) point at the new paths.
+
+### Out of scope for v1.6
+
+- Moving or renaming `PA-Ai-Team/Parrot` (Raj, 2026-10-08).
+- Rewriting app code, changing hosting providers or changing deploy topology beyond re-pointing repo sources.
+- Secret rotation for the audited repos (no real secrets found); only if SEC-01 finds some.
+- Finishing v1.5 Phases 34/35 (that is Nithin's work; MERGE-01 only records their status).
+- Buying/upgrading the GitHub plan (surfaced under SEC-03; Raj decides).
+
 ## Future Milestones
 
 Candidates flagged by v1.3 + v1.4 work but not in v1.4 roadmap.
@@ -475,3 +532,37 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 ---
 *Requirements defined: 2026-05-19 (v1.3)*
 *Last updated: 2026-05-24 — v1.4 milestone defined. v1.3 moved to Validated with carryover refs (SAFETY-LAKERA-01 → LAKERA-V2-*, SAFETY-VERIFY-01..03 → SAFETY-VERIFY-LIVE-*, AUTO-CLEAR-VERIFY-02 → CLOSETODO-03). Neon-exit + agent-lift un-roadmapped items added to Validated. v1.4 Active = 39 requirements across Groups A (5 closeouts), B (3 Neon-exit closeout), C (4 carryovers + Workspace upgrades), D (3 polish), E (1 test floor) — pre-assigned to team-cms / team-workspace. SEC-ROTATE deferred to v1.5 Candidates. First milestone under RRR team mode.*
+
+### v1.6 Traceability (populated by /rrr:create-roadmap 2026-10-08)
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| MERGE-01 | Phase 37 | Complete |
+| MERGE-02 | Phase 37 | Complete |
+| MERGE-03 | Phase 37 | Complete |
+| MERGE-04 | Phase 37 | Complete |
+| MAP-01 | Phase 38 | Pending |
+| MAP-02 | Phase 38 | Pending |
+| MAP-03 | Phase 38 | Pending |
+| MAP-04 | Phase 38 | Pending |
+| MAP-05 | Phase 38 | Pending |
+| MAP-06 | Phase 38 | Pending |
+| SEC-01 | Phase 39 | Pending |
+| SEC-02 | Phase 39 | Pending |
+| SEC-03 | Phase 39 | Pending |
+| SEC-04 | Phase 40 | Pending |
+| SPLIT-01 | Phase 40 | Pending |
+| SPLIT-02 | Phase 40 | Pending |
+| SPLIT-03 | Phase 40 | Pending |
+| SPLIT-04 | Phase 41 | Pending |
+| SPLIT-05 | Phase 41 | Pending |
+| GH-01 | Phase 41 | Pending |
+| GH-02 | Phase 41 | Pending |
+| GH-03 | Phase 41 | Pending |
+| GH-04 | Phase 41 | Pending |
+| GH-05 | Phase 41 | Pending |
+| LOCAL-01 | Phase 42 | Pending |
+| LOCAL-02 | Phase 42 | Pending |
+| LOCAL-03 | Phase 42 | Pending |
+
+**Coverage (v1.6):** 27 total, 27 mapped, 0 unmapped ✓
