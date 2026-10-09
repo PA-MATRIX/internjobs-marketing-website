@@ -17,7 +17,7 @@ Added `--gate-prev`, `--preflight-checks` and `--post` to the promotion verifier
 ## What Shipped
 
 - Tests (ffa111e) then implementation (12ac010) for the three new modes.
-- `realpathSync` fix: path handling in the verifier resolves symlinked temp dirs (macOS /var vs /private/var) via `realpathSync` so fixture-repo comparisons are stable.
+- `realpathSync` fix: used only in the main-module (entry-point) guard at the bottom of `scripts/verify-v15-promotion.mjs` (~line 270), comparing `realpathSync(process.argv[1])` to `realpathSync(fileURLToPath(import.meta.url))` so the CLI still runs when invoked through a symlinked path (macOS /var vs /private/var). It is not used for fixture-repo path comparisons.
 - Live merge (done by the orchestrator, not the executor): Raj answered "Approve: merge #28 now" at the gate. PR #28 MERGED as merge commit `4c182d3` (parents 13b0a5e + 1ecddd9). `integration/v1.5` kept at 1ecddd9. Checks: 4 required SUCCESS + 2 extra email checks SUCCESS. Two verifier advisories (Phase 32/33 human_needed; audit gaps_accepted) were shown to Raj before approval. Recorded under D9 in CONTEXT.md.
 
 ## RED evidence (captured before GREEN)
