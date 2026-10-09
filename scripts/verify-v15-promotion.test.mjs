@@ -311,3 +311,105 @@ test("t9 post --pr: extra email check FAILURE or absent reported, exit 0", () =>
   assert.match(fail.stdout, /INFO extra check email timeout invariant \(cross-package\): FAILURE/);
   assert.match(fail.stdout, /INFO extra check email worker \(tests\): absent/);
 });
+
+// ---------- 37-03: --closure / --closure --final / --freeze ----------
+const PH_DIR = ".planning/milestones/v1.6-repo-split/phases/37-merge-v1.5";
+const PEND = "executed, pending verification";
+const closureFiles = (o = {}) => ({
+  "PROJECT.md": "# P\n\n**Current Milestone:** v1.6 Repo Split + Code Mapping\n\n## Closed: v1.5 (PARTIAL)\n",
+  "ROADMAP.md": `- ✅ **v1.5 Workspace Integration** — PARTIAL (shipped 2026-10-08)\n- 📋 **v1.6**\n- [ ] **Phase 37: Merge** — ${PEND}\n`,
+  "MILESTONES.md": "# M\n\n## v1.5 Workspace (Shipped: 2026-10-08, partial)\n\n**Archive:** `.planning/milestones/v1.5/`\n\n---\n\n## v1.4 X (Shipped: 2026-06-24)\n",
+  "REQUIREMENTS.md": [1, 2, 3, 4].map((n) => `- [ ] **MERGE-0${n}**: thing (${PEND})`).join("\n") +
+    "\n" + [1, 2, 3, 4].map((n) => `| MERGE-0${n} | Phase 37 | Pending verification |`).join("\n") + "\n",
+  "STATE.md": `---\nphase: 37\nplan: 3\nplan_total: 3\nstatus: "${PEND}"\n---\nStatus: 37-03 ${PEND}\n`,
+  ...o,
+});
+function closureFx({ files = {}, archive = true, intent = "ok", verification = null } = {}) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "v15cl-"));
+  const f = closureFiles(files);
+  mkdirSync(path.join(dir, ".planning"), { recursive: true });
+  for (const [k, v] of Object.entries(f)) writeFileSync(path.join(dir, ".planning", k), v);
+  if (archive) mkdirSync(path.join(dir, ".planning/milestones/v1.5"), { recursive: true });
+  const base = { milestone_id: "v1.6", phase_id: "37", plan_id: "37-03", intent: "close v1.5", updated_at: "2026-10-08T00:00:00Z" };
+  if (intent === "ok") writeFileSync(path.join(dir, ".planning/current-intent.json"), JSON.stringify(base));
+  else if (intent === "bad") writeFileSync(path.join(dir, ".planning/current-intent.json"), "{nope");
+  else if (intent === "nophase") { const { phase_id, ...rest } = base; writeFileSync(path.join(dir, ".planning/current-intent.json"), JSON.stringify(rest)); }
+  else if (intent === "nomilestone") writeFileSync(path.join(dir, ".planning/current-intent.json"), JSON.stringify({ ...base, milestone_id: "v1.5" }));
+  if (verification) {
+    mkdirSync(path.join(dir, PH_DIR), { recursive: true });
+    writeFileSync(path.join(dir, PH_DIR, "37-VERIFICATION.md"), `---\nstatus: ${verification}\n---\n`);
+  }
+  return dir;
+}
+const closure = (dir, ...extra) => spawnSync("node", [SCRIPT, "--closure", "--repo", dir, ...extra], { encoding: "utf8" });
+const FINAL = {
+  "ROADMAP.md": "- ✅ **v1.5** — PARTIAL\n- [x] **Phase 37: Merge**\n",
+  "REQUIREMENTS.md": [1, 2, 3, 4].map((n) => `- [x] **MERGE-0${n}**: thing`).join("\n") + "\n" + [1, 2, 3, 4].map((n) => `| MERGE-0${n} | Phase 37 | Complete |`).join("\n") + "\n",
+  "STATE.md": '---\nphase: 37\nplan: 3\nplan_total: 3\nstatus: "complete"\n---\nStatus: Phase 37 complete\n',
+};
+
+test("c1 closure pre-verification GREEN -> exit 0; --final -> exit 1", () => {
+  const d = closureFx();
+  assert.equal(closure(d).status, 0, out(closure(d)));
+  assert.equal(closure(d, "--final").status, 1);
+});
+test("c2a NEG PROJECT says Current Milestone v1.5", () => {
+  assert.equal(closure(closureFx({ files: { "PROJECT.md": "**Current Milestone:** v1.5 X\n" } })).status, 1);
+});
+test("c2b NEG PROJECT says v1.5 in flight", () => {
+  assert.equal(closure(closureFx({ files: { "PROJECT.md": "**Current Milestone:** v1.6 (v1.5 in flight until MERGE-04)\n" } })).status, 1);
+});
+test("c2c NEG ROADMAP v1.5 still in progress", () => {
+  assert.equal(closure(closureFx({ files: { "ROADMAP.md": `- 🚧 **v1.5 W** — Phases 32–36\n- [ ] **Phase 37: M** — ${PEND}\n` } })).status, 1);
+});
+test("c2d NEG MILESTONES has no v1.5 entry", () => {
+  assert.equal(closure(closureFx({ files: { "MILESTONES.md": "## v1.4 X (Shipped: 2026-06-24)\n" } })).status, 1);
+});
+test("c2e NEG a MERGE-0x lacks the pending marker", () => {
+  const req = closureFiles()["REQUIREMENTS.md"].replace("**MERGE-03**: thing (executed, pending verification)", "**MERGE-03**: thing");
+  assert.equal(closure(closureFx({ files: { "REQUIREMENTS.md": req } })).status, 1);
+});
+test("c2f NEG ROADMAP Phase 37 ticked early / unmarked", () => {
+  assert.equal(closure(closureFx({ files: { "ROADMAP.md": "- ✅ **v1.5** PARTIAL\n- [x] **Phase 37: M**\n" } })).status, 1);
+  assert.equal(closure(closureFx({ files: { "ROADMAP.md": "- ✅ **v1.5** PARTIAL\n- [ ] **Phase 37: M**\n" } })).status, 1);
+});
+test("c2g NEG STATE not 37 3/3 pending", () => {
+  assert.equal(closure(closureFx({ files: { "STATE.md": "---\nphase: 37\nplan: 2\nplan_total: 3\n---\n" } })).status, 1);
+});
+test("c3 NEG conflict marker in any of the five files", () => {
+  for (const k of ["PROJECT.md", "ROADMAP.md", "MILESTONES.md", "STATE.md", "REQUIREMENTS.md"]) {
+    const d = closureFx();
+    const p = path.join(d, ".planning", k);
+    writeFileSync(p, readFileSync(p, "utf8") + "\n<<<<<<< HEAD\nx\n>>>>>>> origin/main\n");
+    assert.equal(closure(d).status, 1, k);
+  }
+});
+test("c5 --final: flipped without passed VERIFICATION -> 1; with it -> 0", () => {
+  assert.equal(closure(closureFx({ files: FINAL }), "--final").status, 1);
+  assert.equal(closure(closureFx({ files: FINAL, verification: "gaps_found" }), "--final").status, 1);
+  const r = closure(closureFx({ files: FINAL, verification: "passed" }), "--final");
+  assert.equal(r.status, 0, out(r));
+});
+test("c6 archive path: cited but absent -> 1; present -> 0", () => {
+  assert.equal(closure(closureFx({ archive: false })).status, 1);
+  assert.equal(closure(closureFx({ archive: true })).status, 0);
+});
+test("c7 current-intent.json: missing / invalid / lacking phase_id / wrong milestone -> 1", () => {
+  for (const intent of ["none", "bad", "nophase", "nomilestone"]) assert.equal(closure(closureFx({ intent })).status, 1, intent);
+});
+
+const prsFile = (arr) => {
+  const f = path.join(mkdtempSync(path.join(os.tmpdir(), "v15fr-")), "prs.json");
+  writeFileSync(f, JSON.stringify(arr));
+  return f;
+};
+const freeze = (arr) => spawnSync("node", [SCRIPT, "--freeze", "--prs-json", prsFile(arr)], { encoding: "utf8" });
+test("f1 freeze: only v1.6 docs/split heads -> 0", () => {
+  const r = freeze([{ number: 27, headRefName: "docs/open-v1.6-repo-split", title: "x" }, { number: 30, headRefName: "rrr/v1.6/38", title: "y" }]);
+  assert.equal(r.status, 0, out(r));
+});
+test("f2 NEG freeze: rrr/v1.5 or feature head -> 1; empty list -> 0", () => {
+  assert.equal(freeze([{ number: 9, headRefName: "rrr/v1.5/x", title: "" }]).status, 1);
+  assert.equal(freeze([{ number: 27, headRefName: "docs/open-v1.6-repo-split" }, { number: 9, headRefName: "feature/x" }]).status, 1);
+  assert.equal(freeze([]).status, 0);
+});

@@ -194,11 +194,89 @@ function postMode(args) {
   process.exit(st.failed ? 1 : 0);
 }
 
+const PEND = "executed, pending verification";
+const CLOSURE_FILES = ["PROJECT.md", "ROADMAP.md", "MILESTONES.md", "STATE.md", "REQUIREMENTS.md"];
+
+/** --closure [--final] [--repo <dir>]: v1.5 closed in the records + position records (MERGE-04). */
+function closureMode(args) {
+  const { ok, fail, st } = reporter();
+  const repo = args.repo || process.cwd();
+  const final = args.final === true;
+  const pl = (f) => path.join(repo, ".planning", f);
+  const read = (f) => (existsSync(pl(f)) ? readFileSync(pl(f), "utf8") : null);
+  const t = {};
+  for (const f of CLOSURE_FILES) {
+    t[f] = read(f);
+    if (t[f] === null) { fail(`${f} missing`); continue; }
+    if (/^(<{7}|>{7})( |$)/m.test(t[f])) fail(`${f} carries conflict markers`);
+    else ok(`${f} has no conflict markers`);
+  }
+  const chk = (cond, good, bad) => (cond ? ok(good) : fail(bad));
+  const P = t["PROJECT.md"] || "", R = t["ROADMAP.md"] || "", M = t["MILESTONES.md"] || "", Q = t["REQUIREMENTS.md"] || "", S = t["STATE.md"] || "";
+  chk(!/Current Milestone:\**\s*v1\.5/.test(P) && !/v1\.5 in flight/.test(P), "PROJECT.md: v1.5 is not current/in flight", "PROJECT.md still shows v1.5 as current or in flight");
+  const rv15 = R.split("\n").filter((l) => /^\s*-\s.*\bv1\.5\b/.test(l) && /\*\*v1\.5\b/.test(l));
+  chk(rv15.length > 0 && rv15.every((l) => !/In progress|\u{1F6A7}/iu.test(l)), "ROADMAP.md: v1.5 not in progress", "ROADMAP.md v1.5 line missing or still in progress");
+  const entry = /^## v1\.5 .*\(Shipped: \d{4}-\d{2}-\d{2}[^)]*\)[\s\S]*?(?=^## |(?![\s\S]))/m.exec(M);
+  chk(!!entry, "MILESTONES.md has a v1.5 shipped entry", "MILESTONES.md lacks a '## v1.5 ... (Shipped: <date>)' entry");
+  if (entry) {
+    const arch = /(\.planning\/milestones\/v1\.5\/)/.exec(entry[0]);
+    if (!arch) fail("MILESTONES.md v1.5 entry cites no .planning/milestones/v1.5/ archive path");
+    else chk(existsSync(path.join(repo, arch[1])), `archive path ${arch[1]} exists`, `archive path ${arch[1]} cited but absent from the tree`);
+  }
+  for (const n of [1, 2, 3, 4]) {
+    const id = `MERGE-0${n}`;
+    const line = Q.split("\n").find((l) => l.includes(`**${id}**`)) || "";
+    const row = Q.split("\n").find((l) => new RegExp(`^\\|\\s*${id}\\s*\\|`).test(l)) || "";
+    if (final) chk(/^- \[x\]/.test(line) && /Complete/.test(row), `${id} Complete`, `${id} not [x]/Complete`);
+    else chk(/^- \[ \]/.test(line) && line.includes(PEND) && /Pending verification/.test(row), `${id} ${PEND}`, `${id} lacks '${PEND}' (unticked, traceability 'Pending verification')`);
+  }
+  const r37 = R.split("\n").find((l) => /\*\*Phase 37:/.test(l) && /^- \[/.test(l)) || "";
+  if (final) chk(/^- \[x\]/.test(r37), "ROADMAP Phase 37 ticked", "ROADMAP Phase 37 not ticked");
+  else chk(/^- \[ \]/.test(r37) && r37.includes(PEND), `ROADMAP Phase 37 unticked, ${PEND}`, `ROADMAP Phase 37 not unticked with '${PEND}'`);
+  const fm = /^---\n([\s\S]*?)\n---/.exec(S);
+  const fmv = (k) => (new RegExp(`^${k}:\\s*"?([^"\\n]*?)"?\\s*$`, "m").exec(fm ? fm[1] : "") || [])[1];
+  chk(fmv("phase") === "37" && fmv("plan_total") === "3" && fmv("plan") === "3", "STATE.md frontmatter: phase 37, plan 3 of 3", "STATE.md frontmatter does not show phase 37 plan 3 of 3");
+  if (final) chk(/complete/i.test(fmv("status") || "") && !(fmv("status") || "").includes(PEND), "STATE status complete", "STATE status not complete");
+  else chk(S.includes(PEND), `STATE says ${PEND}`, `STATE lacks '${PEND}'`);
+  let ci = null;
+  try { ci = JSON.parse(read("current-intent.json")); } catch { /* handled below */ }
+  if (!ci || typeof ci !== "object") fail("current-intent.json missing or unparseable");
+  else {
+    const miss = ["milestone_id", "phase_id", "plan_id", "intent", "updated_at"].filter((k) => !ci[k]);
+    if (miss.length) fail(`current-intent.json lacks ${miss.join(", ")}`);
+    else chk(/v1\.6/.test(String(ci.milestone_id)) && /^37\b/.test(String(ci.phase_id)), "current-intent.json names v1.6 / phase 37", "current-intent.json does not name v1.6 and phase 37");
+  }
+  if (final) {
+    const ver = path.join(args["phase-dir"] || path.join(repo, DEFAULT_PHASE_DIR), "37-VERIFICATION.md");
+    const vfm = existsSync(ver) ? /^---\n([\s\S]*?)\n---/.exec(readFileSync(ver, "utf8")) : null;
+    chk(!!vfm && /^status:\s*passed\s*$/m.test(vfm[1]), "37-VERIFICATION.md status passed", "37-VERIFICATION.md missing or not status: passed (flip before verify)");
+  }
+  process.exit(st.failed ? 1 : 0);
+}
+
+/** --freeze [--prs-json <file>]: every open PR against main is a v1.6 docs/split branch. */
+function freezeMode(args) {
+  const { ok, info, fail, st } = reporter();
+  let prs;
+  try {
+    prs = args["prs-json"] ? JSON.parse(readFileSync(args["prs-json"], "utf8"))
+      : ghJson("pr", "list", "--repo", REPO_SLUG, "--state", "open", "--base", "main", "--json", "number,headRefName,title");
+  } catch (e) { fail(`could not read open PRs: ${String(e.message).split("\n")[0]}`); process.exit(1); }
+  for (const p of prs) {
+    if (/^docs\/.*v1\.6/.test(p.headRefName) || /^rrr\/v1\.6\//.test(p.headRefName)) ok(`PR #${p.number} (${p.headRefName}) is a v1.6 branch`);
+    else fail(`PR #${p.number} (${p.headRefName}) targets main and is not a v1.6 docs/split branch`);
+  }
+  info(`${prs.length} open PR(s) against main`);
+  process.exit(st.failed ? 1 : 0);
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args["gate-prev"]) return gatePrev(args);
   if (args["preflight-checks"]) return preflightChecks(args);
   if (args.post) return postMode(args);
+  if (args.closure) return closureMode(args);
+  if (args.freeze) return freezeMode(args);
   if (!args.pre) {
     console.error("usage: verify-v15-promotion.mjs --pre|--post|--preflight-checks|--gate-prev <plan> [options]");
     process.exit(2);
