@@ -1,0 +1,7 @@
+inbox closure: 9 files; root closure: 7 files
+present: Trust sender
+present: trust-sender
+present: Spam-folder reference (folder=spam)
+present: parrot-token (Phase 32)
+GREEN http://127.0.0.1:8765
+exit 0

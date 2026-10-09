@@ -1,0 +1,59 @@
+
+> typecheck
+> npm run cf-typegen && react-router typegen && tsc -b
+
+
+> cf-typegen
+> wrangler types
+
+
+ ⛅️ wrangler 4.92.0 (update available 4.149.0)
+──────────────────────────────────────────────
+Generating project types...
+
+interface __BaseEnv_Env {
+	PARROT_FEATURE_FLAGS: KVNamespace;
+	BUCKET: R2Bucket;
+	EMAIL: SendEmail;
+	DOMAINS: "internjobs.ai";
+	EMAIL_ADDRESSES: [];
+	MATTERMOST_URL: "https://chat.internjobs.ai";
+	MATTERMOST_WS_URL: "wss://internjobs-mattermost.fly.dev";
+	AGENTIC_INBOX_URL: "https://internjobs-agentic-inbox.rentalaraj.workers.dev";
+	PARROT_EMBED_URL: "https://parrot.projecta.ai/embed";
+	KIMI_MODEL: "@cf/moonshotai/kimi-k2.6";
+	PARROT_FAST_MODEL: "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+	PUSH_VAPID_PUBLIC_KEY: "BAXYWRDcWvhPxBBU3BYmv97yrSNk2B7soXoniQ5aWI_zn_HUAV7g0WsOO3Nk6VxIC2ioJqlFAEbpqP9OKm-4fQo";
+	GRAPH_API_URL: "https://internjobs-graph-api.fly.dev";
+	STUDENT_API_URL: "https://app.internjobs.ai";
+	EMPLOYEE_MAILBOX: DurableObjectNamespace<import("./workers/app").EmployeeMailboxDO>;
+	WORKSPACE: DurableObjectNamespace<import("./workers/app").WorkspaceDO>;
+}
+declare namespace Cloudflare {
+	interface GlobalProps {
+		mainModule: typeof import("./workers/app");
+		durableNamespaces: "EmployeeMailboxDO" | "WorkspaceDO";
+	}
+	interface Env extends __BaseEnv_Env {}
+}
+interface Env extends __BaseEnv_Env {}
+type StringifyValues<EnvType extends Record<string, unknown>> = {
+	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
+};
+declare namespace NodeJS {
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "DOMAINS" | "EMAIL_ADDRESSES" | "MATTERMOST_URL" | "MATTERMOST_WS_URL" | "AGENTIC_INBOX_URL" | "PARROT_EMBED_URL" | "KIMI_MODEL" | "PARROT_FAST_MODEL" | "PUSH_VAPID_PUBLIC_KEY" | "GRAPH_API_URL" | "STUDENT_API_URL">> {}
+}
+
+Generating runtime types...
+
+Runtime types generated.
+
+
+✨ Types written to worker-configuration.d.ts
+
+📖 Read about runtime types
+https://developers.cloudflare.com/workers/languages/typescript/#generate-types
+📣 Remember to rerun 'wrangler types' after you change your wrangler.jsonc file.
+
+(node:12675) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)

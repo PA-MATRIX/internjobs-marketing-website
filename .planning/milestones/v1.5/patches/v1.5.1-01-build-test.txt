@@ -1,0 +1,124 @@
+
+> test
+> vitest run
+
+
+ RUN  v3.2.6 /private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot
+
+stderr | workers/tests/lib/safety.test.ts > screenMessage fail-open (LAKERA-VERIFY-LIVE-03) > fails open when Lakera returns 5xx
+{"level":"warn","event":"lakera_screen_non2xx","status":500}
+
+stderr | workers/tests/lib/safety.test.ts > screenMessage fail-open (LAKERA-VERIFY-LIVE-03) > fails open — and does not throw — when the network call throws
+{"level":"warn","event":"lakera_network_error","error":"network down"}
+
+stderr | workers/tests/lib/safety.test.ts > screenMessage fail-open (LAKERA-VERIFY-LIVE-03) > fails open on timeout (AbortError → isTimeout branch)
+{"level":"warn","event":"lakera_timeout","error":"aborted"}
+
+ ✓ workers/tests/lib/parrot-embed.test.ts (33 tests) 11ms
+ ✓ workers/tests/lib/safety.test.ts (7 tests) 30ms
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > quarantines flagged mail into Spam instead of dropping it
+{"level":"info","event":"lakera_screen","action":"flagged","reason":"lakera_flagged","score":1,"channel":"email","hard_block":true,"sender":"sender@example.com","employee_id":"emp-1","preview":"This is a test email body.\n"}
+{"level":"debug","event":"lakera_latency_ms","ms":2,"channel":"email"}
+
+stderr | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > quarantines flagged mail into Spam instead of dropping it
+{"level":"warn","event":"lakera_hard_block_email","employee_id":"emp-1","reason":"lakera_flagged","preview":"This is a test email body.\n"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > quarantines flagged mail into Spam instead of dropping it
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=5fad9768-9f22-4aac-816b-c56471cb3fc1, attachments=0)
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > persists the full flagged message payload, not a stub
+{"level":"info","event":"lakera_screen","action":"flagged","reason":"lakera_flagged","score":1,"channel":"email","hard_block":true,"sender":"sender@example.com","employee_id":"emp-1","preview":"This is a test email body.\n"}
+{"level":"debug","event":"lakera_latency_ms","ms":0,"channel":"email"}
+
+stderr | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > persists the full flagged message payload, not a stub
+{"level":"warn","event":"lakera_hard_block_email","employee_id":"emp-1","reason":"lakera_flagged","preview":"This is a test email body.\n"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — Lakera hard-block quarantine (Phase 36 core fix) > persists the full flagged message payload, not a stub
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=5fb0989d-c688-4672-be81-32112ba664ed, attachments=0)
+
+stderr | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when the Lakera call throws (network error)
+{"level":"warn","event":"lakera_network_error","error":"network down"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when the Lakera call throws (network error)
+{"level":"info","event":"lakera_screen","action":"passed_lakera_unavailable","reason":null,"score":null,"channel":"email","hard_block":false,"sender":"sender@example.com","employee_id":"emp-1","preview":"This is a test email body.\n"}
+{"level":"debug","event":"lakera_latency_ms","ms":0,"channel":"email"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when the Lakera call throws (network error)
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=df2b6971-12f7-45bd-b8b0-e35d4d0f24e4, attachments=0)
+
+stderr | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when Lakera returns 5xx
+{"level":"warn","event":"lakera_screen_non2xx","status":500}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when Lakera returns 5xx
+{"level":"info","event":"lakera_screen","action":"passed_lakera_unavailable","reason":null,"score":null,"channel":"email","hard_block":false,"sender":"sender@example.com","employee_id":"emp-1","preview":"This is a test email body.\n"}
+{"level":"debug","event":"lakera_latency_ms","ms":0,"channel":"email"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when Lakera returns 5xx
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=f15509b7-923b-4e06-b038-91ddee112996, attachments=0)
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when Lakera passes the message
+{"level":"debug","event":"lakera_latency_ms","ms":0,"channel":"email"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — fail-open (LAKERA-VERIFY-LIVE-03) > delivers to Inbox when Lakera passes the message
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=f0b9c01e-6b12-47df-b94e-e392fe1d4c95, attachments=0)
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — per-employee trusted sender (Phase 36) > never calls Lakera for a trusted sender and delivers to Inbox
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=d1b9165d-fd69-47de-ae17-85a60113f57d, attachments=0)
+
+ ✓ workers/tests/lib/mattermost-pat.test.ts (5 tests) 17ms
+ ✓ workers/tests/lib/mattermost-channels.test.ts (14 tests) 70ms
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — per-employee trusted sender (Phase 36) > still screens when the sender is NOT trusted
+{"level":"info","event":"lakera_screen","action":"flagged","reason":"lakera_flagged","score":1,"channel":"email","hard_block":true,"sender":"sender@example.com","employee_id":"emp-1","preview":"This is a test email body.\n"}
+{"level":"debug","event":"lakera_latency_ms","ms":1,"channel":"email"}
+
+stderr | workers/tests/lib/inbound-email.test.ts > receiveEmail — per-employee trusted sender (Phase 36) > still screens when the sender is NOT trusted
+{"level":"warn","event":"lakera_hard_block_email","employee_id":"emp-1","reason":"lakera_flagged","preview":"This is a test email body.\n"}
+
+stdout | workers/tests/lib/inbound-email.test.ts > receiveEmail — per-employee trusted sender (Phase 36) > still screens when the sender is NOT trusted
+Parrot inbound: routed to employee@internjobs.ai (employee=emp-1, msg=bec838d4-5423-42dd-8c94-03ba8572a82c, attachments=0)
+
+ ✓ workers/tests/lib/mattermost-dms.test.ts (8 tests) 36ms
+ ✓ workers/tests/lib/inbound-email.test.ts (7 tests) 39ms
+ ✓ workers/tests/lib/mattermost-search-reactions.test.ts (10 tests) 42ms
+ ✓ workers/tests/lib/embed-jwt.test.ts (11 tests) 919ms
+stderr | workers/tests/lib/chat-realtime.test.ts > sendOfflineChatNotification > returns {ok:false} and does not throw when EMAIL binding is missing
+sendOfflineChatNotification: EMAIL binding missing — skipping
+
+stderr | workers/tests/lib/chat-realtime.test.ts > sendOfflineChatNotification > returns {ok:false} (fail-soft) when the EMAIL send throws
+sendOfflineChatNotification: send failed Error: smtp down
+    at [90m/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mworkers/tests/lib/chat-realtime.test.ts:97:42
+    at [90mfile:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/deploy-wt/apps/parrot/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+
+ ✓ workers/tests/lib/chat-realtime.test.ts (6 tests) 23ms
+stderr | workers/tests/lib/operator-contact.test.ts > resolveClerkContact > returns nulls (never throws) on a non-2xx Clerk response
+clerk_contact_lookup_failed [33m404[39m
+
+ ✓ workers/tests/lib/operator-contact.test.ts (5 tests) 9ms
+ ✓ workers/tests/routes/inbox-actions.test.ts (5 tests) 26ms
+ ✓ workers/tests/routes/chat-token.test.ts (4 tests) 43ms
+ ✓ workers/tests/healthz.test.ts (3 tests) 55ms
+ ✓ workers/tests/lib/mattermost-mention.test.ts (10 tests) 3ms
+ ✓ workers/tests/lib/spam-purge.test.ts (13 tests) 6ms
+ ✓ workers/tests/routes/chat-channels.test.ts (4 tests) 54ms
+ ✓ workers/tests/csp-header.test.ts (5 tests) 18ms
+ ✓ workers/tests/routes/chat-ws.test.ts (3 tests) 99ms
+ ✓ workers/tests/routes/admin-employees.test.ts (2 tests) 27ms
+ ✓ workers/tests/routes/reply-forward.test.ts (2 tests) 28ms
+ ✓ workers/tests/routes/embed-token.test.ts (1 test) 30ms
+ ✓ workers/tests/routes/ops-safety.test.ts (1 test) 31ms
+ ✓ workers/tests/routes/agent.test.ts (1 test) 13ms
+ ✓ workers/tests/routes/oidc.test.ts (1 test) 17ms
+
+ Test Files  24 passed (24)
+      Tests  161 passed (161)
+   Start at  21:13:51
+   Duration  2.50s (transform 1.47s, setup 0ms, collect 6.15s, tests 1.64s, environment 4ms, prepare 3.43s)
+
