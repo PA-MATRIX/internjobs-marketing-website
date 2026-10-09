@@ -20,7 +20,11 @@ Small work that belongs to v1.5 but ships after the milestone closed. Each patch
 - Dry-run vs live (`versions view`): bindings, vars (key set), DO classes identical; live DO migration_tag v2 = repo latest tag v2 (no new migration); custom-domain route unchanged in repo; no dashboard-only vars; secrets (incl. LAKERA_GUARD_API_KEY) are untouched by deploy. Cron trigger not CLI-readable, repo config unchanged since Phase 32.
 - `--keep-vars` decision: not needed (no dashboard-only vars); plain `wrangler deploy`.
 
-_(approval, approved sha and timestamp are recorded here after Raj approves)_
+**APPROVED (Raj, 2026-10-09T02:17:43Z, via AskUserQuestion "Approve: deploy d1658aa"):**
+- Approved sha: d1658aa. Target: Worker `internjobs-parrot`, plain `wrangler deploy` (no `--keep-vars`).
+- Credential route: existing wrangler OAuth login, account 0fffd3dc637bdb26d4963df445a69fd3 (not a secret). No value recorded.
+- Rollback target: `69c90a82-0ece-41ef-899f-1a8be6049a47` (one rollback, boot-check failure only).
+- Dry-run/config diff summary and data caveat: as recorded above and below.
 
 **Rollback scope (pre-approved with the deploy approval):** one `wrangler rollback <recorded prior version id>`, once, only if the post-deploy boot-check fails (non-200, non-JSON, or 1101/1102). A RED readback after a healthy boot is reported, not rolled back. After any rollback the executor stops and reports.
 

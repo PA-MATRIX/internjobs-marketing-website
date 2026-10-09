@@ -2,7 +2,7 @@
   "milestone_id": "v1.6 Repo Split + Code Mapping",
   "phase_id": "37 Merge Nithin's v1.5 work into main",
   "plan_id": "37-03 closed; Phase 37 complete (2026-10-08)",
-  "intent": "Phase 37 complete (MERGE-01..04 Complete, D11). Next: plan Phase 38 (map the three codebases + coupling inventory) via /rrr:plan-phase 38. main stays frozen to non-v1.6 changes (D10) until Phase 41.",
+  "intent": "Patch v1.5.1: deploy main d1658aa to Worker internjobs-parrot (approved). Rollback 69c90a82 only on boot-check failure.",
   "allowed_paths": [
     ".planning/"
   ],
@@ -14,8 +14,8 @@
   ],
   "start_time": "2026-10-09T01:23:33.950089+00:00",
   "saved_at": "2026-10-09T01:55:38.489Z",
-  "updated_at": "2026-10-09T01:55:38.489Z",
-  "active_plan": "Phase 38 planning: run /rrr:plan-phase 38 (not yet planned)",
+  "updated_at": "2026-10-09T02:17:43Z",
+  "active_plan": "v1.5.1-01: Workspace deploy d1658aa APPROVED by Raj 2026-10-09T02:17:43Z; executing Task 3 (deploy, boot-check, readback, SUMMARY)",
   "next": [
     "/rrr:plan-phase 38",
     "plan-checker on Phase 38",
