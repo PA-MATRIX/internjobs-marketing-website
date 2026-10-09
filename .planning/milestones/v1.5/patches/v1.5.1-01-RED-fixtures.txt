@@ -1,0 +1,275 @@
+TAP version 13
+# Subtest: 1 NEG: no 'Trust sender' anywhere -> exit 1 naming the marker
+not ok 1 - 1 NEG: no 'Trust sender' anywhere -> exit 1 naming the marker
+  ---
+  duration_ms: 50.518542
+  location: '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:68:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Trust sender/. Input:
+    
+    'node:internal/modules/cjs/loader:1252\n' +
+      '  throw err;\n' +
+      '  ^\n' +
+      '\n' +
+      "Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'\n" +
+      '    at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1075:27)\n' +
+      '    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)\n' +
+      '    at node:internal/main/run_main_module:36:49 {\n' +
+      "  code: 'MODULE_NOT_FOUND',\n" +
+      '  requireStack: []\n' +
+      '}\n' +
+      '\n' +
+      'Node.js v22.12.0\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    node:internal/modules/cjs/loader:1252
+      throw err;
+      ^
+    
+    Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'
+        at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+        at Function._load (node:internal/modules/cjs/loader:1075:27)
+        at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+        at node:internal/main/run_main_module:36:49 {
+      code: 'MODULE_NOT_FOUND',
+      requireStack: []
+    }
+    
+    Node.js v22.12.0
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:71:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: 2 POSITIVE: all three markers in an imported chunk -> exit 0
+not ok 2 - 2 POSITIVE: all three markers in an imported chunk -> exit 0
+  ---
+  duration_ms: 42.454959
+  location: '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:74:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    node:internal/modules/cjs/loader:1252
+      throw err;
+      ^
+    
+    Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'
+        at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+        at Function._load (node:internal/modules/cjs/loader:1075:27)
+        at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+        at node:internal/main/run_main_module:36:49 {
+      code: 'MODULE_NOT_FOUND',
+      requireStack: []
+    }
+    
+    Node.js v22.12.0
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    Function._load (node:internal/modules/cjs/loader:1075:27)
+    TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+    node:internal/main/run_main_module:36:49 {
+    TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:76:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: 3 NEG: markers only in a chunk unreachable from manifest/inbox -> exit 1
+ok 3 - 3 NEG: markers only in a chunk unreachable from manifest/inbox -> exit 1
+  ---
+  duration_ms: 43.126416
+  ...
+# Subtest: 4 NEG: markers present but parrot-token absent -> exit 1
+not ok 4 - 4 NEG: markers present but parrot-token absent -> exit 1
+  ---
+  duration_ms: 43.186417
+  location: '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:84:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /parrot-token/. Input:
+    
+    'node:internal/modules/cjs/loader:1252\n' +
+      '  throw err;\n' +
+      '  ^\n' +
+      '\n' +
+      "Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'\n" +
+      '    at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1075:27)\n' +
+      '    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)\n' +
+      '    at node:internal/main/run_main_module:36:49 {\n' +
+      "  code: 'MODULE_NOT_FOUND',\n" +
+      '  requireStack: []\n' +
+      '}\n' +
+      '\n' +
+      'Node.js v22.12.0\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    node:internal/modules/cjs/loader:1252
+      throw err;
+      ^
+    
+    Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'
+        at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+        at Function._load (node:internal/modules/cjs/loader:1075:27)
+        at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+        at node:internal/main/run_main_module:36:49 {
+      code: 'MODULE_NOT_FOUND',
+      requireStack: []
+    }
+    
+    Node.js v22.12.0
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:87:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: 5a NEG: terminal 500 on index -> exit 1
+ok 5 - 5a NEG: terminal 500 on index -> exit 1
+  ---
+  duration_ms: 40.349958
+  ...
+# Subtest: 5b NEG: index lacks manifest URL -> exit 1
+ok 6 - 5b NEG: index lacks manifest URL -> exit 1
+  ---
+  duration_ms: 39.411959
+  ...
+# Subtest: 5c NEG: manifest 404 -> exit 1
+ok 7 - 5c NEG: manifest 404 -> exit 1
+  ---
+  duration_ms: 39.809958
+  ...
+# Subtest: 6 REDIRECT: / -> 302 /sign-in?redirect_url=%2F, script follows and exits 0
+not ok 8 - 6 REDIRECT: / -> 302 /sign-in?redirect_url=%2F, script follows and exits 0
+  ---
+  duration_ms: 40.988917
+  location: '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:107:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    node:internal/modules/cjs/loader:1252
+      throw err;
+      ^
+    
+    Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'
+        at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+        at Function._load (node:internal/modules/cjs/loader:1075:27)
+        at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+        at node:internal/main/run_main_module:36:49 {
+      code: 'MODULE_NOT_FOUND',
+      requireStack: []
+    }
+    
+    Node.js v22.12.0
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    Function._load (node:internal/modules/cjs/loader:1075:27)
+    TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+    node:internal/main/run_main_module:36:49 {
+    TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:112:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: 6b NEG: redirect loop (>5 hops) -> exit 1
+ok 9 - 6b NEG: redirect loop (>5 hops) -> exit 1
+  ---
+  duration_ms: 40.551583
+  ...
+# Subtest: 7 --no-require-parrot downgrades the parrot check only
+not ok 10 - 7 --no-require-parrot downgrades the parrot check only
+  ---
+  duration_ms: 40.066667
+  location: '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:120:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    node:internal/modules/cjs/loader:1252
+      throw err;
+      ^
+    
+    Error: Cannot find module '/private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.mjs'
+        at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+        at Function._load (node:internal/modules/cjs/loader:1075:27)
+        at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+        at node:internal/main/run_main_module:36:49 {
+      code: 'MODULE_NOT_FOUND',
+      requireStack: []
+    }
+    
+    Node.js v22.12.0
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    Function._load (node:internal/modules/cjs/loader:1075:27)
+    TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+    node:internal/main/run_main_module:36:49 {
+    TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-rajren-internjobs-cms/15096b3e-d192-41c5-ad28-a6f2b30d9488/scratchpad/patch-wt/scripts/verify-workspace-quarantine-live.test.mjs:122:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 5
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 496.074042

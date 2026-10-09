@@ -1,0 +1,60 @@
+TAP version 13
+# Subtest: 1 NEG: no 'Trust sender' anywhere -> exit 1 naming the marker
+ok 1 - 1 NEG: no 'Trust sender' anywhere -> exit 1 naming the marker
+  ---
+  duration_ms: 93.876541
+  ...
+# Subtest: 2 POSITIVE: all three markers in an imported chunk -> exit 0
+ok 2 - 2 POSITIVE: all three markers in an imported chunk -> exit 0
+  ---
+  duration_ms: 85.284208
+  ...
+# Subtest: 3 NEG: markers only in a chunk unreachable from manifest/inbox -> exit 1
+ok 3 - 3 NEG: markers only in a chunk unreachable from manifest/inbox -> exit 1
+  ---
+  duration_ms: 83.393791
+  ...
+# Subtest: 4 NEG: markers present but parrot-token absent -> exit 1
+ok 4 - 4 NEG: markers present but parrot-token absent -> exit 1
+  ---
+  duration_ms: 81.79425
+  ...
+# Subtest: 5a NEG: terminal 500 on index -> exit 1
+ok 5 - 5a NEG: terminal 500 on index -> exit 1
+  ---
+  duration_ms: 55.137167
+  ...
+# Subtest: 5b NEG: index lacks manifest URL -> exit 1
+ok 6 - 5b NEG: index lacks manifest URL -> exit 1
+  ---
+  duration_ms: 52.811291
+  ...
+# Subtest: 5c NEG: manifest 404 -> exit 1
+ok 7 - 5c NEG: manifest 404 -> exit 1
+  ---
+  duration_ms: 58.401833
+  ...
+# Subtest: 6 REDIRECT: / -> 302 /sign-in?redirect_url=%2F, script follows and exits 0
+ok 8 - 6 REDIRECT: / -> 302 /sign-in?redirect_url=%2F, script follows and exits 0
+  ---
+  duration_ms: 82.964917
+  ...
+# Subtest: 6b NEG: redirect loop (>5 hops) -> exit 1
+ok 9 - 6b NEG: redirect loop (>5 hops) -> exit 1
+  ---
+  duration_ms: 83.421708
+  ...
+# Subtest: 7 --no-require-parrot downgrades the parrot check only
+ok 10 - 7 --no-require-parrot downgrades the parrot check only
+  ---
+  duration_ms: 81.454416
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 816.096417
