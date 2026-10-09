@@ -1,0 +1,26 @@
+# RED: node scripts/verify-v15-promotion.mjs --closure --final (before flip, 2026-10-08)
+OK PROJECT.md has no conflict markers
+OK ROADMAP.md has no conflict markers
+OK MILESTONES.md has no conflict markers
+OK STATE.md has no conflict markers
+OK REQUIREMENTS.md has no conflict markers
+OK PROJECT.md: v1.5 is not current/in flight
+OK ROADMAP.md: v1.5 not in progress
+OK MILESTONES.md has a v1.5 shipped entry
+OK archive path .planning/milestones/v1.5/ exists
+FAIL MERGE-01 not [x]/Complete
+FAIL MERGE-01 not [x]/Complete
+FAIL MERGE-02 not [x]/Complete
+FAIL MERGE-02 not [x]/Complete
+FAIL MERGE-03 not [x]/Complete
+FAIL MERGE-03 not [x]/Complete
+FAIL MERGE-04 not [x]/Complete
+FAIL MERGE-04 not [x]/Complete
+FAIL ROADMAP Phase 37 not ticked
+FAIL ROADMAP Phase 37 not ticked
+OK STATE.md frontmatter: phase 37, plan 3 of 3
+FAIL STATE status not complete
+FAIL STATE status not complete
+OK current-intent.json names v1.6 / phase 37
+OK 37-VERIFICATION.md status passed
+EXIT=1

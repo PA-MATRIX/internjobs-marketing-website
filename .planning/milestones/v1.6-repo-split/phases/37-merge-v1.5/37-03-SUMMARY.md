@@ -2,7 +2,7 @@
 plan: 37-03
 phase: 37-merge-v1.5
 requirements: [MERGE-04]
-status: executed, pending verification
+status: complete
 completed: 2026-10-08
 ---
 
@@ -27,4 +27,11 @@ Live `--closure` RED before the record edits: exit 1 with 26 FAIL lines (PROJECT
 - `--freeze`: exit 0 (only PR #27 open against main); negative control (a `feature/x` PR fixture) exits 1.
 
 ## State
-Phase 37 is "executed, pending verification". Task 4 (flip MERGE-01..04, ROADMAP Phase 37, STATE to Complete) runs only after `37-VERIFICATION.md` is `status: passed`; merging PR #27 needs a separate go-ahead from Raj.
+Phase 37 is complete (2026-10-08). `37-VERIFICATION.md` is `status: passed` (re-verified after conditions A/B closed). Task 4 flipped MERGE-01..04, ROADMAP Phase 37 and STATE to Complete under Raj's approval recorded as D11 in CONTEXT.md. PR #27 merge is a separate approved step (D11), executed by the orchestrator, not by this plan.
+
+## Final GREEN (Task 4, after the flip, 2026-10-08)
+Saved verbatim: `37-03-final-RED.txt` (before the flip: exit 1, MERGE-01..04 / ROADMAP / STATE FAILs) and `37-03-final-GREEN.txt` (after the flip: `--closure --final` exit 0, all 19 checks OK).
+- `node scripts/verify-v15-promotion.mjs --closure --final`: exit 0.
+- `node scripts/verify-v15-promotion.mjs --freeze`: exit 0 (only PR #27 open against main).
+- `node --test scripts/verify-v15-promotion.test.mjs`: 48 tests, 48 pass, 0 fail.
+- `node scripts/verify-v15-promotion.mjs --closure` (pre-verification mode): exit 1 by design. It asserts the "executed, pending verification" state that Task 4 removes, so it cannot pass after a correct flip. `--final` is the post-verification gate and supersedes it. Not changed in this task (would be a script/plan amendment).

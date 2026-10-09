@@ -1,0 +1,34 @@
+# GREEN: node scripts/verify-v15-promotion.mjs --closure --final (after flip, 2026-10-08)
+OK PROJECT.md has no conflict markers
+OK ROADMAP.md has no conflict markers
+OK MILESTONES.md has no conflict markers
+OK STATE.md has no conflict markers
+OK REQUIREMENTS.md has no conflict markers
+OK PROJECT.md: v1.5 is not current/in flight
+OK ROADMAP.md: v1.5 not in progress
+OK MILESTONES.md has a v1.5 shipped entry
+OK archive path .planning/milestones/v1.5/ exists
+OK MERGE-01 Complete
+OK MERGE-02 Complete
+OK MERGE-03 Complete
+OK MERGE-04 Complete
+OK ROADMAP Phase 37 ticked
+OK STATE.md frontmatter: phase 37, plan 3 of 3
+OK STATE status complete
+OK current-intent.json names v1.6 / phase 37
+OK 37-VERIFICATION.md status passed
+EXIT=0
+
+# --freeze
+OK PR #27 (docs/open-v1.6-repo-split) is a v1.6 branch
+INFO 1 open PR(s) against main
+EXIT=0
+
+# --closure (pre-verification mode, expected exit 1 after flip; superseded by --final)
+FAIL lines: 12
+EXIT=1 (observed)
+
+# node --test
+# tests 48
+# pass 48
+# fail 0

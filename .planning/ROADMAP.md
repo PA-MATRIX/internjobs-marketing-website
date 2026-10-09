@@ -35,7 +35,7 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 
 **Milestone Goal:** one repo per concern, mapped to local folders: public website-only `internjobs-cms`, private `internjobs-platform`, `PA-Ai-Team/Parrot` unchanged, legacy archived. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`. Every phase is TDD-first (failing test/readback recorded RED before the change), plan-checked before execution, verified after; live GitHub/prod steps run as executor tasks with Raj's approval recorded first.
 
-- [ ] **Phase 37: Merge Nithin's v1.5 work into main** — executed, pending verification
+- [x] **Phase 37: Merge Nithin's v1.5 work into main** — complete 2026-10-08
 - [ ] **Phase 38: Map the three codebases + coupling inventory**
 - [ ] **Phase 39: Security gate + GitHub plan limits**
 - [ ] **Phase 40: Build and prove the two repos locally (no live GitHub)**
@@ -57,7 +57,7 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 Plans:
 - [x] 37-01: verifier script + v1.5 audit + Nithin 34/35 status record (MERGE-01, MERGE-02)
 - [x] 37-02: approval-gated promotion integration/v1.5 -> main, merge commit only (MERGE-03)
-- [x] 37-03: close v1.5 in docs + freeze + position records; flip to Complete only after verifier (MERGE-04) — executed, pending verification
+- [x] 37-03: close v1.5 in docs + freeze + position records; flip to Complete only after verifier (MERGE-04) — complete
 
 ### Phase 38: Map the three codebases + coupling inventory
 **Goal**: Map the three codebases + coupling inventory
