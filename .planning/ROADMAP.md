@@ -7,18 +7,18 @@
 - ✅ **v1.2 Two-Sided Agent MVP** — Phases 08–17 (shipped 2026-05-19)
 - ✅ **v1.3 Pilot Hardening** — Phases 18–20 shipped; Phase 21 skipped (sole-user deferral). Plus un-roadmapped Neon-exit shipped 2026-05-21.
 - ✅ **v1.4 Pilot Readiness** — Phases 22–31 (first team-mode milestone: `team-cms` + `team-workspace`; core shipped 2026-06-16, tail phases 30–31 + CH-01 shipped through 2026-06-24)
-- 🚧 **v1.5 Workspace Integration Finish + Startup Pilot Go-Live** — Phases 32–36 (**whole milestone assigned to team-workspace / Nithin**; started 2026-06-30, on `integration/v1.5`)
+- ✅ **v1.5 Workspace Integration Finish + Startup Pilot Go-Live** — Phases 32, 33, 36 shipped 2026-10-08 (PR #28, merge commit `4c182d3`); Phases 34/35 DEFERRED (D8); closed PARTIAL; archive `.planning/milestones/v1.5/` (**whole milestone assigned to team-workspace / Nithin**; started 2026-06-30, on `integration/v1.5`)
 - 📋 **v1.6 Repo Split + Code Mapping** — Phase 0 = merge Nithin's `integration/v1.5` -> main, then map 3 repos + split (opened 2026-10-08; map 3 repos, cms = website only, private platform repo; see `.planning/milestones/v1.6-repo-split/CONTEXT.md`)
 
 ## v1.5 Phases (assigned to team-workspace — Nithin owns the whole milestone)
 
 Focused scope: finish the last Workspace true-integration pane + take the startup pilot live. team-cms is idle this milestone. Each phase is one PR into `integration/v1.5` (cut off `main`, inherits CH-01 per-phase submission markers + the `integration/**` ruleset). Assignment detail + pickup steps: `.planning/workstreams/team-workspace/ASSIGNMENT.md`.
 
-- [ ] **Phase 32: Embed Parrot dialer into the Workspace SMS/phone pane** — *team-workspace* — Parrot is a *separate* dialer/phone+SMS product (built by our own dev), NOT something we build. Embed its **internjobs tenant** via `<iframe>` + OIDC SSO (reuse the Mattermost `/oidc/*` bridge — Parrot = second OIDC client). Do NOT build a dialer or reinvent UX. Spec: `.planning/workstreams/team-workspace/PARROT-EMBED-SPEC.md`. Completes WORKSPACE-TRUE-INTEGRATION (Mail→Agent-Inbox = phase 30, Chat→Mattermost = phase 31).
-- [ ] **Phase 33: Startups web app go-live** — *team-workspace* — execute `PHASE-28.5-DEFERRED-OPS.md` (DNS, Email Routing domain verification, `STARTUPS_CLERK_*` → Infisical, Clerk webhook) to bring `startups.internjobs.ai` + per-startup agent email live.
-- [ ] **Phase 34: Telnyx SMS + Voice AI go-live** — *team-workspace* — execute `PHASE-29-DEFERRED-OPS.md` (Telnyx signup + toll-free number + BRN + API key + Voice AI portal + R2 + KV + cron) to bring startup SMS + voice-intake onboarding live.
-- [ ] **Phase 35: First live pilot install** — *team-workspace* — STARTUP-PILOT-LIVE-01; depends on 33/34; evidence in `PILOT-EVIDENCE.md`.
-- [ ] **Phase 36: Lakera safety quarantine + fail-open confirm** — *team-workspace* — **Track 1 (product, the bulk):** Lakera-flagged mail is currently **silently dropped** — the recipient never learns it existed and it is unrecoverable. Replace that with a visible **Spam/Junk folder** in the Workspace email pane plus an Outlook-style **"Trust sender"** allowlist action, so flagged mail is quarantined-and-recoverable rather than lost (scope decided 2026-07-09). **Track 2 (v1.4 carry-overs):** LAKERA-VERIFY-LIVE-03 fail-open verification at test level (Lakera 5xx / timeout / missing key ⇒ message passes; hard-block still fires on `flagged:true`) + Lakera tier/quota confirmation (`infra/LAKERA-PRICING.md` — Raj dashboard step).
+- [x] **Phase 32: Embed Parrot dialer into the Workspace SMS/phone pane** — SHIPPED 2026-10-08 — *team-workspace* — Parrot is a *separate* dialer/phone+SMS product (built by our own dev), NOT something we build. Embed its **internjobs tenant** via `<iframe>` + OIDC SSO (reuse the Mattermost `/oidc/*` bridge — Parrot = second OIDC client). Do NOT build a dialer or reinvent UX. Spec: `.planning/workstreams/team-workspace/PARROT-EMBED-SPEC.md`. Completes WORKSPACE-TRUE-INTEGRATION (Mail→Agent-Inbox = phase 30, Chat→Mattermost = phase 31).
+- [x] **Phase 33: Startups web app go-live** — SHIPPED 2026-10-08 — *team-workspace* — execute `PHASE-28.5-DEFERRED-OPS.md` (DNS, Email Routing domain verification, `STARTUPS_CLERK_*` → Infisical, Clerk webhook) to bring `startups.internjobs.ai` + per-startup agent email live.
+- [ ] **Phase 34: Telnyx SMS + Voice AI go-live** — DEFERRED (D8, Raj 2026-10-08) — *team-workspace* — execute `PHASE-29-DEFERRED-OPS.md` (Telnyx signup + toll-free number + BRN + API key + Voice AI portal + R2 + KV + cron) to bring startup SMS + voice-intake onboarding live.
+- [ ] **Phase 35: First live pilot install** — DEFERRED (D8, Raj 2026-10-08) — *team-workspace* — STARTUP-PILOT-LIVE-01; depends on 33/34; evidence in `PILOT-EVIDENCE.md`.
+- [x] **Phase 36: Lakera safety quarantine + fail-open confirm** — SHIPPED 2026-10-08 — *team-workspace* — **Track 1 (product, the bulk):** Lakera-flagged mail is currently **silently dropped** — the recipient never learns it existed and it is unrecoverable. Replace that with a visible **Spam/Junk folder** in the Workspace email pane plus an Outlook-style **"Trust sender"** allowlist action, so flagged mail is quarantined-and-recoverable rather than lost (scope decided 2026-07-09). **Track 2 (v1.4 carry-overs):** LAKERA-VERIFY-LIVE-03 fail-open verification at test level (Lakera 5xx / timeout / missing key ⇒ message passes; hard-block still fires on `flagged:true`) + Lakera tier/quota confirmation (`infra/LAKERA-PRICING.md` — Raj dashboard step).
 
   **Plans:** 5 plans, 2 waves (created 2026-07-16)
 
@@ -35,7 +35,7 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 
 **Milestone Goal:** one repo per concern, mapped to local folders: public website-only `internjobs-cms`, private `internjobs-platform`, `PA-Ai-Team/Parrot` unchanged, legacy archived. Context: `.planning/milestones/v1.6-repo-split/CONTEXT.md`. Every phase is TDD-first (failing test/readback recorded RED before the change), plan-checked before execution, verified after; live GitHub/prod steps run as executor tasks with Raj's approval recorded first.
 
-- [ ] **Phase 37: Merge Nithin's v1.5 work into main**
+- [ ] **Phase 37: Merge Nithin's v1.5 work into main** — executed, pending verification
 - [ ] **Phase 38: Map the three codebases + coupling inventory**
 - [ ] **Phase 39: Security gate + GitHub plan limits**
 - [ ] **Phase 40: Build and prove the two repos locally (no live GitHub)**
@@ -55,9 +55,9 @@ Focused scope: finish the last Workspace true-integration pane + take the startu
 **Plans**: 3 plans (planned 2026-10-08, plan-checker PASSED on iteration 3)
 
 Plans:
-- [ ] 37-01: verifier script + v1.5 audit + Nithin 34/35 status record (MERGE-01, MERGE-02)
-- [ ] 37-02: approval-gated promotion integration/v1.5 -> main, merge commit only (MERGE-03)
-- [ ] 37-03: close v1.5 in docs + freeze + position records; flip to Complete only after verifier (MERGE-04)
+- [x] 37-01: verifier script + v1.5 audit + Nithin 34/35 status record (MERGE-01, MERGE-02)
+- [x] 37-02: approval-gated promotion integration/v1.5 -> main, merge commit only (MERGE-03)
+- [x] 37-03: close v1.5 in docs + freeze + position records; flip to Complete only after verifier (MERGE-04) — executed, pending verification
 
 ### Phase 38: Map the three codebases + coupling inventory
 **Goal**: Map the three codebases + coupling inventory

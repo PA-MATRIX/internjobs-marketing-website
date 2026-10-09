@@ -1,0 +1,29 @@
+{
+  "milestone_id": "v1.6 Repo Split + Code Mapping",
+  "phase_id": "37 Merge Nithin's v1.5 work into main",
+  "plan_id": "37-03 close v1.5 in records + freeze (executed, pending verification; push awaiting Raj approval)",
+  "intent": "Close v1.5 PARTIAL in the planning records, bring the docs branch onto promoted main, freeze main to v1.6-only changes (process rule), then phase-level rrr-verifier before PR #27 merges",
+  "allowed_paths": [
+    ".planning/",
+    "scripts/verify-v15-promotion.mjs",
+    "scripts/verify-v15-promotion.test.mjs"
+  ],
+  "constraints": [
+    "No push, no PR #27 merge, no branch deletion without Raj approval",
+    "Nothing on main / integration/v1.5 / PA-Ai-Team/Parrot",
+    "Plain merge only, no rebase or force-push",
+    "MERGE-01..04 stay 'executed, pending verification' until the phase verifier passes"
+  ],
+  "start_time": "2026-10-09T01:23:33.950089+00:00",
+  "saved_at": "2026-10-09T01:23:33.950089+00:00",
+  "updated_at": "2026-10-09T01:23:33.950089+00:00",
+  "active_plan": "37-03 Task 3 push checkpoint",
+  "next": [
+    "Raj approves push of docs/open-v1.6-repo-split",
+    "rrr-verifier on Phase 37 (37-VERIFICATION.md)",
+    "Task 4 flip to Complete (with Raj approval)",
+    "Merge PR #27 (separate go-ahead)",
+    "Phase 38"
+  ],
+  "handoff": ".planning/milestones/v1.6-repo-split/phases/37-merge-v1.5/37-03-PLAN.md"
+}

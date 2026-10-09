@@ -2,7 +2,7 @@
 
 **Defined:** 2026-05-19 (v1.3); rewritten 2026-05-24 (v1.4)
 **Core Value:** InternJobs.ai helps students and startups meet through natural messages, not resume piles or application black holes.
-**Current Milestone:** v1.6 Repo Split + Code Mapping (v1.5 in flight until MERGE-04)
+**Current Milestone:** v1.6 Repo Split + Code Mapping (v1.5 closed PARTIAL 2026-10-08; MERGE-01..04 executed, pending verification)
 
 ## Validated
 
@@ -352,10 +352,10 @@ Defined 2026-10-08. Spec for plans: `.planning/milestones/v1.6-repo-split/CONTEX
 
 ### Merge (Phase 0 — Nithin's v1.5 work)
 
-- [ ] **MERGE-01**: Status of v1.5 Phases 34 (Telnyx go-live) and 35 (first pilot install) is confirmed with Nithin as done / deferred / dropped and recorded in CONTEXT.md.
-- [ ] **MERGE-02**: `/rrr:audit-milestone` passes (or lists accepted gaps) for v1.5 before promotion.
-- [ ] **MERGE-03**: `integration/v1.5` is promoted to `main` through a PR with the 4 required CI checks and the submission gate green; `main` then contains Phases 32, 33, 36 (and 34/35 if done).
-- [ ] **MERGE-04**: v1.5 is closed in PROJECT.md / ROADMAP.md / MILESTONES.md, and `main` is frozen to non-v1.6 changes until the split lands.
+- [ ] **MERGE-01**: Status of v1.5 Phases 34 (Telnyx go-live) and 35 (first pilot install) is confirmed with Nithin as done / deferred / dropped and recorded in CONTEXT.md. (executed, pending verification)
+- [ ] **MERGE-02**: `/rrr:audit-milestone` passes (or lists accepted gaps) for v1.5 before promotion. (executed, pending verification)
+- [ ] **MERGE-03**: `integration/v1.5` is promoted to `main` through a PR with the 4 required CI checks and the submission gate green; `main` then contains Phases 32, 33, 36 (and 34/35 if done). (executed, pending verification)
+- [ ] **MERGE-04**: v1.5 is closed in PROJECT.md / ROADMAP.md / MILESTONES.md, and `main` is frozen to non-v1.6 changes until the split lands. (executed, pending verification)
 
 ### Code mapping
 
@@ -537,10 +537,10 @@ Each Active v1.4 requirement maps to exactly one phase. Populated by `/rrr:creat
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MERGE-01 | Phase 37 | Pending |
-| MERGE-02 | Phase 37 | Pending |
-| MERGE-03 | Phase 37 | Pending |
-| MERGE-04 | Phase 37 | Pending |
+| MERGE-01 | Phase 37 | Pending verification |
+| MERGE-02 | Phase 37 | Pending verification |
+| MERGE-03 | Phase 37 | Pending verification |
+| MERGE-04 | Phase 37 | Pending verification |
 | MAP-01 | Phase 38 | Pending |
 | MAP-02 | Phase 38 | Pending |
 | MAP-03 | Phase 38 | Pending |

@@ -1,5 +1,22 @@
 # Project Milestones: InternJobs.ai
 
+## v1.5 Workspace Integration Finish + Startup Pilot Go-Live (Shipped: 2026-10-08, partial)
+
+**Delivered:** Second RRR team-mode milestone, assigned wholesale to team-workspace (Nithin). Three of five phases shipped and promoted `integration/v1.5` -> `main` via PR #28 (merge commit `4c182d3`, merge commit only, 4 required checks green).
+
+**Phases shipped:**
+- **32 Embed Parrot dialer into the Workspace SMS/phone pane** (team-workspace) - SMS/phone -> Parrot true integration via iframe + OIDC SSO.
+- **33 Startups web app go-live** (team-workspace) - startups.internjobs.ai + per-startup agent email ops.
+- **36 Lakera safety quarantine + fail-open confirm** (team-workspace) - Spam/Junk quarantine, trust-sender, 30-day auto-purge.
+
+**Deferred (D8, Raj 2026-10-08):** Phase 34 (Telnyx SMS + Voice AI go-live) and Phase 35 (first live pilot install) have no branch, PR or marker; they carry to a later milestone.
+
+**Audit:** `/rrr:audit-milestone` result `gaps_accepted` (9 named gaps): `.planning/milestones/v1.6-repo-split/phases/37-merge-v1.5/37-AUDIT-v1.5.md`
+
+**Archive:** `.planning/milestones/v1.5/`
+
+---
+
 ## v1.4 Pilot Readiness (Shipped: 2026-06-24)
 
 **Delivered:** First RRR **team-mode** milestone (team-cms + team-workspace on parallel branches → `integration/v1.4` → `main`). Closed v1.3's dangling work, completed the Neon-exit, landed Workspace upgrades, and stood up the startup channel foundation — plus two beyond-roadmap Workspace true-integration panes.
