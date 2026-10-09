@@ -1,0 +1,6 @@
+inbox closure: 9 files; root closure: 7 files
+present: parrot-token (Phase 32)
+FAIL: missing in served inbox route chunk: Trust sender
+FAIL: missing in served inbox route chunk: trust-sender
+FAIL: missing in served inbox route chunk: Spam-folder reference (folder=spam)
+RED https://workspace.internjobs.ai
